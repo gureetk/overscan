@@ -136,6 +136,24 @@
     <p class="hint">Stalker clients see radio stations among their channels. Radio stations are numbered, grouped, hidden and locked on the <a href="/admin/lineup">Live TV</a> page, as channels are.</p>
   </section>
 
+  <section class="panel" id="timeshift" aria-labelledby="timeshift-title">
+    <div class="panel-title"><span class="tile-icon">{{template "i-pause"}}</span><h2 id="timeshift-title">Pause live TV</h2>{{if .Data.Timeshift}}<span class="badge ok">On</span>{{else}}<span class="badge">Off</span>{{end}}</div>
+    <form method="post" action="/admin/settings/timeshift" hx-post="/admin/settings/timeshift" hx-trigger="change" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" class="switch-row with-select">
+      <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+      <div>
+        <label for="timeshift-minutes">Keep what boxes watch</label>
+        <p id="timeshift-text">{{if .Data.Timeshift}}Boxes can pause the channel they watch, and go back up to {{.Data.MinutesText .Data.Timeshift}} in it: this server keeps the channel on disk while a box watches it.{{else}}Off: boxes play live TV as it comes. Once it is on, they can pause the channel they watch, and go back in it.{{end}}</p>
+        <noscript><button class="small" type="submit">Save</button></noscript>
+      </div>
+      <select id="timeshift-minutes" name="minutes" aria-describedby="timeshift-text">
+        {{- range .Data.TimeshiftChoices}}
+        <option value="{{.}}"{{if eq . $.Data.Timeshift}} selected{{end}}>{{if .}}{{$.Data.MinutesText .}}{{else}}Off{{end}}</option>
+        {{- end}}
+      </select>
+    </form>
+    <p class="hint">What a box watches goes in the data directory while it watches, up to about 1 GB for each 15 minutes of an HD channel, and the server goes on reading the channel from its source while the box is paused.</p>
+  </section>
+
   <section class="panel" id="recordings" aria-labelledby="recordings-title">
     <div class="panel-title"><span class="tile-icon">{{template "i-record"}}</span><h2 id="recordings-title">Recordings</h2>{{if and .Data.CanRecord .Data.RecordingsCap}}<span class="badge ok">On</span>{{else}}<span class="badge">Off</span>{{end}}</div>
     {{- if not .Data.CanRecord}}

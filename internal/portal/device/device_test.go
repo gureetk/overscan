@@ -39,6 +39,7 @@ type harness struct {
 	secrets map[string]string // what each box keeps, by MAC address
 	srcID   int64
 	catalog []store.CatalogChannel // the source's channels
+	hub     *hub.Hub
 }
 
 // newHarness serves the API and the hub, with a fictional provider whose
@@ -98,6 +99,7 @@ func newHarness(t *testing.T) *harness {
 	h.srcID, h.catalog = srcID, channels
 
 	hb := hub.New(st, log, "test", map[int64]hub.Source{srcID: {Name: "main", MaxConnections: 1}})
+	h.hub = hb
 	reg := devices.New(st, log)
 	reg.Now = func() time.Time { return h.now }
 	h.api = New(st, reg, hb, log, "v9.9.9")
@@ -396,6 +398,71 @@ func TestPlay(t *testing.T) {
 	}
 	if code, _ := h.errorCode("POST", fmt.Sprintf("%schannels/%d/play", Prefix, list.Channels[1].ID), tokenA); code != http.StatusOK {
 		t.Errorf("same box, another channel: status %d", code)
+	}
+}
+
+// While timeshift is on, a channel's link plays through a buffer, and the
+// answer says how much of the channel the server keeps; an HLS channel's
+// does not, nor a radio station's (D92).
+func TestPlayTimeshift(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	if err := h.hub.UseTimeshift(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	h.catalog[2].Radio = true
+	if _, err := h.store.ApplyCatalog(ctx, h.srcID, h.catalog, h.now); err != nil {
+		t.Fatal(err)
+	}
+	h.approve(macA)
+	token := h.session(macA).Token
+	var list channelsResponse
+	h.call("GET", Prefix+"channels", token, "", &list)
+	ids := map[string]int64{}
+	for _, c := range list.Channels {
+		ids[c.Name] = c.ID
+	}
+	play := func(name string) playResponse {
+		t.Helper()
+		var p playResponse
+		if code := h.call("POST", fmt.Sprintf("%schannels/%d/play", Prefix, ids[name]), token, "", &p); code != http.StatusOK {
+			t.Fatalf("%s: status %d", name, code)
+		}
+		return p
+	}
+	if p := play("Channel 0"); p.Timeshift != 0 {
+		t.Errorf("off: %+v", p)
+	}
+	if err := h.store.SetTimeshift(ctx, 30); err != nil {
+		t.Fatal(err)
+	}
+	p := play("Channel 0")
+	if p.Timeshift != 1800 || !strings.HasSuffix(p.URL, ".ts") {
+		t.Errorf("on: %+v", p)
+	}
+	resp, err := http.Get(p.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadFull(resp.Body, make([]byte, 188)); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if streams := h.hub.Streams(); len(streams) != 1 || !streams[0].Timeshift {
+		t.Errorf("streams %+v", streams)
+	}
+	// The box stops it when it leaves the channel.
+	stop, err := http.Get(p.URL + "?stop=1")
+	if err != nil || stop.StatusCode != http.StatusNoContent {
+		t.Fatalf("stop: %v, %v", stop, err)
+	}
+	if streams := h.hub.Streams(); len(streams) != 0 {
+		t.Errorf("streams after the stop %+v", streams)
+	}
+	for _, name := range []string{"HLS channel", "Channel 2"} {
+		if p := play(name); p.Timeshift != 0 {
+			t.Errorf("%s: %+v", name, p)
+		}
 	}
 }
 

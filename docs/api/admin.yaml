@@ -976,6 +976,15 @@ paths:
                     folder and, unless a source reads it, a folder source
                     for it. A server that cannot record answers 503
                     (`no_recorder`).
+                timeshift_minutes:
+                  type: integer
+                  minimum: 0
+                  maximum: 240
+                  description: >-
+                    How many minutes of the channel a box watches the server
+                    keeps on disk, so that the box can pause live TV and go
+                    back in it (D92); 0 turns timeshift off. It applies from
+                    the next channel a box plays.
       responses:
         "200":
           $ref: "#/components/responses/Settings"
@@ -2146,6 +2155,11 @@ components:
         playing:
           type: boolean
           description: A player is fetching it now; otherwise the session waits for one to come back.
+        timeshift:
+          type: boolean
+          description: >-
+            A box's channel that plays through a timeshift buffer, so that
+            the box can pause it and go back (D92). Left out otherwise.
         programme:
           type: string
           description: For a past programme, its title, where the guide still has it.
@@ -2378,7 +2392,7 @@ components:
         application/json:
           schema:
             type: object
-            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes, adult_marks, radio_apart, tmdb_key_set, tmdb_language, recordings_cap]
+            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes, adult_marks, radio_apart, tmdb_key_set, tmdb_language, recordings_cap, timeshift_minutes]
             properties:
               repair_default:
                 type: boolean
@@ -2440,6 +2454,14 @@ components:
                 description: >-
                   The room that recordings may take, in gigabytes (D89). 0, at
                   first, for none: boxes cannot record.
+              timeshift_minutes:
+                type: integer
+                minimum: 0
+                maximum: 240
+                description: >-
+                  How many minutes of the channel a box watches the server
+                  keeps, so that the box can pause live TV and go back in it
+                  (D92). 0, at first, for none.
     NoRecorder:
       description: This server cannot record (`no_recorder`).
       content:

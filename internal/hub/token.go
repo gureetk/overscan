@@ -11,11 +11,13 @@ import (
 
 // The first byte of every token says its form, so the forms can change: 1
 // for a lineup entry's link, 2 for a film's or an episode's, which also
-// says which of the two it plays, 3 for a past programme's (D81).
+// says which of the two it plays, 3 for a past programme's (D81), 4 for a
+// lineup entry's link that may play through a timeshift buffer (D92).
 const (
 	tokenVersion        = 1
 	itemTokenVersion    = 2
 	archiveTokenVersion = 3
+	shiftTokenVersion   = 4
 )
 
 const (
@@ -57,6 +59,9 @@ type claims struct {
 	// start and stop are, for a past programme, when it began and ended,
 	// in Unix seconds.
 	start, stop int64
+	// shift says that a lineup entry's link plays through a timeshift
+	// buffer while timeshift is on (D92).
+	shift bool
 }
 
 // sign returns c as a token: the claims and an HMAC-SHA256 of them, cut to
@@ -76,6 +81,9 @@ func (h *Hub) sign(c claims) string {
 	case kindEntry:
 		b = make([]byte, claimsLen, claimsLen+sha256.Size)
 		b[0] = tokenVersion
+		if c.shift {
+			b[0] = shiftTokenVersion
+		}
 		binary.BigEndian.PutUint64(b[1:], uint64(c.entryID))
 		binary.BigEndian.PutUint64(b[9:], uint64(c.deviceID))
 		binary.BigEndian.PutUint64(b[17:], uint64(c.expires))
@@ -107,7 +115,7 @@ func (h *Hub) verify(token string) (claims, bool) {
 	}
 	n := 0
 	switch b[0] {
-	case tokenVersion:
+	case tokenVersion, shiftTokenVersion:
 		n = claimsLen
 	case itemTokenVersion:
 		n = itemClaimsLen
@@ -123,13 +131,14 @@ func (h *Hub) verify(token string) (claims, bool) {
 		return claims{}, false
 	}
 	switch b[0] {
-	case tokenVersion:
+	case tokenVersion, shiftTokenVersion:
 		return claims{
 			kind:     kindEntry,
 			entryID:  int64(binary.BigEndian.Uint64(b[1:])),
 			deviceID: int64(binary.BigEndian.Uint64(b[9:])),
 			expires:  int64(binary.BigEndian.Uint64(b[17:])),
 			nonce:    binary.BigEndian.Uint64(b[25:]),
+			shift:    b[0] == shiftTokenVersion,
 		}, true
 	case archiveTokenVersion:
 		c := claims{

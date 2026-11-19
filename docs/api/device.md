@@ -116,6 +116,20 @@ Answers how to play a channel through the stream hub. The body may be empty, or 
 
 The page plays it with `gSTB.Play(solution + " " + url)`. The solution is the box's name for a kind of player: `ffrt` for MPEG-TS streamed live over HTTP, and `ffmpeg` for HLS. The link ends in `.m3u8`, with `ffmpeg`, only when the channel's address does; otherwise it ends in `.ts`, with `ffrt`, and if the source answers with HLS anyway, the hub relays it as one MPEG-TS stream ([D42](../decisions.md)). The link must be opened within a minute; the hub session that it starts then carries reconnects ([plan](../plan.md), section 7). Switching channels on a source that is at its connection limit works, since the box's own older stream makes room, but a stream from another device does not ([D36](../decisions.md)).
 
+While the administrator has timeshift on, a channel whose link ends in `.ts`, other than a radio station, plays through a buffer on the server that keeps its last minutes ([D92](../decisions.md)), and the answer says how many seconds it keeps:
+
+```json
+{"url": "http://192.0.2.10:8080/live/<token>.ts", "solution": "ffrt", "timeshift": 1800}
+```
+
+The server reads the channel from its source into the buffer for as long as the session lasts, whether or not the box reads it, so a box that pauses its player picks up where it stopped. The link takes these parameters:
+
+- `?behind=<seconds>` plays the channel from that long before live, from the last place a player can start from at or before then (in MPEG-TS, a packet of the stream's table), or from the oldest the buffer keeps. Without it, the link plays from live.
+- `?hold=1` answers 204 and keeps the session, buffer and all, while the box is paused and its player reads nothing: the page asks every 15 seconds. A session that no request reads and no hold keeps ends 30 seconds after the last, as any other does, and its buffer with it. It answers 404 once the session has ended.
+- `?stop=1` answers 204 and ends the session at once, with its buffer, so that the source's connection is free: the page asks when it leaves the channel.
+
+A link without `timeshift` takes `hold` and `stop` too, and they do the same to its session.
+
 ### `POST /api/device/v1/pin`
 
 Checks the account's parental PIN, `{"pin": "1234"}`, before the page shows something locked, such as a locked film's details ([D85](../decisions.md)). It answers `{"ok": true}` when the PIN is right, or when the account has none; otherwise `pin_required` for an empty one, `pin_wrong`, or `pin_locked`, with the wrong PINs counted as a play call counts them.

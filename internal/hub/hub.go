@@ -135,6 +135,11 @@ type Hub struct {
 	encodeMu sync.Mutex
 	encodes  map[int64]int
 
+	// shiftDir holds the timeshift buffers of boxes' live channels (D92);
+	// "" if there are none. tuners are the buffers' tuners that run.
+	shiftDir string
+	tuners   sync.WaitGroup
+
 	mu          sync.Mutex
 	sessions    map[uint64]*session // by token nonce
 	unrelayable map[int64]time.Time // channels whose HLS the relay could not follow, by ID, until when (D61)
@@ -196,6 +201,19 @@ func DefaultUserAgent(version string) string { return "Overscan/" + version }
 // gets a .ts link while the server repairs HLS streams (D61): the relay then
 // makes it one continuous stream, which can go through ffmpeg.
 func (h *Hub) Link(deviceID int64, entry store.PlayableEntry) string {
+	link, _ := h.link(deviceID, entry, false)
+	return link
+}
+
+// ShiftLink returns, as Link does, the path of a new link that plays a
+// lineup entry for a box, and reports whether it plays through a timeshift
+// buffer while timeshift is on (D92). An HLS link does not, nor does any
+// while the hub has no folder for buffers.
+func (h *Hub) ShiftLink(deviceID int64, entry store.PlayableEntry) (string, bool) {
+	return h.link(deviceID, entry, true)
+}
+
+func (h *Hub) link(deviceID int64, entry store.PlayableEntry, shift bool) (string, bool) {
 	c := claims{
 		entryID:  entry.EntryID,
 		deviceID: deviceID,
@@ -208,7 +226,8 @@ func (h *Hub) Link(deviceID int64, entry store.PlayableEntry) string {
 	if !h.source(entry.SourceID).Resolves && hlsAddress(entry.StreamURL) && !h.relaysToRepair(entry) {
 		ext = ".m3u8"
 	}
-	return "/live/" + h.sign(c) + ext
+	c.shift = shift && ext == ".ts" && h.shiftDir != ""
+	return "/live/" + h.sign(c) + ext, c.shift
 }
 
 // hlsAddress reports whether a stream's address says that it is HLS.
@@ -265,7 +284,7 @@ func (h *Hub) Available(sourceID, deviceID int64) bool {
 	now := h.now()
 	others := 0
 	for _, s := range h.sessions {
-		if s.sourceID == sourceID && s.deviceID != deviceID && s.active(now) {
+		if s.sourceID == sourceID && s.deviceID != deviceID && s.holds(now) {
 			others++
 		}
 	}
@@ -300,6 +319,9 @@ type Stream struct {
 	Transcoded   bool
 	TranscodedBy string // TranscodedBySource or TranscodedByOverscan; "" if not transcoded
 	Playing      bool   // a player is fetching it now; otherwise it waits for one to come back
+	// Timeshift is a box's live channel that plays through a timeshift
+	// buffer (D92).
+	Timeshift bool
 	// Programme is, for a past programme, its title, and Aired when it
 	// began.
 	Programme string
@@ -325,7 +347,7 @@ func (h *Hub) Streams() []Stream {
 		st := Stream{
 			Kind: PlaysChannel, DeviceID: s.deviceID, EntryID: s.entryID, SourceID: s.sourceID, Source: h.source(s.sourceID).Name,
 			Channel: s.channel, Started: s.started, Bytes: s.bytes.Load(), HLS: s.hls, Repaired: s.repairing.Load() > 0,
-			Converted: s.converting.Load() > 0, Playing: s.active(now),
+			Converted: s.converting.Load() > 0, Playing: s.active(now), Timeshift: s.shift != nil,
 		}
 		switch {
 		case s.transcoding.Load() > 0:
@@ -360,6 +382,15 @@ func (h *Hub) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			h.closeInputs()
+			// Timeshift buffers' tuners stop, and their buffers go (D92).
+			h.mu.Lock()
+			for _, s := range h.sessions {
+				if s.shift != nil {
+					h.end(s, "the server stopped")
+				}
+			}
+			h.mu.Unlock()
+			h.tuners.Wait()
 			return
 		case <-t.C:
 			h.mu.Lock()
@@ -435,6 +466,10 @@ type session struct {
 	archive   *catchup.Archive
 	programme string
 	aired     time.Time
+
+	// shift is, for a box's live channel while timeshift is on, the
+	// buffer that it plays through (D92); nil otherwise.
+	shift *shift
 
 	started   time.Time
 	repair    bool // its channel is set to be repaired (D57)
@@ -518,7 +553,19 @@ func (s *session) what() string {
 // active reports whether s holds one of its source's connections: it is
 // streaming, or it is HLS and played recently.
 func (s *session) active(now time.Time) bool {
-	return !s.ended && (s.streams > 0 || (s.hls && now.Sub(s.lastActive) < idleTimeout))
+	if s.ended {
+		return false
+	}
+	// A box keeps its timeshift buffer while it is paused with its
+	// requests' holds (D92).
+	return s.streams > 0 || (s.hls && now.Sub(s.lastActive) < idleTimeout) ||
+		(s.shift != nil && now.Sub(s.lastActive) < reconnectGrace)
+}
+
+// holds reports whether s holds one of its source's connections: a player
+// plays it, or its timeshift buffer's tuner does (D92).
+func (s *session) holds(now time.Time) bool {
+	return s.active(now) || (!s.ended && s.shift != nil && s.shift.isTuning())
 }
 
 // sweep ends the sessions that stopped longer than reconnectGrace ago. It
@@ -540,6 +587,9 @@ func (h *Hub) end(s *session, reason string) {
 	s.cancel()
 	if s.release != nil {
 		s.release()
+	}
+	if s.shift != nil {
+		s.shift.close()
 	}
 	delete(h.sessions, s.nonce)
 	h.log.Info("stream ended", s.what(), s.channel, "source", h.source(s.sourceID).Name, "device", s.deviceID,
@@ -584,7 +634,7 @@ func (h *Hub) makeRoom(sourceID, deviceID int64, now time.Time) bool {
 	count := 0
 	var own *session
 	for _, o := range h.sessions {
-		if o.sourceID != sourceID || !o.active(now) {
+		if o.sourceID != sourceID || !o.holds(now) {
 			continue
 		}
 		count++
@@ -597,7 +647,7 @@ func (h *Hub) makeRoom(sourceID, deviceID int64, now time.Time) bool {
 		count--
 		own = nil
 		for _, o := range h.sessions {
-			if o.sourceID == sourceID && o.active(now) && o.deviceID == deviceID &&
+			if o.sourceID == sourceID && o.holds(now) && o.deviceID == deviceID &&
 				(own == nil || o.started.Before(own.started)) {
 				own = o
 			}
@@ -764,6 +814,14 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	continuous := !strings.HasSuffix(first, ".m3u8")
 	s := h.lookup(c.nonce)
+	if q := r.URL.Query(); q.Get("hold") != "" || q.Get("stop") != "" {
+		h.holdOrStop(w, s, q.Get("stop") != "")
+		return
+	}
+	if s != nil && s.shift != nil {
+		h.serveShift(w, r, s)
+		return
+	}
 	target := ""
 	if s != nil {
 		target = s.streamURL
@@ -820,10 +878,18 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				opening.release = res.Hold()
 			}
 		}
+		if c.shift && continuous {
+			opening.shift = h.openShift(r.Context(), c, entry.Name)
+		}
 		s, err = h.admit(c, opening)
-		if s != opening && opening.release != nil {
+		if s != opening {
 			// Refused, or another request opened the session first.
-			opening.release()
+			if opening.release != nil {
+				opening.release()
+			}
+			if opening.shift != nil {
+				opening.shift.close()
+			}
 		}
 		if err != nil {
 			src := h.source(entry.SourceID)
@@ -832,9 +898,37 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "the source has no free connection", http.StatusServiceUnavailable)
 			return
 		}
+		if s.shift != nil {
+			if s == opening {
+				h.tuners.Go(func() { h.tune(s) })
+			}
+			h.serveShift(w, r, s)
+			return
+		}
 		target = s.streamURL
 	}
 	h.proxy(w, r, s, target, continuous)
+}
+
+// holdOrStop answers ?hold=1 on a live link, which keeps its session while
+// its box is paused (D92), and ?stop=1, which ends it now.
+func (h *Hub) holdOrStop(w http.ResponseWriter, s *session, stop bool) {
+	if s == nil {
+		if stop {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.Error(w, "this stream has ended", http.StatusNotFound)
+		return
+	}
+	h.mu.Lock()
+	if stop {
+		h.end(s, "the box stopped it")
+	} else {
+		s.lastActive = h.now()
+	}
+	h.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // resourceIndex parses "r/<n>" with an optional extension after n.

@@ -10,6 +10,7 @@ Overscan keeps everything it needs in a few files:
 | `/var/lib/overscan/artwork/` | Copies of channel logos, which Overscan fetches again if they are lost. |
 | `/var/lib/overscan/check/` | The clips of the playback check (D70), which ffmpeg makes again if they are lost. |
 | `/var/lib/overscan/Recordings/` | The recordings that boxes made (D89), if recording is on. They are not in the database's backups: copy the folder apart to keep them. |
+| `/var/lib/overscan/timeshift/` | The timeshift buffers of what boxes watch (D92), while timeshift is on. Nothing to keep: the server empties it as it starts. |
 
 The paths are those of an installation with `install.sh`; `data_dir`, `key_file` and `recordings_dir` in the configuration can move them. The commands below are run as root, as in [`install-lxc.md`](install-lxc.md): put `sudo` in front of each where it is installed.
 

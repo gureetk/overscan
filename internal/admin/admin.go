@@ -127,6 +127,7 @@ func (a *Admin) Handler() http.Handler {
 	mux.Handle("POST /admin/settings/pin", a.page(a.pinForm))
 	mux.Handle("POST /admin/settings/adult", a.page(a.adultForm))
 	mux.Handle("POST /admin/settings/radio", a.page(a.radioForm))
+	mux.Handle("POST /admin/settings/timeshift", a.page(a.timeshiftForm))
 	mux.Handle("POST /admin/settings/tmdb", a.page(a.tmdbForm))
 	mux.Handle("POST /admin/settings/recordings", a.page(a.recordingsForm))
 	mux.Handle("POST /admin/recordings/{id}/{action}", a.page(a.recordingAction))

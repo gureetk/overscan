@@ -61,6 +61,8 @@ export interface Lineup {
 export interface PlayLink {
   url: string;
   solution: string;
+  /** For a channel that plays through a timeshift buffer, how many seconds of it the server keeps (D92). */
+  timeshift?: number;
 }
 
 /** A sound track of a stream that ffmpeg makes of a film (D68). */
@@ -362,6 +364,11 @@ function request<T>(method: string, path: string, token: string, body: object | 
 /** getFrom asks for JSON at an address on the server outside the API, such as a stream's start (D68). */
 export function getFrom<T>(url: string, done: Callback<T>): void {
   send<T>('GET', url, '', null, done);
+}
+
+/** touch asks for an address on the server and lets the answer go, such as a paused channel's hold (D92). */
+export function touch(url: string): void {
+  send<unknown>('GET', url, '', null, function () {});
 }
 
 /** send makes one request and passes its answer, parsed, to done. */

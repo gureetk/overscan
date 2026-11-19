@@ -18,19 +18,20 @@ Locked channels ask for the parental PIN ([D55](../../docs/decisions.md)). How f
 
 | Remote | What it does | Keyboard, in dev mode |
 | --- | --- | --- |
-| Arrows, OK | Move, choose. Playing a film: Left and Right go back 10 seconds and on 30, OK pauses and plays | Arrows, Enter |
+| Arrows, OK | Move, choose. Playing a film, or watching a channel paused or behind live: Left and Right go back 10 seconds and on 30; OK pauses and plays a film | Arrows, Enter |
 | Back | Go back; in search, delete a letter | Backspace |
 | Exit, Menu | Go to Home | Esc; Home for Menu |
 | Channel +/−, Page up/down | Change channel while watching; page through a list. Playing a film: on or back 5 minutes | Tab and Shift+Tab, Page Up and Page Down |
 | 0–9 | Go to a channel by its number | Digits |
 | Red | Add the channel to the favourites, or remove it | F1 |
-| Green | Kept for catch-up | F2 |
+| Green | Guide: record a programme, or call the recording off. Watching, while the server keeps live TV: pause, and play on | F2 |
 | Yellow | Live TV: sort by name or number. Movies and Series: sort a shelf by name or by date added. Watching, or playing a film: the sound track. Guide: the group | F3 |
 | Blue | Search; while watching, the guide | F4 |
 | Info | Show or hide the banner while watching, or the panel while a film plays | Alt+Y |
 | Guide, TV | The guide; Live TV, or the channel that plays | F8, F10 |
 | Volume, Mute | Volume, mute | + and − on the number pad, Alt+` |
-| Stop | Stop playing; a film stops and the page goes back to where it was chosen | Alt+S |
+| Stop | Stop playing; a film stops and the page goes back to where it was chosen. Watching a channel paused or behind live: back to live | Alt+S |
+| Play/Pause, Rewind, Fast-forward | Watching, while the server keeps live TV: pause and play on; back and on a minute | Pause or Alt+R; Alt+B, Alt+F |
 
 ## Building
 

@@ -308,6 +308,10 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	timeshift, err := a.store.Timeshift(ctx)
+	if err != nil {
+		return "", err
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "Channels: %s, %s shown, %s missing from their source\n", count(len(entries)), count(shown), count(missing))
 	fmt.Fprintf(&b, "Edited: %d numbers pinned, %d renamed, %d moved to another group\n", pinned, renamed, moved)
@@ -319,6 +323,7 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 	fmt.Fprintf(&b, "Recordings: room: %d GB (0 is off); the server records: %v; to come: %d, under way: %d, made: %d, failed: %d, called off: %d\n",
 		recordingsCap, a.recorder != nil, recordings[store.RecordingScheduled], recordings[store.RecordingRecording],
 		recordings[store.RecordingDone], recordings[store.RecordingFailed], recordings[store.RecordingCancelled])
+	fmt.Fprintf(&b, "Timeshift: keeps %d minutes of a box's channel (0 is off)\n", timeshift)
 	fmt.Fprintf(&b, "Stream repair: every channel by default: %v; HLS too: %v; %d channels set to be repaired, %d set not to be; %s repaired in all\n",
 		repairDefault, repairHLS, repairOn, repairOff, count(repaired))
 	fmt.Fprintf(&b, "\nGroups: %d\n", len(groups))
