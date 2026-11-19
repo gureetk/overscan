@@ -52,12 +52,22 @@ func TestTitleLocksAndAdultMarks(t *testing.T) {
 		return out
 	}
 
-	// Marks do nothing until the setting says what.
+	// Marks lock what they mark until the setting says otherwise.
+	if marks, err := s.AdultMarks(ctx); err != nil || marks != AdultLock {
+		t.Errorf("marks %q, %v", marks, err)
+	}
+	if got := all(); len(got) != 2 || !got["Around 100% of_it"] || !got["count"] {
+		t.Errorf("at first: %v", got)
+	}
+	// The administrator's own locks, with marks that do nothing.
+	if err := s.SetAdultMarks(ctx, AdultNothing); err != nil {
+		t.Fatal(err)
+	}
 	if marks, err := s.AdultMarks(ctx); err != nil || marks != AdultNothing {
 		t.Errorf("marks %q, %v", marks, err)
 	}
 	if got := all(); len(got) != 1 || !got["count"] {
-		t.Errorf("at first: %v", got)
+		t.Errorf("marks that do nothing: %v", got)
 	}
 
 	// The administrator locks a title, then a shelf.
@@ -163,8 +173,15 @@ func TestChannelAdultMarks(t *testing.T) {
 		}
 		return out
 	}
-	if got := lineup(); len(got) != 2 || got["X-ray"] {
+	// Marks lock at first.
+	if got := lineup(); len(got) != 2 || !got["X-ray"] || got["Alpha"] {
 		t.Errorf("at first: %v", got)
+	}
+	if err := s.SetAdultMarks(ctx, AdultNothing); err != nil {
+		t.Fatal(err)
+	}
+	if got := lineup(); len(got) != 2 || got["X-ray"] {
+		t.Errorf("marks that do nothing: %v", got)
 	}
 	if err := s.SetAdultMarks(ctx, AdultLock); err != nil {
 		t.Fatal(err)

@@ -2417,8 +2417,8 @@ components:
                 enum: [nothing, lock, hide]
                 description: >-
                   What the marks that sources put on channels, films and series
-                  for adults do (D86): nothing, at first; lock them, as if the
-                  administrator had; or hide them from every device.
+                  for adults do (D86, D91): lock them, as if the administrator
+                  had, at first; nothing; or hide them from every device.
               radio_apart:
                 type: boolean
                 description: >-

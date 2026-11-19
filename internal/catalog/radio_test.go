@@ -65,3 +65,26 @@ func TestChannelRadio(t *testing.T) {
 		t.Error("a channel without the attribute is a radio station")
 	}
 }
+
+// A playlist marks a channel for adults with adult="1" or "true", in any
+// case, or with any parent-code (D86).
+func TestChannelAdult(t *testing.T) {
+	for _, tc := range []struct {
+		attrs map[string]string
+		want  bool
+	}{
+		{map[string]string{"adult": "1"}, true},
+		{map[string]string{"adult": " TRUE "}, true},
+		{map[string]string{"adult": "0"}, false},
+		{map[string]string{"adult": "no"}, false},
+		{map[string]string{"parent-code": "0000"}, true},
+		{map[string]string{"parent-code": " "}, false},
+		{map[string]string{"adult": "0", "parent-code": "1234"}, true},
+		{map[string]string{}, false},
+	} {
+		e := m3u.Entry{Title: "Example Late", URL: "http://streams.example/9.ts", Attrs: tc.attrs}
+		if got := channel(e, nil, "k", 0).Adult; got != tc.want {
+			t.Errorf("%v: %v, want %v", tc.attrs, got, tc.want)
+		}
+	}
+}
