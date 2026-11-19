@@ -110,7 +110,7 @@
       <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
       <div>
         <label for="adult">Marked for adults</label>
-        <p id="adult-text">{{if eq .Data.Adult "lock"}}Channels, films and series that their sources mark for adults are locked{{if not .Data.PINSet}}, once there is a PIN{{end}}: boxes ask for the PIN, and Stalker clients do not see them.{{else if eq .Data.Adult "hide"}}Channels, films and series that their sources mark for adults are hidden from every device.{{else}}Off: channels, films and series that their sources mark for adults are like any other. Some Xtream servers and Stalker portals mark them.{{end}}</p>
+        <p id="adult-text">{{if eq .Data.Adult "lock"}}Channels, films and series that their sources mark for adults are locked{{if not .Data.PINSet}}, once there is a PIN{{end}}: boxes ask for the PIN, and Stalker clients do not see them.{{else if eq .Data.Adult "hide"}}Channels, films and series that their sources mark for adults are hidden from every device.{{else}}Off: channels, films and series that their sources mark for adults are like any other. Some Xtream servers, Stalker portals and playlists mark them.{{end}}</p>
         <noscript><button class="small" type="submit">Save</button></noscript>
       </div>
       <select id="adult" name="adult" aria-describedby="adult-text">

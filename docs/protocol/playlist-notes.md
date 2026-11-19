@@ -15,3 +15,10 @@ What Overscan reads from an M3U playlist's channels beyond their names, groups, 
 - The value is `true` in any case; any other value, or none, is a channel. **Documented** [2].
 - [2] lists the attributes of the `#EXTM3U` line, and `radio` is not among them, so Overscan reads it on a channel's line alone. **Documented** [2].
 - Overscan keeps the mark, and the box plays such a channel on its *Radio* screen (D87).
+
+## 2. Marks for adults
+
+- `adult` and `parent-code` on a channel's `#EXTINF` line mark a channel as restricted, for adults, so that a player can keep it behind a PIN. **Documented** [1].
+- [1] gives neither attribute's values. Overscan takes `adult` set to `1` or `true`, in any case, or a `parent-code` that is not empty, as the mark. **Assumed.**
+- Overscan never takes a playlist's `parent-code` as a PIN: boxes ask for the household's own parental PIN (D55).
+- Overscan keeps the mark, which *Settings* → *Marked for adults* makes lock the channel (where it starts), hide it, or do nothing (D86, D91).

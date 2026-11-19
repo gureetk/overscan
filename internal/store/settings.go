@@ -38,8 +38,8 @@ const (
 	settingServerTranscodes = "server_transcodes"
 
 	// settingAdultMarks is what the marks that sources put on channels and
-	// titles for adults do: AdultLock or AdultHide; nothing until it is set
-	// (D86).
+	// titles for adults do: AdultNothing or AdultHide; AdultLock until it
+	// is set (D86).
 	settingAdultMarks = "adult_marks"
 
 	// settingRadioApart is "1" if the box shows radio stations on its
@@ -57,7 +57,7 @@ const (
 
 // adultMarksSQL is what marks for adults do, as SQL: AdultNothing, AdultLock
 // or AdultHide.
-const adultMarksSQL = `COALESCE((SELECT value FROM settings WHERE key = '` + settingAdultMarks + `'), '` + AdultNothing + `')`
+const adultMarksSQL = `COALESCE((SELECT value FROM settings WHERE key = '` + settingAdultMarks + `'), '` + AdultLock + `')`
 
 // MaxTranscodes is the most films and episodes whose video the server may
 // be set to transcode at once (D73).
@@ -173,11 +173,13 @@ func (s *Store) SetServerTranscodes(ctx context.Context, on bool) error {
 }
 
 // AdultMarks returns what the marks that sources put on channels and titles
-// for adults do: AdultNothing until it is set, AdultLock or AdultHide (D86).
+// for adults do: AdultLock until it is set, AdultNothing or AdultHide (D86).
 func (s *Store) AdultMarks(ctx context.Context) (string, error) {
 	v, _, err := s.setting(ctx, settingAdultMarks)
-	if v != AdultLock && v != AdultHide {
-		v = AdultNothing
+	switch v {
+	case AdultNothing, AdultLock, AdultHide:
+	default:
+		v = AdultLock
 	}
 	return v, err
 }

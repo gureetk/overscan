@@ -871,6 +871,7 @@ func channel(e m3u.Entry, header map[string]string, key string, i int) store.Cat
 		StreamURL:   e.URL,
 		// radio="true" marks a radio station (playlist notes, D87).
 		Radio: strings.EqualFold(strings.TrimSpace(e.Attrs["radio"]), "true"),
+		Adult: playlistAdult(e.Attrs),
 	}
 	if n, err := strconv.Atoi(e.Attrs["tvg-chno"]); err == nil && n > 0 && n < 100_000 {
 		c.Number = n
@@ -883,6 +884,17 @@ func channel(e m3u.Entry, header map[string]string, key string, i int) store.Cat
 		c.ArchiveDays = min(days, maxArchiveDays)
 	}
 	return c
+}
+
+// playlistAdult reports whether a playlist's attributes mark a channel for
+// adults: adult="1" or "true", in any case, or any parent-code (playlist
+// notes, D86).
+func playlistAdult(attrs map[string]string) bool {
+	switch strings.ToLower(strings.TrimSpace(attrs["adult"])) {
+	case "1", "true":
+		return true
+	}
+	return strings.TrimSpace(attrs["parent-code"]) != ""
 }
 
 // logo returns s if it is an http or https address that is not too long,

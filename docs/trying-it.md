@@ -85,7 +85,7 @@ If a channel shows a black screen, try another, and note what the server log say
 
 On the admin's *Live TV* page, lock a group from its header, or tick channels and choose *Lock*, then set a PIN of 4 to 8 digits on the *Settings* page. The box then asks for the PIN before it plays a locked channel, and keeps it for 10 minutes; five wrong PINs make it wait five minutes. Stalker clients do not see locked channels at all. Without a PIN, locks do nothing (D55).
 
-Films and series are locked the same way, on the *Movies* and *Series* pages: a shelf from its header, or ticked titles. On the box, a locked title shows a lock and no picture; opening it asks for the PIN first (D85). Some Xtream servers and Stalker portals mark channels and films for adults; *Settings* → *Marked for adults* chooses whether such marks lock them, hide them, or do nothing, which is where it starts (D86).
+Films and series are locked the same way, on the *Movies* and *Series* pages: a shelf from its header, or ticked titles. On the box, a locked title shows a lock and no picture; opening it asks for the PIN first (D85). Some Xtream servers, Stalker portals and playlists mark channels and films for adults; *Settings* → *Marked for adults* chooses whether such marks lock them, which is where it starts, hide them, or do nothing (D86, D91).
 
 ### Stream repair
 

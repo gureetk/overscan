@@ -239,7 +239,7 @@ func TestLibraryLocks(t *testing.T) {
 	mustContain(t, "a shelf unlocked", rec.Body.String(), "Unlocked Drama.", "Lock the shelf")
 	page := ta.do("GET", "/admin/settings", nil, c).Body.String()
 	mustContain(t, "the settings", page, "Not set, so the 1 lock does nothing yet.", "Marked for adults",
-		`<option value="nothing" selected>`)
+		`<option value="lock" selected>`)
 
 	// The API.
 	var sh apiShelf
