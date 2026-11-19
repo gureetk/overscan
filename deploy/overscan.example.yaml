@@ -1,0 +1,134 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Example configuration, spelling out the defaults. Copy it to
+# /etc/overscan/overscan.yaml and change what you need.
+#
+# Each setting can also come from an environment variable, which wins over
+# this file: OVERSCAN_LISTEN, OVERSCAN_ADMIN_LISTEN, OVERSCAN_DATA_DIR,
+# OVERSCAN_KEY_FILE, OVERSCAN_LOG_LEVEL, OVERSCAN_LOG_FORMAT and
+# OVERSCAN_FFMPEG.
+
+# Address of the device-facing HTTP server, which boxes and players use.
+listen: ":8080"
+
+# The admin is at /admin/ on the address above. To give it an address of its
+# own, which then serves it alone, set one here, such as 127.0.0.1:8081 for
+# the server itself only.
+# admin_listen: "127.0.0.1:8081"
+
+# Where Overscan keeps its database and the other files it writes.
+data_dir: /var/lib/overscan
+
+# The key that encrypts the addresses in the database that can hold a
+# source's credentials (D46). Overscan makes it at its first start, readable
+# by its owner only: secret.key in data_dir, unless an absolute path is set
+# here. Keep a copy of it apart from the database's backups. The service can
+# write only in /var/lib/overscan, so a key file elsewhere must be put in
+# place before it starts.
+# key_file: /var/lib/overscan/secret.key
+
+log:
+  # debug, info, warn or error.
+  level: info
+  # text or json.
+  format: text
+
+# The ffmpeg program that repairs the streams of channels set to be repaired
+# in the admin (D57), and converts the sound of films and episodes that a box
+# cannot play (D68): a name to look for in PATH, or an absolute path. The
+# ffprobe beside it, or else in PATH, reads what films' files hold. Any ffmpeg
+# from the last few years will do; install.sh installs the distribution's.
+# "off" turns repair and conversion off.
+ffmpeg: ffmpeg
+
+# Sources of channels are added and changed in the admin, which keeps their
+# addresses encrypted (D46). A source declared here is imported into the
+# database at the next start, once, by name; from then on the admin manages
+# it, Overscan ignores its entry here, and the entry can be deleted, which
+# takes its address out of this file. Until then, keep this file readable
+# only by root and the user Overscan runs as, since a source address often
+# holds an account's credentials. To use the example, remove the "# " before
+# each line.
+#
+# sources:
+#   # A name for the source: lower-case letters, digits, hyphens and
+#   # underscores. A source that an earlier version read under this name
+#   # keeps its channels and their numbers.
+#   - name: main
+#     # m3u for a playlist; xtream for a server read through its API, as
+#     # in the second example; stalker for a Stalker portal, as in the
+#     # third; jellyfin for a Jellyfin server's films and series, as in the
+#     # fourth; plex for a Plex server's, as in the fifth; folder for a
+#     # folder of films and series on this server, as in the sixth.
+#     type: m3u
+#     # An http or https address, or the absolute path of a file.
+#     url: http://provider.example/get.php?username=USER&password=PASS&type=m3u_plus
+#     # How often to read the source again: at least 15m, 6h if not set.
+#     refresh: 6h
+#     # How many streams the source allows at once: 1 if not set, 0 for no
+#     # limit.
+#     max_connections: 1
+#     # The user agent to fetch the playlist with, for a provider that
+#     # expects a particular player. Optional.
+#     # user_agent: SomePlayer/1.0
+#     # How the channels are numbered: playlist, the default, numbers them
+#     # 1, 2, 3 and so on in the playlist's order; provider uses the numbers
+#     # the playlist gives them (tvg-chno), where it gives any. Changing it
+#     # numbers the source's channels again.
+#     numbers: playlist
+#
+#   # A server that answers the Xtream API (D50). Its address is only the
+#   # server's, without a page; the login has its own fields. Overscan asks
+#   # the server for the account's limit of streams, and keeps to the lower
+#   # of that and max_connections. The other settings are as above.
+#   - name: server
+#     type: xtream
+#     url: http://provider.example:8080
+#     username: USER
+#     password: PASS
+#
+#   # A Stalker portal (D76), read as the box that the provider registered
+#   # for your subscription: the portal's address as the provider gave it,
+#   # and the box's MAC address. Overscan signs in with that box only. The
+#   # box's other details and a login are needed only if the provider
+#   # checks them. A box usually plays one stream at a time, so
+#   # max_connections is 1 if not set. The other settings are as above.
+#   - name: portal
+#     type: stalker
+#     url: http://portal.example/c/
+#     mac: 00:1A:79:12:34:56
+#     # serial: SERIAL
+#     # device_id: DEVICE_ID
+#     # device_id2: DEVICE_ID2
+#     # signature: SIGNATURE
+#     # model: MAG250
+#     # username: LOGIN
+#     # password: PASS
+#
+#   # A Jellyfin server (D66), for its films and series; it has no channels.
+#   # The API key comes from Jellyfin's dashboard, under API Keys. Boxes see
+#   # the libraries that user sees, or every library if user is left out.
+#   # refresh is how often Overscan checks that the server answers;
+#   # max_connections is no limit if not set; numbers does not apply.
+#   - name: den
+#     type: jellyfin
+#     url: http://jellyfin.example:8096
+#     api_key: KEY
+#     user: anna
+#
+#   # A Plex Media Server (D72), for its films and series; it has no
+#   # channels. token is the X-Plex-Token of a Plex account that sees the
+#   # libraries; boxes see what that account sees. refresh is how often
+#   # Overscan checks that the server answers; max_connections is no limit
+#   # if not set; numbers does not apply.
+#   - name: lounge
+#     type: plex
+#     url: http://plex.example:32400
+#     token: TOKEN
+#
+#   # A folder of films and series on this server (D67), which the service
+#   # must be able to read (docs/library-folders.md). url is its absolute
+#   # path; max_connections is no limit if not set; numbers does not apply.
+#   - name: films
+#     type: folder
+#     url: /srv/media/films

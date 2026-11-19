@@ -1,0 +1,27 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Overscan probe</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; background: #0f1424; color: #f5f3ec; font-family: sans-serif; font-size: 20px; }
+  #page { padding: 32px 48px; }
+  h1 { margin: 0 0 8px; font-size: 32px; color: #3dd9c1; }
+  #status { margin: 0 0 20px; font-size: 24px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 4px 16px 4px 0; text-align: left; vertical-align: top; }
+  th { width: 18%; font-weight: normal; color: #9aa3b8; }
+  td { word-wrap: break-word; }
+</style>
+</head>
+<body>
+<div id="page">
+  <h1>Overscan probe</h1>
+  <p id="status">Running tests...</p>
+  <table id="summary"></table>
+</div>
+<script src="probe.js"></script>
+</body>
+</html>

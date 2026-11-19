@@ -1,0 +1,129 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A newer push to the same branch cancels the run it replaces, to save minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0 # the sign-off check reads every commit in the pull request
+          persist-credentials: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      - name: Formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "Run gofmt on:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: Module files are tidy
+        run: go mod tidy -diff
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Install ffmpeg for the stream repair tests
+        run: |
+          if ! command -v ffmpeg >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq --no-install-recommends ffmpeg >/dev/null
+          fi
+          ffmpeg -hide_banner -version | head -n 1
+
+      - name: Test
+        run: go test -race ./...
+
+      - name: Licence headers
+        run: tools/check-spdx.sh
+
+      - name: ES5 syntax in browser scripts
+        run: tools/check-es5.sh
+
+      - name: Sign-offs
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: tools/check-dco.sh "$BASE_SHA" "$HEAD_SHA"
+
+      - name: Known vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      - name: Lay out an archive's files
+        run: |
+          mkdir -p "$RUNNER_TEMP/image"
+          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=ci" -o "$RUNNER_TEMP/image/overscan" ./cmd/overscan
+          cp deploy/docker/Dockerfile deploy/docker/compose.yaml "$RUNNER_TEMP/image/"
+
+      - name: Build and check the image
+        run: tools/check-image.sh "$RUNNER_TEMP/image"
+
+  mag-page:
+    name: MAG page
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web/mag
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/mag/package-lock.json
+
+      - name: Install the toolchain
+        run: npm ci --ignore-scripts
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: The committed build matches the sources
+        run: |
+          if [ -n "$(git status --porcelain -- dist)" ]; then
+            git status --short -- dist
+            echo "::error::web/mag/dist does not match the sources: run npm run build in web/mag and commit dist"
+            exit 1
+          fi
+
+      - name: Lint the build
+        run: npm run lint

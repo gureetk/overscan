@@ -1,0 +1,335 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+// Home: Simple, six big buttons on a plain background, or With a Picture, a
+// picture behind the last channel watched, smaller buttons and the
+// favourite channels (D52). The box's settings choose.
+
+import type { Channel } from '../api';
+import { el, Logo, setClass, setText, setWidth, show } from '../dom';
+import { icon } from '../icons';
+import type { Press } from '../keys';
+import { label } from '../player';
+import { pictureURL } from '../settings';
+import { clock, now, progress } from '../time';
+import { Clock, type Ctx, Footer, type Screen, type VideoArea } from './screen';
+
+interface Tile {
+  name: string;
+  icon: string;
+  line: string;
+  open: () => void;
+}
+
+/** How many favourite channels With a Picture shows. */
+const favouriteCards = 5;
+
+export class HomeScreen implements Screen {
+  el: HTMLElement;
+  tunes = true;
+  private ctx: Ctx;
+  private tiles: Tile[];
+  private focusTile = 0;
+  /** With a Picture: 0 the buttons, 1 the favourites. */
+  private focusRow = 0;
+  private focusFav = 0;
+
+  private simple: HTMLElement;
+  private bigTiles: { box: HTMLElement; line: HTMLElement }[] = [];
+  private footer: Footer;
+
+  private picture: HTMLElement;
+  private pictureImage: HTMLElement;
+  private pictureName = '';
+  private last: { label: HTMLElement; logo: Logo; channel: HTMLElement; title: HTMLElement; when: HTMLElement; bar: HTMLElement; barBox: HTMLElement; next: HTMLElement };
+  private smallTiles: HTMLElement[] = [];
+  private favTitle: HTMLElement;
+  private favCards: { box: HTMLElement; logo: Logo; bar: HTMLElement }[] = [];
+  private clocks: Clock[] = [];
+
+  constructor(parent: HTMLElement, ctx: Ctx) {
+    this.ctx = ctx;
+    this.el = el('div', 'screen home', parent);
+    this.tiles = [
+      { name: 'Live TV', icon: 'tv', line: '', open: () => ctx.go('live') },
+      { name: 'TV Guide', icon: 'guide', line: "What's on now and later", open: () => ctx.go('guide') },
+      { name: 'Movies', icon: 'movies', line: 'Films from your sources', open: () => ctx.go('movies') },
+      { name: 'Series', icon: 'series', line: 'Series from your sources', open: () => ctx.go('series') },
+      { name: 'Search', icon: 'search', line: 'Channels, programmes and films', open: () => ctx.go('search') },
+      { name: 'Settings', icon: 'settings', line: 'This box, appearance, about', open: () => ctx.go('settings') },
+    ];
+
+    // Simple.
+    this.simple = el('div', 'simple', this.el);
+    this.header(this.simple);
+    const grid = el('div', 'big-tiles', this.simple);
+    for (let i = 0; i < this.tiles.length; i++) {
+      const t = this.tiles[i]!;
+      const box = el('div', 'big-tile', grid);
+      el('div', 'tile-icon', box).innerHTML = icon(t.icon, 44, 1.6);
+      const text = el('div', 'tile-text', box);
+      el('div', 'tile-name', text, t.name);
+      const line = el('div', 'tile-line', text, t.line);
+      this.bigTiles.push({ box: box, line: line });
+    }
+    this.footer = new Footer(this.simple);
+
+    // With a Picture.
+    this.picture = el('div', 'with-picture', this.el);
+    this.pictureImage = el('div', 'picture', this.picture);
+    el('div', 'shade-left', this.picture);
+    el('div', 'shade-down', this.picture);
+    this.header(this.picture);
+    const lastBox = el('div', 'last', this.picture);
+    const top = el('div', 'last-top', lastBox);
+    const lastLabel = el('span', 'last-label', top, 'LAST WATCHED');
+    el('span', 'rule', top);
+    const lastLogo = new Logo('last-logo', top);
+    const lastChannel = el('span', 'last-channel', top);
+    const lastTitle = el('div', 'last-title', lastBox);
+    const when = el('div', 'last-when', lastBox);
+    el('span', 'live-dot', when);
+    const whenText = el('span', '', when);
+    const nextRow = el('div', 'last-next', lastBox);
+    const barBox = el('span', 'bar', nextRow);
+    const bar = el('span', 'fill acc', barBox);
+    const next = el('span', '', nextRow);
+    this.last = { label: lastLabel, logo: lastLogo, channel: lastChannel, title: lastTitle, when: whenText, bar: bar, barBox: barBox, next: next };
+
+    const row = el('div', 'small-tiles', this.picture);
+    for (let i = 0; i < this.tiles.length; i++) {
+      const t = this.tiles[i]!;
+      const box = el('div', 'small-tile', row);
+      el('div', 'tile-face', box).innerHTML = icon(t.icon, 28, 1.7);
+      el('div', 'tile-name', box, t.name);
+      this.smallTiles.push(box);
+    }
+    this.favTitle = el('div', 'fav-title', this.picture, 'Favourite Channels');
+    const favRow = el('div', 'fav-row', this.picture);
+    for (let i = 0; i < favouriteCards; i++) {
+      const box = el('div', 'fav-card', favRow);
+      const logo = new Logo('fav-logo', box);
+      const barBox2 = el('span', 'bar', box);
+      this.favCards.push({ box: box, logo: logo, bar: el('span', 'fill acc', barBox2) });
+    }
+  }
+
+  private header(parent: HTMLElement): void {
+    const head = el('div', 'head', parent);
+    const brand = el('div', 'brand', head);
+    el('span', 'mark', brand);
+    el('span', 'word', brand, 'Overscan');
+    this.clocks.push(new Clock(head, true));
+  }
+
+  private withPicture(): boolean {
+    return this.ctx.settings.current.home === 'picture';
+  }
+
+  enter(): void {
+    this.focusRow = 0;
+    this.render();
+    this.wantGuide();
+  }
+
+  leave(): void {}
+
+  private wantGuide(): void {
+    const self = this;
+    const ids: number[] = [];
+    const last = this.ctx.lineup.lastWatched();
+    if (last) {
+      ids.push(last.id);
+    }
+    const favs = this.ctx.lineup.favouriteChannels();
+    for (let i = 0; i < favs.length && i < favouriteCards; i++) {
+      ids.push(favs[i]!.id);
+    }
+    if (ids.length) {
+      this.ctx.guide.wantNow(ids, function () {
+        self.render();
+      });
+    }
+  }
+
+  render(): void {
+    const picture = this.withPicture();
+    show(this.simple, !picture);
+    show(this.picture, picture);
+    const last = this.ctx.lineup.lastWatched();
+    const count = this.ctx.lineup.channels.length;
+    this.tiles[0]!.line = last ? 'Last watched: ' + label(last) : count + (count === 1 ? ' channel' : ' channels');
+    if (picture) {
+      this.renderPicture(last);
+    } else {
+      for (let i = 0; i < this.bigTiles.length; i++) {
+        const t = this.bigTiles[i]!;
+        setClass(t.box, 'big-tile' + (i === this.focusTile ? ' focus' : ''));
+        setText(t.line, this.tiles[i]!.line);
+      }
+      this.footer.set(
+        [
+          { key: 'OK', text: 'Open' },
+          { key: 'lrud', text: 'Move' },
+          { key: '0–9', text: 'Go to channel' },
+        ],
+        [],
+      );
+      this.footer.setRightText(this.ctx.server.label);
+    }
+  }
+
+  private renderPicture(last: Channel | null): void {
+    const name = this.ctx.settings.current.picture;
+    if (name !== this.pictureName) {
+      this.pictureName = name;
+      this.pictureImage.style.backgroundImage = 'url("' + pictureURL(name) + '")';
+    }
+    const t = now();
+    const l = this.last;
+    if (last) {
+      setText(l.label, 'LAST WATCHED');
+      l.logo.set(last.logo || '', last.name);
+      show(l.logo.el, true);
+      setText(l.channel, last.number + ' · ' + last.name);
+      const p = this.ctx.guide.at(last.id, t);
+      const next = this.ctx.guide.after(last.id, p ? p.stop : t);
+      setText(l.title, p ? p.title : last.name);
+      setText(l.when, p ? 'On now, until ' + clock(p.stop) : 'Press OK on Live TV to watch it again');
+      show(l.barBox, !!p);
+      if (p) {
+        setWidth(l.bar, progress(p.start, p.stop, t));
+      }
+      setText(l.next, next ? 'Next: ' + next.title : '');
+    } else {
+      const count = this.ctx.lineup.channels.length;
+      setText(l.label, 'WELCOME');
+      show(l.logo.el, false);
+      setText(l.channel, this.ctx.server.label);
+      setText(l.title, count + (count === 1 ? ' channel to watch' : ' channels to watch'));
+      setText(l.when, 'Open Live TV to start');
+      show(l.barBox, false);
+      setText(l.next, '');
+    }
+    for (let i = 0; i < this.smallTiles.length; i++) {
+      setClass(this.smallTiles[i]!, 'small-tile' + (this.focusRow === 0 && i === this.focusTile ? ' focus' : ''));
+    }
+    const favs = this.ctx.lineup.favouriteChannels();
+    show(this.favTitle, favs.length > 0);
+    if (this.focusFav >= Math.min(favs.length, favouriteCards)) {
+      this.focusFav = 0;
+    }
+    for (let i = 0; i < this.favCards.length; i++) {
+      const card = this.favCards[i]!;
+      const c = favs[i];
+      if (!c) {
+        show(card.box, false);
+        continue;
+      }
+      show(card.box, true);
+      setClass(card.box, 'fav-card' + (this.focusRow === 1 && i === this.focusFav ? ' focus' : ''));
+      card.logo.set(c.logo || '', c.name);
+      const p = this.ctx.guide.at(c.id, t);
+      setWidth(card.bar, p ? progress(p.start, p.stop, t) : 0);
+    }
+  }
+
+  key(p: Press): boolean {
+    const n = this.tiles.length;
+    if (!this.withPicture()) {
+      switch (p.key) {
+        case 'left':
+          this.focusTile = (this.focusTile + n - 1) % n;
+          break;
+        case 'right':
+          this.focusTile = (this.focusTile + 1) % n;
+          break;
+        case 'up':
+        case 'down':
+          this.focusTile = (this.focusTile + 3) % n;
+          break;
+        case 'ok':
+          this.tiles[this.focusTile]!.open();
+          return true;
+        default:
+          return false;
+      }
+      this.render();
+      return true;
+    }
+    const favs = Math.min(this.ctx.lineup.favouriteChannels().length, favouriteCards);
+    switch (p.key) {
+      case 'left':
+        if (this.focusRow === 0) {
+          this.focusTile = (this.focusTile + n - 1) % n;
+        } else {
+          this.focusFav = (this.focusFav + favs - 1) % favs;
+        }
+        break;
+      case 'right':
+        if (this.focusRow === 0) {
+          this.focusTile = (this.focusTile + 1) % n;
+        } else {
+          this.focusFav = (this.focusFav + 1) % favs;
+        }
+        break;
+      case 'down':
+        if (favs > 0) {
+          this.focusRow = 1;
+        }
+        break;
+      case 'up':
+        this.focusRow = 0;
+        break;
+      case 'ok':
+        if (this.focusRow === 0) {
+          this.tiles[this.focusTile]!.open();
+        } else {
+          const list = this.ctx.lineup.favouriteChannels();
+          const c = list[this.focusFav];
+          if (c) {
+            this.ctx.watch(c, list, true, 'fav');
+          }
+        }
+        return true;
+      case 'red':
+        if (this.focusRow === 1) {
+          const c = this.ctx.lineup.favouriteChannels()[this.focusFav];
+          if (c) {
+            this.ctx.toggleFavourite(c);
+          }
+          return true;
+        }
+        return false;
+      default:
+        return false;
+    }
+    this.render();
+    return true;
+  }
+
+  tick(): void {
+    for (let i = 0; i < this.clocks.length; i++) {
+      this.clocks[i]!.tick();
+    }
+    if (this.withPicture()) {
+      this.wantGuide();
+      this.render();
+    }
+  }
+
+  lineupChanged(): void {
+    this.render();
+    this.wantGuide();
+  }
+
+  playback(): void {}
+
+  video(): VideoArea {
+    return 'none';
+  }
+
+  /** favouritesChanged redraws the favourites, after one is added or removed. */
+  favouritesChanged(): void {
+    this.render();
+  }
+}

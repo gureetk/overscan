@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# systemd unit for Overscan. install.sh puts it in /etc/systemd/system/.
+#
+# The sandboxing settings need mount namespaces. In an unprivileged Proxmox
+# container that means the "nesting" feature, which new containers have by
+# default; without it the service fails with status 226/NAMESPACE.
+
+[Unit]
+Description=Overscan portal server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=overscan
+Group=overscan
+ExecStart=/usr/local/bin/overscan -config /etc/overscan/overscan.yaml
+Restart=on-failure
+RestartSec=5s
+
+# /var/lib/overscan, owned by the service user and private to it.
+StateDirectory=overscan
+StateDirectoryMode=0700
+UMask=0077
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

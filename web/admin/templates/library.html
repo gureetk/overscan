@@ -1,0 +1,151 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+{{define "content"}}
+<div class="page-head">
+  <div>
+    <h1>{{.Data.Heading}}</h1>
+    <p class="lead">What devices see of the {{if eq .Data.Noun "film"}}films{{else}}series{{end}} of your sources: their shelves, in their order, and what is hidden. Changes here stay when sources are read again.</p>
+  </div>
+  <p class="hint"><strong>{{count .Data.Shown}}</strong> of {{.Data.Count .Data.All}} shown</p>
+</div>
+<div id="library-main">
+{{template "alerts" .}}
+<div class="lineup library">
+  <aside class="card groups-panel" aria-labelledby="shelves-title">
+    <div class="groups-head">
+      <h2 id="shelves-title">Shelves</h2>
+      {{- if .Data.Ordered}}
+      <form method="post" action="{{.Data.View.Path}}/order/reset" hx-post="{{.Data.View.Path}}/order/reset" hx-target="#library-main" hx-select="#library-main" hx-swap="outerHTML" hx-confirm="Put every shelf back in its sources' order?">
+        <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+        <input type="hidden" name="back" value="{{.Data.View.Back}}">
+        <button type="submit" class="small quiet" title="Every shelf back in its sources' order">Sources' order</button>
+      </form>
+      {{- end}}
+    </div>
+    <input type="search" class="group-filter" placeholder="Filter the shelves" aria-label="Filter the shelves" data-filter="#shelf-list" data-js-only hidden>
+    <nav id="shelf-list" class="group-list" aria-label="Shelves">
+      <a href="{{.Data.View.ShelfURL 0}}"{{if not .Data.View.Shelf}} aria-current="page"{{end}} class="all"><span class="g-name">All {{if eq .Data.Noun "film"}}films{{else}}series{{end}}</span><span class="g-count">{{count .Data.All}}</span></a>
+      {{- range .Data.Shelves}}
+      <a href="{{$.Data.View.ShelfURL .ID}}"{{if $.Data.View.IsShelf .ID}} aria-current="page"{{end}}{{if .Hidden}} class="is-hidden"{{end}} data-name="{{.Name}}">
+        <span class="g-name">{{.Name}}</span>
+        {{- if .Hidden}}<span class="g-mark" title="Hidden from devices">{{template "i-eye-off"}}<span class="sr">hidden</span></span>{{else}}<span class="g-count" title="{{if .Portal}}Read so far from the portal{{else}}{{sub .Titles .HiddenTitles}} of {{.Titles}} shown{{end}}">{{if .Portal}}{{.Titles}}{{if ge .Total 0}}/{{.Total}}{{end}}{{else}}{{sub .Titles .HiddenTitles}}{{if .HiddenTitles}}/{{.Titles}}{{end}}{{end}}</span>{{end}}
+      </a>
+      {{- else}}
+      <p class="empty">No shelves yet. They appear when a device first asks for {{if eq .Data.Noun "film"}}films{{else}}series{{end}}, and Overscan reads its sources.</p>
+      {{- end}}
+    </nav>
+  </aside>
+
+  <section class="card channels-panel" aria-labelledby="titles-title">
+    <form method="get" action="{{.Data.View.Path}}" class="group-pick">
+      <label for="shelf-pick" class="sr">Shelf</label>
+      <select id="shelf-pick" name="shelf" data-autosubmit>
+        <option value=""{{if not .Data.View.Shelf}} selected{{end}}>All {{if eq .Data.Noun "film"}}films{{else}}series{{end}}</option>
+        {{- range .Data.Shelves}}<option value="{{.ID}}"{{if $.Data.View.IsShelf .ID}} selected{{end}}>{{.Name}}{{if .Hidden}} (hidden){{end}}</option>{{end}}
+      </select>
+      <button type="submit" class="small js-hide">Show</button>
+    </form>
+    {{- with .Data.Selected}}{{template "shelf-head" (dict "S" . "D" $.Data "CSRF" $.Session.CSRFToken)}}{{else}}
+    <div class="group-head"><h2 id="titles-title">All {{if eq .Data.Noun "film"}}films{{else}}series{{end}}</h2>
+    <p class="hint">Hide a whole shelf from its own page, on the left. A title hidden here stays hidden on every shelf, in search and in Recently Added.</p></div>
+    {{- end}}
+
+    {{- if or .Data.Total .Data.View.Query}}
+    <form method="get" action="{{.Data.View.Path}}" class="search" hx-get="{{.Data.View.Path}}" hx-trigger="input changed delay:400ms, submit" hx-sync="this:replace" hx-target="#library-results" hx-select="#library-results" hx-swap="outerHTML" hx-push-url="true">
+      {{- with .Data.View.Shelf}}<input type="hidden" name="shelf" value="{{.}}">{{end}}
+      {{template "i-search"}}
+      <input type="search" name="q" value="{{.Data.View.Query}}" placeholder="Find a title by name" aria-label="Find a title by name">
+      <button type="submit" class="small js-hide">Find</button>
+    </form>
+    {{- end}}
+
+    <div id="library-results">
+    {{- if .Data.Titles}}
+    <div class="table-wrap">
+    <table class="list channels titles">
+      <thead><tr>
+        <th class="tick"><input type="checkbox" data-tick-all data-js-only hidden aria-label="Tick every title on this page"></th>
+        <th>Name</th>
+        <th class="year">Year</th>
+        <th class="group">Source</th>
+        <th class="state"><span class="sr">What is set</span></th>
+      </tr></thead>
+      <tbody>
+      {{- range .Data.Titles}}
+      <tr id="title-{{.ID}}"{{if .Hidden}} class="is-hidden"{{end}}>
+        <td class="tick"><input type="checkbox" name="ids" value="{{.ID}}" form="bulk" aria-label="Tick {{.Name}}"></td>
+        <td class="name">{{.Name}}{{if and (not $.Data.Selected) .Shelf}}<div class="note">{{.Shelf}}</div>{{end}}</td>
+        <td class="year">{{if .Year}}{{.Year}}{{else}}<span class="muted">–</span>{{end}}</td>
+        <td class="group">{{.Source}}</td>
+        <td class="state"><div class="chips">{{if .Hidden}}<span class="badge">{{template "i-eye-off"}}Hidden</span>{{end}}</div></td>
+      </tr>
+      {{- end}}
+      </tbody>
+    </table>
+    </div>
+    <nav class="pages" aria-label="Pages">
+      <span>{{.Data.First}}–{{.Data.Last}} of {{.Data.Total}}</span>
+      {{- with .Data.Prev}}<a href="{{$.Data.View.URL .}}">Previous</a>{{end}}
+      {{- with .Data.Next}}<a href="{{$.Data.View.URL .}}">Next</a>{{end}}
+      <span class="tick-hint">Tick titles to hide or show several at once.</span>
+    </nav>
+    <form id="bulk" method="post" action="{{.Data.View.Path}}/titles" hx-post="{{.Data.View.Path}}/titles" hx-target="#library-main" hx-select="#library-main" hx-swap="outerHTML" class="bulk" role="toolbar" aria-label="Ticked titles">
+      <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+      <input type="hidden" name="back" value="{{.Data.View.Back}}">
+      <span class="bulk-count"></span>
+      <button type="submit" name="action" value="hide">{{template "i-eye-off"}}Hide</button>
+      <button type="submit" name="action" value="show">{{template "i-eye"}}Show</button>
+      <button type="reset" class="icon untick" aria-label="Untick all" title="Untick all">{{template "i-close"}}</button>
+    </form>
+    {{- else}}
+    <p class="empty">{{if .Data.View.Query}}No title here has “{{.Data.View.Query}}” in its name.{{else if .Data.All}}No titles here{{if and .Data.Selected .Data.Selected.Portal}} yet: a portal's titles are read a page at a time, as devices browse its shelf{{end}}.{{else}}No {{if eq .Data.Noun "film"}}films{{else}}series{{end}} yet. They appear when a device first asks for them, and Overscan reads its sources.{{end}}</p>
+    {{- end}}
+    </div>
+  </section>
+</div>
+</div>
+{{end}}
+
+{{define "shelf-head"}}
+<div class="group-head">
+  <div class="group-title">
+    <div class="group-name">
+      <h2 id="titles-title">{{.S.Name}}</h2>
+      {{- if .S.Hidden}}<span class="badge">{{template "i-eye-off"}}Hidden</span>{{end}}
+      <details class="popover">
+        <summary class="button quiet icon" aria-label="Rename the shelf" title="Rename the shelf">{{template "i-pencil"}}</summary>
+        <div class="menu form-menu">
+          <form method="post" action="{{.D.View.Path}}/shelves/{{.S.ID}}/rename" hx-post="{{.D.View.Path}}/shelves/{{.S.ID}}/rename" hx-target="#library-main" hx-select="#library-main" hx-swap="outerHTML" class="row-form">
+            <input type="hidden" name="csrf" value="{{.CSRF}}">
+            <input type="hidden" name="back" value="{{.D.View.Back}}">
+            <input name="name" maxlength="100" value="{{.S.Name}}" placeholder="{{.S.Own}}" aria-label="Name of the shelf">
+            <button type="submit" class="primary">Rename</button>
+          </form>
+          <p class="hint">Empty, it takes its sources' name: {{.S.Own}}.</p>
+        </div>
+      </details>
+    </div>
+    <p class="hint">
+      {{- if .S.Portal}}A portal's category, read a page at a time as devices browse it: {{.S.Titles}} read{{if ge .S.Total 0}} of the {{.S.Total}} it holds{{end}}.
+      {{- else}}{{.D.Count .S.Titles}}{{if .S.HiddenTitles}}, {{.S.HiddenTitles}} of them hidden{{end}}.{{end}}
+      {{- if .S.Renamed}} Its sources call it {{.S.Own}}.{{end}}
+      From {{range $i, $n := .S.Sources}}{{if $i}}, {{end}}{{$n}}{{end}}.</p>
+  </div>
+  <div class="group-actions">
+    <form method="post" action="{{.D.View.Path}}/shelves/{{.S.ID}}/up" hx-post="{{.D.View.Path}}/shelves/{{.S.ID}}/up" hx-target="#library-main" hx-select="#library-main" hx-swap="outerHTML">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <input type="hidden" name="back" value="{{.D.View.Back}}">
+      <button type="submit" class="small"{{if le .D.Place 1}} disabled{{end}} title="Before the shelf above it, on devices">Move up</button>
+    </form>
+    <form method="post" action="{{.D.View.Path}}/shelves/{{.S.ID}}/down" hx-post="{{.D.View.Path}}/shelves/{{.S.ID}}/down" hx-target="#library-main" hx-select="#library-main" hx-swap="outerHTML">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <input type="hidden" name="back" value="{{.D.View.Back}}">
+      <button type="submit" class="small"{{if ge .D.Place (len .D.Shelves)}} disabled{{end}} title="After the shelf below it, on devices">Move down</button>
+    </form>
+    <form method="post" action="{{.D.View.Path}}/shelves/{{.S.ID}}/{{if .S.Hidden}}show{{else}}hide{{end}}" hx-post="{{.D.View.Path}}/shelves/{{.S.ID}}/{{if .S.Hidden}}show{{else}}hide{{end}}" hx-target="#library-main" hx-select="#library-main" hx-swap="outerHTML">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <input type="hidden" name="back" value="{{.D.View.Back}}">
+      <button type="submit" class="small{{if .S.Hidden}} primary{{end}}">{{if .S.Hidden}}{{template "i-eye"}}Show the shelf{{else}}{{template "i-eye-off"}}Hide the shelf{{end}}</button>
+    </form>
+  </div>
+</div>
+{{end}}

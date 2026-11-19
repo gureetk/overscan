@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Runs Overscan with Docker Compose, from the image that the Dockerfile
+# beside this file builds (docs/install-docker.md). In the unpacked release
+# archive:
+#
+#   docker compose up -d --build
+
+# The project's name, so that the data volume stays the same when a newer
+# archive is unpacked in another folder.
+name: overscan
+
+services:
+  overscan:
+    build: .
+    image: overscan:local
+    restart: unless-stopped
+    ports:
+      # Boxes and the admin reach Overscan at port 8080 of this machine.
+      - "8080:8080"
+    volumes:
+      # The database, the key file and the logo cache.
+      - data:/var/lib/overscan
+      # A configuration file, for settings beyond the environment below:
+      # - ./overscan.yaml:/etc/overscan/overscan.yaml:ro
+      # A folder of films and series, which a folder source can then name
+      # as /media/films (docs/library-folders.md):
+      # - /srv/media/films:/media/films:ro
+    environment:
+      OVERSCAN_LOG_LEVEL: info
+      # OVERSCAN_ADMIN_LISTEN: "127.0.0.1:8081"
+    # Overscan writes only to its volume, and needs no privileges.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  data:
