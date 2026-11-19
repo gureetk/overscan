@@ -17,7 +17,9 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The tests take about five minutes. Installing ffmpeg usually takes
+    # half a minute, but the runner's packages have taken ten.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -42,6 +44,7 @@ jobs:
         run: go vet ./...
 
       - name: Install ffmpeg for the stream repair tests
+        timeout-minutes: 15
         run: |
           if ! command -v ffmpeg >/dev/null; then
             sudo apt-get update -qq
