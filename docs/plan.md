@@ -491,10 +491,15 @@ Each phase ends with a pre-release of v0.3.0 (`v0.3.0-alpha.N`), as M3's phases 
 *Status:* done, and released with M3 in v0.3.0, on 19 November 2026. Its pre-releases: catch-up from Xtream servers and playlists (v0.3.0-alpha.1) and from Stalker portals (alpha.2), locks on films and series with sources' marks for adults (alpha.3), radio (alpha.4), TMDB for folders (alpha.5), recordings (alpha.6), the milestone's hardening (alpha.7), and timeshift (rc.1, D92). The *Done when* was checked against fake panels, a fake portal and TMDB, the conformance suite as a Stalker client, and the MAG page in a desktop browser with a stand-in for the box's player. Most of it has still to be tried on a MAG box and with real providers.
 
 ### M5: Households (M)
-- Several profiles per account, switchable on the box; expiry; messages and events.
-- Installable themes: the administrator adds a theme in the admin, for the household or for a profile.
-- Shared-tuner mode, if kept (section 20), off by default.
-- Compatibility matrix for third-party Stalker clients (OTT Navigator, TiviMate) and MAG emulators (StbEmu).
+Each phase ends with a pre-release of v0.4.0 (`v0.4.0-alpha.N`), as M4's did with v0.3.0. In this order:
+- Shared-tuner mode (section 20, open question 1), off by default: one connection to a source serves every local viewer of a channel, whether boxes, Stalker clients or recordings, and counts once against the source's limit. Sharing a connection between screens is between the subscriber and their provider (section 2).
+- Several profiles per account, switchable on the box, each with its own favourites, resume points, language and time zone. A household that adds no profile sees no change.
+- Expiry: the administrator sets the account's end date; past it, boxes and Stalker clients play nothing.
+- Messages and events: the administrator sends a message to one box or to every box, which shows it once.
+- Installable themes (D41): the administrator adds a theme in the admin, for the household or for a profile.
+- Compatibility matrix for third-party Stalker clients (OTT Navigator, TiviMate) and MAG emulators (StbEmu), from tests with those apps.
+- The milestone's hardening: the security checklist on what is new (text and themes from the admin shown on boxes above all), docs, and an upgrade test from v0.3.0.
+*Done when:* two profiles on one box keep their own favourites and resume points, and the box switches between them; an account past its end date is refused on the box and in Stalker clients, which see the date; a message from the admin shows on the box; a theme installed in the admin changes the box's look for the household or for one profile; with the shared tuner on, two boxes on one channel, or a box and a recording of that channel, use one connection to the source; and a compatibility matrix says what OTT Navigator, TiviMate and StbEmu do with Overscan. A household that adds no profile, sets no end date, sends no message and installs no theme sees nothing change.
 
 ### M6: The household IPTV hub (L)
 The all-in-one stage: every player in the house gets a curated lineup through the protocol it speaks. Details in section 21.
