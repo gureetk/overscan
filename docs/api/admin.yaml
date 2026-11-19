@@ -1,0 +1,2306 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The admin's JSON API (D14, D44). internal/admin serves it, and a test there
+# checks that this document describes the same operations.
+openapi: 3.1.0
+info:
+  title: Overscan admin API
+  version: "1"
+  description: |
+    The JSON API of Overscan's admin, under `/api/admin/v1/`. The admin's
+    pages work through the same services, so a script can do what the pages
+    do.
+
+    **Sessions.** Sign in with `POST /session`. The answer sets the
+    `overscan_admin` cookie, which every later request sends, and gives the
+    session's CSRF token, which every request that changes something sends
+    in the `X-CSRF-Token` header. The pages share these sessions. A session
+    ends after a week without use, a month after signing in, when it signs
+    out, or when the administrator's password changes. The password is set
+    on the server with `overscan admin password`.
+
+    **Bodies.** Requests and answers are JSON in UTF-8. A request body is at
+    most 64 KiB, sent as `Content-Type: application/json`. No answer may be
+    cached.
+
+    **Errors.** An error has an HTTP error status and a body of the form
+    `{"error": "code", "message": "A sentence."}`: the code is for scripts,
+    the message for people.
+
+    **Other origins.** A request from a browser that would change something
+    and comes from another origin is refused with 403, whatever its cookies.
+
+    **Secrets.** A source's address can hold the credentials of an account.
+    The API takes it, keeps it encrypted, and never sends it back; a source
+    shows only its `host` (D46).
+  license:
+    name: AGPL-3.0-or-later
+    identifier: AGPL-3.0-or-later
+servers:
+  - url: /api/admin/v1
+security:
+  - session: []
+tags:
+  - name: session
+    description: Signing in and out.
+  - name: server
+    description: The server itself.
+  - name: lineup
+    description: >-
+      The household's lineup (D45, D47): its groups and channels, as devices
+      see them, and the administrator's edits, which refreshes leave alone.
+      Each category of a source goes to a group; a group can be renamed,
+      hidden, merged into another or numbered from a starting number. A
+      channel can be renamed, moved to another group, hidden or shown on its
+      own, and given a number, which is then pinned: renumbering never moves
+      it and no other channel takes it. Groups and channels can be locked:
+      once the household has a parental PIN, Overscan's page asks for it
+      before it plays them, and Stalker clients do not see them (D55). A
+      channel's stream can be set to go through ffmpeg, which rebuilds its
+      timestamps (D57).
+  - name: library
+    description: >-
+      The films and series that devices see (D79): their shelves, which the
+      administrator can hide, rename and put in an order of their own, and
+      their titles, which can be hidden. A shelf merges the categories of the
+      same name from every source, but a Stalker portal's category is a shelf
+      of its own (D77). A hidden shelf hides every title on it; a hidden title
+      is hidden on every shelf, in search and in Recently Added. The settings
+      outlast the reads of the sources. Paths name the kind as `movies` or
+      `series`.
+  - name: sources
+    description: Where channels come from.
+  - name: streams
+    description: What is playing now, through the stream hub.
+  - name: capture
+    description: >-
+      Requests from boxes and clients that Overscan does not support yet
+      (D13), counted by kind, each with its last example, redacted.
+  - name: devices
+    description: >-
+      The boxes and players that use Overscan (D23). A new one waits until the
+      administrator approves it: a box running Overscan's page by the
+      six-digit code it shows (D39), a Stalker client by its MAC address.
+
+paths:
+  /session:
+    post:
+      tags: [session]
+      operationId: signIn
+      summary: Sign in
+      description: |
+        Starts a session for the administrator and sets its cookie. Failed
+        sign-ins are slowed down: after five from one address within 15
+        minutes, or fifty from all addresses together, the answer is 429
+        until the oldest of them is 15 minutes old.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Credentials"
+      responses:
+        "200":
+          description: Signed in.
+          headers:
+            Set-Cookie:
+              description: The session's cookie, `overscan_admin`, which is HttpOnly and SameSite=Strict.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: The username or password is wrong (`wrong_credentials`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: >-
+            No password is set yet (`no_administrator`): run
+            `overscan admin password` on the server. Or the request came
+            from another origin.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+        "429":
+          $ref: "#/components/responses/TooManyFailures"
+    get:
+      tags: [session]
+      operationId: getSession
+      summary: Describe the session
+      description: Gives the session's CSRF token and times, for a script that has the cookie.
+      responses:
+        "200":
+          description: The session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    delete:
+      tags: [session]
+      operationId: signOut
+      summary: Sign out
+      description: Ends the session and clears its cookie.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "204":
+          description: Signed out.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+
+  /server:
+    get:
+      tags: [server]
+      operationId: getServer
+      summary: Describe the server
+      responses:
+        "200":
+          description: The server.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Server"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+
+  /streams:
+    get:
+      tags: [streams]
+      operationId: listStreams
+      summary: List what is playing
+      description: >-
+        The hub's sessions that have not ended, oldest first: those a player
+        is fetching, and those that wait for their player to come back.
+      responses:
+        "200":
+          description: The streams.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [streams]
+                properties:
+                  streams:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Stream"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+
+  /capture:
+    get:
+      tags: [capture]
+      operationId: listCaptures
+      summary: List the capture log
+      description: Each kind of request, the most recently asked for first.
+      responses:
+        "200":
+          description: The capture log.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [requests]
+                properties:
+                  requests:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Capture"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    delete:
+      tags: [capture]
+      operationId: clearCaptures
+      summary: Clear the capture log
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "204":
+          description: Cleared.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+
+  /devices:
+    get:
+      tags: [devices]
+      operationId: listDevices
+      summary: List the devices
+      description: Those that wait for approval first, then the others by MAC address.
+      responses:
+        "200":
+          description: The devices.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [devices]
+                properties:
+                  devices:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Device"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+
+  /devices/{mac}:
+    parameters:
+      - $ref: "#/components/parameters/MAC"
+    patch:
+      tags: [devices]
+      operationId: changeDevice
+      summary: Change a device's label
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [label]
+              properties:
+                label:
+                  type: string
+                  maxLength: 100
+                  description: The new label; an empty one clears it.
+      responses:
+        "200":
+          $ref: "#/components/responses/Device"
+        "400":
+          $ref: "#/components/responses/DeviceMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NoSuchDevice"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+    delete:
+      tags: [devices]
+      operationId: removeDevice
+      summary: Remove a device
+      description: Forgets the device. If it connects again, it waits for approval again.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "204":
+          description: Removed.
+        "400":
+          $ref: "#/components/responses/DeviceMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NoSuchDevice"
+
+  /devices/{mac}/playback-check:
+    parameters:
+      - $ref: "#/components/parameters/MAC"
+    delete:
+      tags: [devices]
+      operationId: forgetPlaybackCheck
+      summary: Forget what a box's playback check found
+      description: >-
+        The box then plays films as its model's datasheet says, or as the
+        last box of its model that was checked was found to play (D70). A
+        box checks itself again from its Settings.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "204":
+          description: Forgotten.
+        "400":
+          $ref: "#/components/responses/DeviceMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          description: No such device (`no_such_device`), or it has not been checked (`no_check`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /devices/{mac}/approve:
+    parameters:
+      - $ref: "#/components/parameters/MAC"
+    post:
+      tags: [devices]
+      operationId: approveDevice
+      summary: Approve a device by its MAC address
+      description: |
+        Approves the device for an account, adding it if it has not
+        connected yet, so that a Stalker client can be approved before it
+        first connects. A box that waits with a code is paired with the
+        secret it keeps. A paired box keeps its secret: to replace a pairing,
+        approve the code that the new box shows.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        $ref: "#/components/requestBodies/Approval"
+      responses:
+        "200":
+          $ref: "#/components/responses/Device"
+        "400":
+          $ref: "#/components/responses/DeviceMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+
+  /devices/{mac}/block:
+    parameters:
+      - $ref: "#/components/parameters/MAC"
+    post:
+      tags: [devices]
+      operationId: blockDevice
+      summary: Block a device
+      description: Refuses the device, adding it if it has not connected yet. A request to pair it is dropped; a paired box keeps its secret, for if it is approved again.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Device"
+        "400":
+          $ref: "#/components/responses/DeviceMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+
+  /pairings/{code}/approve:
+    parameters:
+      - name: code
+        in: path
+        required: true
+        description: The six-digit code that the box shows.
+        schema:
+          type: string
+          pattern: "^[0-9]{6}$"
+    post:
+      tags: [devices]
+      operationId: approvePairing
+      summary: Approve a box by the code it shows
+      description: Approves the box that waits with the code, for an account, and pairs it with the secret it keeps, replacing any earlier pairing of its MAC address.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        $ref: "#/components/requestBodies/Approval"
+      responses:
+        "200":
+          $ref: "#/components/responses/Device"
+        "400":
+          $ref: "#/components/responses/DeviceMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          description: No box waits with the code (`no_such_code`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+
+  /lineup/groups:
+    get:
+      tags: [lineup]
+      operationId: listGroups
+      summary: List the lineup's groups
+      description: >-
+        Groups with channels that devices see come first, in the order of
+        their first channel, then the others by name. A group with ID 0, if
+        there is one, holds the channels in no group.
+      responses:
+        "200":
+          description: The groups.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [groups]
+                properties:
+                  groups:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Group"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    post:
+      tags: [lineup]
+      operationId: createGroup
+      summary: Make a group
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+      responses:
+        "201":
+          $ref: "#/components/responses/Group"
+        "400":
+          $ref: "#/components/responses/EditMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "409":
+          $ref: "#/components/responses/EditConflict"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+
+  /lineup/groups/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    patch:
+      tags: [lineup]
+      operationId: changeGroup
+      summary: Rename, hide, show or lock a group
+      description: >-
+        A hidden group hides its channels, those that its categories bring
+        later included, apart from those shown on their own. A locked group's
+        channels need the parental PIN.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+                hidden:
+                  type: boolean
+                locked:
+                  type: boolean
+      responses:
+        "200":
+          $ref: "#/components/responses/Group"
+        "400":
+          $ref: "#/components/responses/EditMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/EditConflict"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+    delete:
+      tags: [lineup]
+      operationId: deleteGroup
+      summary: Delete an empty group
+      description: Only a group with no category that a source still has, and no channel moved there, can be deleted (`group_not_empty`); merge it into another instead.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/EditConflict"
+
+  /lineup/groups/{id}/merge:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [lineup]
+      operationId: mergeGroup
+      summary: Merge a group into another
+      description: Moves the group's categories, and the channels moved there, into another group, and removes it.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [into]
+              properties:
+                into:
+                  type: integer
+                  description: The group to merge into.
+      responses:
+        "200":
+          $ref: "#/components/responses/Group"
+        "400":
+          $ref: "#/components/responses/EditMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+
+  /lineup/groups/{id}/number:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [lineup]
+      operationId: numberGroup
+      summary: Number a group from a starting number
+      description: >-
+        Pins the numbers of the group's channels that devices see to from,
+        from + 1 and so on, in their present order. A channel that held one
+        of those numbers takes the old number of the channel that took it.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [from]
+              properties:
+                from:
+                  type: integer
+                  minimum: 1
+                  maximum: 999999
+      responses:
+        "200":
+          description: Numbered.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [numbered]
+                properties:
+                  numbered:
+                    type: integer
+                    description: How many channels were numbered.
+        "400":
+          $ref: "#/components/responses/EditMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+
+  /lineup/categories/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    put:
+      tags: [lineup]
+      operationId: moveCategory
+      summary: Put a source's category in a group
+      description: The category, by the ID in a group's `categories`, and the channels it brings, now and later, go to the group.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [group_id]
+              properties:
+                group_id:
+                  type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Group"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+
+  /lineup/channels:
+    get:
+      tags: [lineup]
+      operationId: listChannels
+      summary: List the lineup's channels
+      description: >-
+        By number, with the channels that have none last, from enabled
+        sources. Hidden channels, and channels that their source no longer
+        lists, are included, with their edits.
+      parameters:
+        - name: group
+          in: query
+          description: Only the channels in this group; 0 for those in none.
+          schema:
+            type: integer
+            minimum: 0
+        - name: q
+          in: query
+          description: Only the channels whose name holds this, in any case.
+          schema:
+            type: string
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+      responses:
+        "200":
+          description: A page of channels, and how many there are in all.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [total, channels]
+                properties:
+                  total:
+                    type: integer
+                  channels:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Channel"
+        "400":
+          description: A query parameter is not valid (`bad_query`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    patch:
+      tags: [lineup]
+      operationId: changeChannels
+      summary: Move, hide, show or lock several channels
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: integer
+                group_id:
+                  type: [integer, "null"]
+                  description: The group to move them to; null puts them back in their categories' groups.
+                visibility:
+                  $ref: "#/components/schemas/Visibility"
+                locked:
+                  type: boolean
+                  description: Locked on their own; those in a locked group need the PIN either way.
+                repair:
+                  type: [boolean, "null"]
+                  description: Their channels' own repair switch (D57); null gives them back to the default (D58).
+      responses:
+        "200":
+          description: Changed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [changed]
+                properties:
+                  changed:
+                    type: integer
+        "400":
+          $ref: "#/components/responses/EditMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+
+  /lineup/channels/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    patch:
+      tags: [lineup]
+      operationId: changeChannel
+      summary: Change a channel
+      description: >-
+        A field left out stays as it is; null gives it back to Overscan: the
+        source's name, the category's group, automatic numbering (D40). A
+        number pins it; the channel that held the number takes the old one.
+        Everything is checked before anything changes.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name:
+                  type: [string, "null"]
+                  maxLength: 200
+                group_id:
+                  type: [integer, "null"]
+                visibility:
+                  $ref: "#/components/schemas/Visibility"
+                locked:
+                  type: boolean
+                repair:
+                  type: [boolean, "null"]
+                  description: Its channel's own repair switch (D57); null gives it back to the default (D58).
+                number:
+                  type: [integer, "null"]
+                  minimum: 1
+                  maximum: 999999
+      responses:
+        "200":
+          description: The channel.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Channel"
+        "400":
+          $ref: "#/components/responses/EditMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+
+  /pin:
+    get:
+      tags: [lineup]
+      operationId: getPIN
+      summary: Whether the household has a parental PIN
+      responses:
+        "200":
+          $ref: "#/components/responses/PIN"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    put:
+      tags: [lineup]
+      operationId: setPIN
+      summary: Set the parental PIN
+      description: >-
+        Four to eight digits, which a remote control can type. Overscan keeps
+        only an argon2id hash of it.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [pin]
+              properties:
+                pin:
+                  type: string
+                  pattern: "^[0-9]{4,8}$"
+      responses:
+        "200":
+          $ref: "#/components/responses/PIN"
+        "400":
+          description: The PIN is not four to eight digits (`bad_pin`), or the body is not the JSON the path takes (`bad_json`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+    delete:
+      tags: [lineup]
+      operationId: removePIN
+      summary: Remove the parental PIN
+      description: Locked groups and channels stay locked, but play without a PIN until one is set.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "200":
+          $ref: "#/components/responses/PIN"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+
+  /settings:
+    get:
+      tags: [lineup]
+      operationId: getSettings
+      summary: Settings for the whole server
+      responses:
+        "200":
+          $ref: "#/components/responses/Settings"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    patch:
+      tags: [lineup]
+      operationId: changeSettings
+      summary: Change settings for the whole server
+      description: Settings left out of the body stay as they are.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                repair_default:
+                  type: boolean
+                repair_hls:
+                  type: boolean
+                transcode_video:
+                  type: integer
+                  minimum: 0
+                  maximum: 3
+                convert_sound:
+                  type: boolean
+                server_transcodes:
+                  type: boolean
+      responses:
+        "200":
+          $ref: "#/components/responses/Settings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+
+  /library/{kind}/shelves:
+    parameters:
+      - $ref: "#/components/parameters/Kind"
+    get:
+      tags: [library]
+      operationId: listShelves
+      summary: List the shelves of films or of series
+      description: >-
+        Every shelf, hidden ones too, in the order devices see them in: those
+        the administrator put in an order first, then the others in their
+        sources' order.
+      responses:
+        "200":
+          $ref: "#/components/responses/Shelves"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /library/{kind}/shelves/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Kind"
+      - $ref: "#/components/parameters/ID"
+    patch:
+      tags: [library]
+      operationId: changeShelf
+      summary: Hide, show or rename a shelf
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                hidden:
+                  type: boolean
+                name:
+                  type: [string, "null"]
+                  maxLength: 100
+                  description: The name devices see it by; null or empty for its sources' name.
+      responses:
+        "200":
+          description: The shelf.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Shelf"
+        "400":
+          $ref: "#/components/responses/EditMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+
+  /library/{kind}/order:
+    parameters:
+      - $ref: "#/components/parameters/Kind"
+    put:
+      tags: [library]
+      operationId: orderShelves
+      summary: Put shelves in an order of their own
+      description: >-
+        The shelves given come first, in that order; the others after them,
+        in their sources' order. Each must be listed, once (`bad_shelves`).
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [shelves]
+              properties:
+                shelves:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Shelves"
+        "400":
+          $ref: "#/components/responses/EditMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+    delete:
+      tags: [library]
+      operationId: resetShelfOrder
+      summary: Give every shelf back its sources' order
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Shelves"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /library/{kind}/titles:
+    parameters:
+      - $ref: "#/components/parameters/Kind"
+    get:
+      tags: [library]
+      operationId: listTitles
+      summary: List films or series, hidden ones too
+      description: By name, a page at a time.
+      parameters:
+        - name: shelf
+          in: query
+          description: A shelf's ID, for its titles alone.
+          schema:
+            type: integer
+        - name: q
+          in: query
+          description: A part of the names, whatever the case of letters A to Z.
+          schema:
+            type: string
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+      responses:
+        "200":
+          description: The titles, and how many there are in all.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [total, titles]
+                properties:
+                  total:
+                    type: integer
+                  titles:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/LibraryTitle"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /library/titles/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    patch:
+      tags: [library]
+      operationId: changeTitle
+      summary: Hide or show a film or a series
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [hidden]
+              properties:
+                hidden:
+                  type: boolean
+      responses:
+        "200":
+          description: The title.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LibraryTitle"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+
+  /sources:
+    get:
+      tags: [sources]
+      operationId: listSources
+      summary: List the sources
+      description: >-
+        Each source without its address, which can hold the credentials of an
+        account and is never shown again once saved (D46); `host` says where
+        it points.
+      responses:
+        "200":
+          description: The sources, by name.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sources]
+                properties:
+                  sources:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Source"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    post:
+      tags: [sources]
+      operationId: addSource
+      summary: Add a source
+      description: >-
+        Adds a source and reads it at once. What the body leaves out takes its
+        default: an M3U playlist, one stream at a time, read every six hours,
+        numbered in playlist order.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SourceSettings"
+      responses:
+        "201":
+          $ref: "#/components/responses/Source"
+        "400":
+          $ref: "#/components/responses/SourceMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "409":
+          $ref: "#/components/responses/SourceConflict"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+
+  /sources/test:
+    post:
+      tags: [sources]
+      operationId: testNewSource
+      summary: Test a source's settings without saving them
+      description: Reads the address as a refresh would, and says what it found. Nothing is stored.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SourceSettings"
+      responses:
+        "200":
+          $ref: "#/components/responses/Tested"
+        "400":
+          $ref: "#/components/responses/SourceMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+        "502":
+          $ref: "#/components/responses/SourceFailed"
+
+  /sources/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    patch:
+      tags: [sources]
+      operationId: changeSource
+      summary: Change a source
+      description: >-
+        Changes what the body gives and keeps the rest, including the saved
+        address unless `url` is given. A change of `numbers` numbers the
+        source's channels again; numbers set in the lineup stay (D47).
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SourceSettings"
+      responses:
+        "200":
+          $ref: "#/components/responses/Source"
+        "400":
+          $ref: "#/components/responses/SourceMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/SourceConflict"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+    delete:
+      tags: [sources]
+      operationId: deleteSource
+      summary: Delete a source
+      description: >-
+        Deletes the source with its address and channels, which leave the
+        lineup with their edits. Groups that Overscan made for its categories
+        go too, unless the administrator changed them.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /sources/{id}/refresh:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [sources]
+      operationId: refreshSource
+      summary: Read a source now
+      description: Reads the source at once, whatever its schedule, and stores its channels.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "200":
+          description: What the source listed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [channels, added, missing, removed]
+                properties:
+                  channels:
+                    type: integer
+                    description: The channels it lists.
+                  added:
+                    type: integer
+                    description: Channels new to the catalog.
+                  missing:
+                    type: integer
+                    description: Channels it stopped listing, kept for 7 days.
+                  removed:
+                    type: integer
+                    description: Channels missing for longer than that, now gone.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/SourceConflict"
+        "502":
+          $ref: "#/components/responses/SourceFailed"
+
+  /sources/{id}/test:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [sources]
+      operationId: testSource
+      summary: Test a source, with changed settings if given
+      description: >-
+        Reads the source with its settings, overridden by what the optional
+        body gives, without storing anything. Without `url`, it uses the saved
+        address.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SourceSettings"
+      responses:
+        "200":
+          $ref: "#/components/responses/Tested"
+        "400":
+          $ref: "#/components/responses/SourceMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/SourceConflict"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+        "502":
+          $ref: "#/components/responses/SourceFailed"
+
+components:
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+    Kind:
+      name: kind
+      in: path
+      required: true
+      schema:
+        type: string
+        enum: [movies, series]
+    MAC:
+      name: mac
+      in: path
+      required: true
+      description: The device's MAC address, with colons or hyphens, such as `00:1A:79:00:00:01`.
+      schema:
+        type: string
+
+  requestBodies:
+    Approval:
+      description: Optional. Without a body, the device is approved for the household account and keeps its label.
+      required: false
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            properties:
+              account_id:
+                type: integer
+                description: The account to approve the device for; the household account, 1, if not given.
+              label:
+                type: string
+                maxLength: 100
+                description: A label for the device, such as `Living room`; if empty, the device keeps its label.
+
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: overscan_admin
+      description: The session's cookie, which `POST /session` sets.
+    csrf:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: >-
+        The session's CSRF token, from `POST /session` or `GET /session`.
+        Every request that changes something sends it.
+
+  schemas:
+    Credentials:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          examples: [admin]
+        password:
+          type: string
+          format: password
+    Session:
+      type: object
+      required: [username, csrf_token, created_at, last_seen]
+      properties:
+        username:
+          type: string
+          examples: [admin]
+        csrf_token:
+          type: string
+          description: Sent in the `X-CSRF-Token` header with every request that changes something.
+        created_at:
+          type: string
+          format: date-time
+          description: When the session signed in, in UTC.
+        last_seen:
+          type: string
+          format: date-time
+          description: When the session was last used, in UTC, to the minute.
+    Server:
+      type: object
+      required: [version, schema_version, started_at]
+      properties:
+        version:
+          type: string
+          description: Overscan's version.
+          examples: [v0.0.10]
+        schema_version:
+          type: integer
+          description: The version of the database's schema.
+          examples: [7]
+        started_at:
+          type: string
+          format: date-time
+          description: When the server started, in UTC.
+    Device:
+      type: object
+      required: [mac, state, label, model, account_id, paired, pairing_code, pairing_requested_at, last_seen, created_at, playback_check]
+      properties:
+        mac:
+          type: string
+          description: Six upper-case hex pairs separated by colons.
+          examples: ["00:1A:79:00:00:01"]
+        state:
+          type: string
+          enum: [pending, approved, blocked]
+        label:
+          type: string
+          description: Set by the administrator; empty if none.
+        model:
+          type: string
+          description: As the device reports it; empty if it has not said.
+        account_id:
+          type: [integer, "null"]
+          description: The account it is approved for; null if it was never approved.
+        paired:
+          type: boolean
+          description: Whether a box is paired with its secret, so that a copied MAC address alone is not enough (D39).
+        pairing_code:
+          type: [string, "null"]
+          description: The code of a request to pair that waits for approval; null if none.
+        pairing_requested_at:
+          type: [string, "null"]
+          format: date-time
+        last_seen:
+          type: [string, "null"]
+          format: date-time
+          description: When the device last contacted Overscan, to the minute; null if never.
+        created_at:
+          type: string
+          format: date-time
+        playback_check:
+          description: What the box's own playback check found (D70); null if it was not checked.
+          oneOf:
+            - $ref: "#/components/schemas/PlaybackCheck"
+            - type: "null"
+    PlaybackCheck:
+      type: object
+      required: [checked_at, firmware, plays, does_not_play]
+      properties:
+        checked_at:
+          type: string
+          format: date-time
+        firmware:
+          type: string
+          description: The box's firmware version, as it reported it; empty if it did not.
+        plays:
+          type: array
+          items:
+            type: string
+          description: What the check found the box plays, such as "Dolby Digital Plus", in the order it tests them.
+          examples: [["MKV", "H.264", "AAC", "Dolby Digital"]]
+        does_not_play:
+          type: array
+          items:
+            type: string
+          description: What it found the box does not play.
+          examples: [["DTS", "Dolby TrueHD"]]
+    Shelf:
+      type: object
+      required: [id, name, own, sources, titles, hidden_titles, portal, hidden, placed]
+      properties:
+        id:
+          type: integer
+          description: The ID devices know the shelf by.
+        name:
+          type: string
+          description: The name devices see it by.
+        own:
+          type: string
+          description: The name its sources give it.
+        sources:
+          type: array
+          items:
+            type: string
+          description: The names of the sources whose categories it holds.
+        titles:
+          type: integer
+          description: Its titles, hidden ones too; for a portal's, those read so far.
+        hidden_titles:
+          type: integer
+          description: Of them, those hidden one by one.
+        portal:
+          type: boolean
+          description: A Stalker portal's category, read a page at a time (D77).
+        hidden:
+          type: boolean
+        placed:
+          type: boolean
+          description: The administrator put it in an order of its own.
+    LibraryTitle:
+      type: object
+      required: [id, kind, name, source, hidden]
+      properties:
+        id:
+          type: integer
+        kind:
+          type: string
+          enum: [movie, series]
+        name:
+          type: string
+        year:
+          type: integer
+        source:
+          type: string
+          description: Its source's name.
+        shelf:
+          type: string
+          description: Its category's name, as its source gives it.
+        hidden:
+          type: boolean
+    Group:
+      type: object
+      required: [id, name, hidden, locked, edited, channels, shown, first_number, categories]
+      properties:
+        id:
+          type: integer
+          description: Stays the same when the group is renamed; Stalker clients know it as the genre's ID.
+        name:
+          type: string
+        hidden:
+          type: boolean
+        locked:
+          type: boolean
+          description: Its channels need the parental PIN (D55).
+        edited:
+          type: boolean
+          description: Made or changed by the administrator. A group that Overscan made for a category, and nobody changed, goes when nothing is in it.
+        channels:
+          type: integer
+          description: The channels in it that their sources list.
+        shown:
+          type: integer
+          description: Of those, the ones devices see.
+        first_number:
+          type: [integer, "null"]
+          description: The lowest number that devices see in it.
+        categories:
+          type: array
+          items:
+            type: object
+            required: [id, source_id, source, name]
+            properties:
+              id:
+                type: [integer, "null"]
+                description: The category's ID, for moving it; null if its source no longer has it.
+              source_id:
+                type: integer
+              source:
+                type: string
+              name:
+                type: string
+    Channel:
+      type: object
+      required: [id, channel_id, source_id, source, number, pinned, name, channel_name, renamed, group_id, group, moved, category, visibility, hidden, missing, locked, group_locked, repair, repair_own]
+      properties:
+        id:
+          type: integer
+          description: The lineup entry's ID, which devices know the channel by.
+        channel_id:
+          type: integer
+        source_id:
+          type: integer
+        source:
+          type: string
+        number:
+          type: [integer, "null"]
+          description: Null while it has none, when its source no longer lists it and another channel took its number.
+        pinned:
+          type: boolean
+          description: The administrator set the number.
+        name:
+          type: string
+          description: As devices see it.
+        channel_name:
+          type: string
+          description: As the source names it.
+        renamed:
+          type: boolean
+        group_id:
+          type: [integer, "null"]
+        group:
+          type: [string, "null"]
+        moved:
+          type: boolean
+          description: The administrator chose its group.
+        category:
+          type: [string, "null"]
+          description: The source's category.
+        visibility:
+          $ref: "#/components/schemas/Visibility"
+        hidden:
+          type: boolean
+          description: Devices do not see it, for whatever reason.
+        missing:
+          type: boolean
+          description: Its source no longer lists it; it is kept for 7 days, with its edits.
+        locked:
+          type: boolean
+          description: Locked on its own; it needs the parental PIN (D55).
+        group_locked:
+          type: boolean
+          description: Its group is locked, so it needs the parental PIN whatever `locked` says.
+        repair:
+          type: boolean
+          description: >-
+            Its stream goes through ffmpeg, which copies it into a new MPEG-TS
+            stream with its timestamps rebuilt (D57): its own switch says so,
+            or else the default does (D58).
+        repair_own:
+          type: [boolean, "null"]
+          description: >-
+            Its own repair switch, null when it follows the default. The switch
+            belongs to the source's channel, so it holds in every lineup that
+            has it.
+    Visibility:
+      type: string
+      enum: [group, shown, hidden]
+      description: "`group`: shown unless its group is hidden; `shown`: shown even in a hidden group; `hidden`: hidden."
+    Source:
+      type: object
+      required: [id, name, type, host, address, enabled, max_connections, refresh_seconds, user_agent, numbers,
+        new_categories_hidden, channels, refreshed_at, refresh_error, stream_limit, account, guide, films, series]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+          enum: [m3u, xtream, jellyfin, plex, folder, stalker]
+          description: >-
+            An M3U playlist, a server read through the Xtream API (D50), a
+            Jellyfin server (D66) or a Plex server (D72), each read for its
+            films and series only, a folder of films and series on the
+            server (D67), or a Stalker portal, read as the box that the
+            provider registered (D76).
+        host:
+          type: string
+          description: >-
+            Where the address points, its host and port, or for a file
+            `file <name>`, or a folder's name. The address itself, an Xtream
+            source's login, a Jellyfin source's API key and user, a Plex
+            source's token and a Stalker portal's box and login are never
+            shown.
+          examples: [provider.example]
+        address:
+          type: string
+          enum: [saved, missing, locked]
+          description: >-
+            `saved`: an address is saved and can be read; `missing`: none is
+            saved; `locked`: it was saved with another key file and must be
+            entered again (D46).
+        enabled:
+          type: boolean
+        max_connections:
+          type: integer
+          description: How many streams the source allows at once; 0 for no limit.
+        refresh_seconds:
+          type: integer
+          description: How often it is read; for a Jellyfin or a Plex source or a folder, how often Overscan checks that it can be read.
+        user_agent:
+          type: string
+          description: The user agent it is read with; empty for Overscan's own.
+        numbers:
+          type: string
+          enum: [playlist, provider]
+          description: How its channels are numbered (D40).
+        new_categories_hidden:
+          type: boolean
+          description: Whether the categories that it adds later start hidden in the lineup (D47).
+        channels:
+          type: integer
+          description: The channels it lists now; 0 for a Jellyfin or a Plex source or a folder.
+        refreshed_at:
+          type: [string, "null"]
+          format: date-time
+        refresh_error:
+          type: string
+          description: Why the last read failed; empty if it worked.
+        stream_limit:
+          type: integer
+          description: >-
+            How many streams Overscan lets the source run at once:
+            `max_connections`, or the account's limit where that is lower; 0
+            for no limit.
+        account:
+          oneOf:
+            - $ref: "#/components/schemas/Account"
+            - type: "null"
+          description: What an Xtream server or a Stalker portal last said about the account; null for other sources, and until one has said.
+        guide:
+          $ref: "#/components/schemas/Guide"
+        films:
+          oneOf:
+            - $ref: "#/components/schemas/LibraryRead"
+            - type: "null"
+          description: >-
+            What the reads of an Xtream, a Jellyfin or a Plex source's, a
+            folder's or a Stalker portal's films did (D63); null for an M3U
+            source. For a portal, `titles` counts the films read so far, a
+            page at a time as devices browse them, and the read is of its
+            categories (D77).
+        series:
+          oneOf:
+            - $ref: "#/components/schemas/LibraryRead"
+            - type: "null"
+          description: >-
+            What the reads of an Xtream, a Jellyfin or a Plex source's, a
+            folder's or a Stalker portal's series did (D63); null for an M3U
+            source. For a portal, as for its films.
+    LibraryRead:
+      type: object
+      required: [read_at, tried_at, error, titles]
+      description: >-
+        What the reads of a source's films, or of its series, did. Overscan
+        reads them when a box first asks for them, and again a day later at
+        the soonest, when a box asks (D63).
+      properties:
+        read_at:
+          type: [string, "null"]
+          format: date-time
+          description: When the last read that worked ended; null if none has.
+        tried_at:
+          type: [string, "null"]
+          format: date-time
+          description: When the last read ended, whether it worked or not; null if none has.
+        error:
+          type: string
+          description: Why the last read failed; empty if it worked. A failed read keeps what was read before.
+        titles:
+          type: integer
+          description: The films or series that the last read that worked listed.
+    Guide:
+      type: object
+      required: [listed, read_at, error, channels, programmes]
+      description: >-
+        What the last read of the source's guide found (D51). An Xtream
+        source's guide is its server's `xmltv.php`; a playlist's is the one
+        it names in `url-tvg`.
+      properties:
+        listed:
+          type: boolean
+          description: The source's playlist names a guide.
+        read_at:
+          type: [string, "null"]
+          format: date-time
+          description: When the last read ended; null if none has.
+        error:
+          type: string
+          description: Why the last read failed; empty if it worked. A failed read keeps the guide as it was.
+        channels:
+          type: integer
+          description: The source's channels that the guide gives programmes for.
+        programmes:
+          type: integer
+    Account:
+      type: object
+      required: [status, expires_at, max_connections, time_zone]
+      properties:
+        status:
+          type: string
+          description: As the server gives it; an account plays only when it is `Active`.
+          examples: [Active, Expired]
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+          description: When the account runs out; null if it does not.
+        max_connections:
+          type: integer
+          description: How many streams the account may run at once; 0 if the server does not say.
+        time_zone:
+          type: string
+          description: The server's IANA time zone; empty if it gives none.
+    Stream:
+      type: object
+      required: [kind, device_id, device, entry_id, item_id, channel, source_id, source, started_at, bytes, hls, playing]
+      properties:
+        kind:
+          type: string
+          enum: [live, movie, episode]
+          description: What plays, a channel, a film or an episode of a series.
+        device_id:
+          type: integer
+        device:
+          type: string
+          description: The device's label, or else its MAC address.
+        entry_id:
+          type: integer
+          description: The channel's lineup entry; 0 for a film or an episode.
+        item_id:
+          type: integer
+          description: The film's or the episode's ID; 0 for a channel.
+        channel:
+          type: string
+          description: The channel's name, as devices see it, or the film's, or the series' with the season and episode, such as "Coastline S1 E2".
+        source_id:
+          type: integer
+        source:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        bytes:
+          type: integer
+          description: What the hub has sent the player so far.
+        hls:
+          type: boolean
+          description: The source sends HLS.
+        repaired:
+          type: boolean
+          description: A channel's stream goes through ffmpeg to be repaired (D57).
+        converted:
+          type: boolean
+          description: >-
+            A film or an episode goes through ffmpeg, which converts what the
+            box cannot play (D68).
+        transcoded:
+          type: boolean
+          description: >-
+            A film or an episode whose picture the box cannot play, which its
+            source's server (D71) or this server's ffmpeg (D73) transcodes.
+        transcoded_by:
+          type: string
+          enum: [source, overscan]
+          description: >-
+            Who transcodes it: its source's server, or this server's ffmpeg.
+            Left out when it is not transcoded.
+        playing:
+          type: boolean
+          description: A player is fetching it now; otherwise the session waits for one to come back.
+    Capture:
+      type: object
+      required: [module, action, params, example, user_agent, device_id, count, first_seen, last_seen]
+      properties:
+        module:
+          type: string
+          description: The request's `type` parameter.
+          examples: [itv]
+        action:
+          type: string
+          examples: [set_fav]
+        params:
+          type: array
+          items:
+            type: string
+          description: The request's parameter names, sorted.
+        example:
+          type: string
+          description: The last such request's query, with credentials and tokens taken out.
+        user_agent:
+          type: string
+        device_id:
+          type: [integer, "null"]
+          description: The device that last asked, if known.
+        count:
+          type: integer
+        first_seen:
+          type: string
+          format: date-time
+        last_seen:
+          type: string
+          format: date-time
+    SourceSettings:
+      type: object
+      additionalProperties: false
+      description: A source's settings. A change leaves out what stays as it is.
+      properties:
+        name:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9_-]{0,31}$"
+        type:
+          type: string
+          enum: [m3u, xtream, jellyfin, plex, folder, stalker]
+          description: m3u when left out of a new source.
+        url:
+          type: string
+          maxLength: 4096
+          description: >-
+            For an M3U source, an http or https address, or the absolute path
+            of a playlist file on the server. For an Xtream, a Jellyfin or a
+            Plex source, the server's address, without a page, such as
+            `http://provider.example:8080`. For a Stalker portal, the
+            portal's address as the provider gave it, such as
+            `http://portal.example/c/`. For a folder, its absolute path on
+            the server. It can hold credentials, so it is stored encrypted
+            and never sent back.
+        username:
+          type: string
+          maxLength: 256
+          description: >-
+            An Xtream source's username, stored encrypted and never sent back.
+            A change of an Xtream source can give only some of `url`,
+            `username` and `password`; the rest stays as saved. A source that
+            changes its type needs all of them. For a Jellyfin source, the
+            user whose libraries boxes see, or empty for every library;
+            stored encrypted, and left out of a change, the saved one stays.
+            For a Stalker portal, the login that the portal asks for, if it
+            asks for one. A Plex source has none.
+        password:
+          type: string
+          maxLength: 256
+          description: >-
+            An Xtream source's password, a Jellyfin source's API key, or a
+            Plex source's token (the X-Plex-Token of an account that sees the
+            libraries), or the password of a Stalker portal's login, stored
+            encrypted and never sent back. A change of a Jellyfin or a Plex
+            source can give `url` or `password` alone; the other stays as
+            saved.
+        mac:
+          type: string
+          pattern: "^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}$"
+          description: >-
+            A Stalker portal's box: the MAC address that the provider
+            registered (D76), which Overscan signs in with and never varies.
+            Stored encrypted with the box's other details and never sent
+            back. A new portal, or a source that becomes one, needs it with
+            `url`. A change that gives it describes the box again: the other
+            details that it leaves out are none. A change without it keeps
+            each detail that it leaves out, and the address and login too.
+        serial:
+          type: string
+          maxLength: 256
+          description: A Stalker portal's box's serial number, if the provider checks it.
+        device_id:
+          type: string
+          maxLength: 256
+          description: A Stalker portal's box's device ID, if the provider checks it.
+        device_id2:
+          type: string
+          maxLength: 256
+          description: A Stalker portal's box's second device ID, if the provider checks it.
+        signature:
+          type: string
+          maxLength: 256
+          description: A Stalker portal's box's signature, if the provider checks it.
+        model:
+          type: string
+          maxLength: 32
+          description: The model that a Stalker portal's box says it is; MAG250 when empty.
+        user_agent:
+          type: string
+          maxLength: 200
+        max_connections:
+          type: integer
+          minimum: 0
+          maximum: 1000
+          description: Left out of a new source, 1, or 0 (no limit) for a Jellyfin or a Plex source or a folder.
+        refresh_seconds:
+          type: integer
+          minimum: 900
+          maximum: 604800
+        numbers:
+          type: string
+          enum: [playlist, provider]
+        enabled:
+          type: boolean
+        new_categories_hidden:
+          type: boolean
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          description: A code for scripts.
+          examples: [unauthenticated]
+        message:
+          type: string
+          description: A sentence for people.
+
+  responses:
+    Device:
+      description: The device.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Device"
+    DeviceMistake:
+      description: >-
+        The request cannot be done: the MAC address (`bad_mac`), the code
+        (`bad_code`), the label (`bad_label`) or the account (`no_account`)
+        is not valid, or the body is not the JSON the path takes
+        (`bad_json`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Group:
+      description: The group.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Group"
+    Shelves:
+      description: The shelves, hidden ones too, in the order devices see them in.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [shelves]
+            properties:
+              shelves:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Shelf"
+    Settings:
+      description: Settings for the whole server.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes]
+            properties:
+              repair_default:
+                type: boolean
+                description: >-
+                  Channels are repaired unless their own switch says otherwise
+                  (D58). Off at first.
+              repair_hls:
+                type: boolean
+                description: >-
+                  A repaired channel whose address is HLS comes to devices as
+                  one continuous stream that the server makes from it, so that
+                  it can be repaired (D61). Off at first.
+              transcode_video:
+                type: integer
+                minimum: 0
+                maximum: 3
+                description: >-
+                  How many films and episodes at a time this server's ffmpeg
+                  may transcode whose video a box cannot play, from a source
+                  whose server does not transcode (D73). 0, at first, for none.
+              convert_sound:
+                type: boolean
+                description: >-
+                  A film or an episode whose sound or file a box cannot play
+                  goes through ffmpeg, which copies its picture and converts
+                  its sound (D68, D78); off, it goes as it is. On at first.
+              server_transcodes:
+                type: boolean
+                description: >-
+                  A film or an episode whose video a box cannot play, from a
+                  source whose server transcodes, such as Jellyfin, goes
+                  through that server (D71, D78); off, it goes as it is. On at
+                  first.
+    PIN:
+      description: Whether the household has a parental PIN.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [set]
+            properties:
+              set:
+                type: boolean
+    Source:
+      description: The source.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Source"
+    Tested:
+      description: What the test found. Nothing was stored.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [channels, skipped, account, server, libraries, folder]
+            properties:
+              channels:
+                type: integer
+                description: The channels it lists.
+              skipped:
+                type: integer
+                description: Entries that would be left out, such as movies, series and unusable addresses or IDs.
+              account:
+                oneOf:
+                  - $ref: "#/components/schemas/Account"
+                  - type: "null"
+                description: What an Xtream server or a Stalker portal says about the account; null for other sources.
+              server:
+                oneOf:
+                  - type: object
+                    required: [name, version]
+                    properties:
+                      name:
+                        type: string
+                        description: The server's name, as its owner set it.
+                      version:
+                        type: string
+                        examples: [10.11.2]
+                  - type: "null"
+                description: What a Jellyfin or a Plex server says about itself; null for other sources.
+              libraries:
+                type: [array, "null"]
+                items:
+                  type: string
+                description: >-
+                  The names of a Jellyfin or a Plex server's libraries whose
+                  films and series boxes would see; null for other sources.
+              folder:
+                oneOf:
+                  - type: object
+                    required: [name, films, series]
+                    properties:
+                      name:
+                        type: string
+                        description: The folder's name, the last part of its path.
+                      films:
+                        type: integer
+                      series:
+                        type: integer
+                  - type: "null"
+                description: What a folder holds; null for other sources.
+    SourceMistake:
+      description: >-
+        A setting breaks a rule: `bad_name`, `bad_type`, `bad_url`,
+        `bad_username`, `bad_password`, `bad_mac`, `bad_device`,
+        `bad_user_agent`, `bad_max_connections`, `bad_refresh` or
+        `bad_numbers`; or the body is not the JSON the path takes
+        (`bad_json`). The message never quotes the address, the login or
+        the box's details.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    SourceConflict:
+      description: >-
+        Another source has the name (`name_taken`), the source has no address
+        saved (`no_address`), or its address was saved with another key file
+        (`address_locked`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    SourceFailed:
+      description: >-
+        The source could not be read (`source_failed`): the message says why,
+        without the address.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    EditMistake:
+      description: >-
+        The change cannot be made: a name (`bad_name`), a number
+        (`bad_number`) or a visibility (`bad_visibility`) is not valid, no
+        channels were given (`no_channels`), a name or number was given for
+        several channels (`one_at_a_time`), or the body is not the JSON the
+        path takes (`bad_json`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    EditConflict:
+      description: Another group has the name (`name_taken`), or the group is not empty (`group_not_empty`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: There is no such item (`not_found`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NoSuchDevice:
+      description: There is no device with that MAC address (`no_such_device`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    BadRequest:
+      description: The body is not the JSON this path takes (`bad_json`), or it is too large (`too_large`, with status 413).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotJSON:
+      description: The body is not sent as `application/json` (`not_json`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthenticated:
+      description: There is no valid session (`unauthenticated`); sign in with `POST /session`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    CSRF:
+      description: >-
+        The request lacks the session's CSRF token in `X-CSRF-Token` (`csrf`),
+        or it came from another origin.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TooManyFailures:
+      description: Too many failed sign-ins (`too_many_failures`); try again after `Retry-After` seconds.
+      headers:
+        Retry-After:
+          description: Seconds until a sign-in may be tried again.
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"

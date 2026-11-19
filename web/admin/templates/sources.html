@@ -1,0 +1,319 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+{{define "content"}}
+<div id="sources-main">
+{{- if .Data.Editing}}
+<p class="crumbs"><a href="/admin/sources">Sources</a></p>
+<div class="page-head">
+  <div>
+    <h1>Change {{.Data.Form.Settings.Name}}</h1>
+    <p class="lead">How Overscan reads this source. Its address and login stay encrypted, and the admin shows only where they point; leave them empty to keep them.</p>
+  </div>
+</div>
+{{template "alerts" .}}
+<section class="card form-card">{{template "source-form" .}}</section>
+{{- else}}
+<div class="page-head">
+  <div>
+    <h1>Sources</h1>
+    <p class="lead">Where the channels, films and series come from. Overscan reads each source's channels on its schedule, and the films and series of an Xtream, a Jellyfin or a Plex server, of a folder or of a Stalker portal when a box asks for them. An address, a login, an API key, a token or a box's MAC address can open your accounts, so Overscan keeps them encrypted and shows only where they point.</p>
+  </div>
+  <a class="button primary" href="#add-source">{{template "i-plus"}}Add a source</a>
+</div>
+{{template "alerts" .}}
+{{- range .Data.Sources}}
+{{template "source-card" (dict "S" . "CSRF" $.Session.CSRFToken)}}
+{{- else}}
+<section class="card"><p class="empty">No sources yet. Add one below: the address of an M3U playlist, the path of a playlist file on this server, an Xtream server's address and login, a Stalker portal's address and the MAC address of the box it knows, a Jellyfin server's address and API key, a Plex server's address and token, or a folder of films and series on this server.</p></section>
+{{- end}}
+<section class="card form-card" id="add-source" aria-labelledby="add-title">
+  <h2 id="add-title">Add a source</h2>
+  <p class="hint">Test it first: Overscan reads it once and says what it found, without saving it.</p>
+  {{template "source-form" .}}
+</section>
+{{- end}}
+</div>
+{{end}}
+
+{{define "source-card"}}
+<section class="card source{{if not .S.Enabled}} is-off{{end}}" id="source-{{.S.ID}}" aria-labelledby="source-{{.S.ID}}-name">
+  <div class="source-head">
+    <h2 id="source-{{.S.ID}}-name">{{.S.Name}}</h2>
+    <span class="badge">{{.S.Kind}}</span>
+    {{- if not .S.Enabled}}
+    <span class="state-line"><i class="dot off" aria-hidden="true"></i>Off</span>
+    {{- else if .S.AddressLocked}}
+    <span class="state-line bad"><i class="dot bad" aria-hidden="true"></i>Enter its address again</span>
+    {{- else if .S.AddressMissing}}
+    <span class="state-line bad"><i class="dot bad" aria-hidden="true"></i>No address</span>
+    {{- else if .S.RefreshError}}
+    <span class="state-line bad"><i class="dot bad" aria-hidden="true"></i>Its last {{if .S.LibraryOnly}}check{{else}}read{{end}} failed</span>
+    {{- else if .S.RefreshedAt.IsZero}}
+    <span class="state-line"><i class="dot" aria-hidden="true"></i>Not {{if .S.LibraryOnly}}checked{{else}}read{{end}} yet</span>
+    {{- else}}
+    <span class="state-line"><i class="dot ok" aria-hidden="true"></i>{{if .S.LibraryOnly}}Checked{{else}}Read{{end}} {{.S.LastRead}}</span>
+    {{- end}}
+    <div class="source-actions">
+      {{- if .S.Enabled}}
+      {{template "source-action" (dict "ID" .S.ID "Action" "refresh" "Label" (or (and .S.LibraryOnly "Check now") "Read now") "Icon" true "CSRF" .CSRF)}}
+      {{- else}}
+      {{template "source-action" (dict "ID" .S.ID "Action" "on" "Label" "Turn on" "Primary" true "CSRF" .CSRF)}}
+      {{- end}}
+      <a class="button small" href="/admin/sources/{{.S.ID}}">Change</a>
+      <details class="popover">
+        <summary class="button small icon" aria-label="More for {{.S.Name}}: turn it off, delete it" title="Turn off, delete">{{template "i-more"}}</summary>
+        <div class="menu">
+          {{- if .S.Enabled}}
+          {{template "source-action" (dict "ID" .S.ID "Action" "off" "Label" "Turn off" "Menu" true "CSRF" .CSRF)}}
+          {{- end}}
+          {{template "source-action" (dict "ID" .S.ID "Action" "delete" "Label" "Delete" "Menu" true "Danger" true "CSRF" .CSRF "Confirm" .S.DeleteQuestion)}}
+        </div>
+      </details>
+    </div>
+  </div>
+  {{- if .S.RefreshError}}
+  <p class="alert error">The last {{if .S.LibraryOnly}}check{{else}}read{{end}} failed: {{.S.RefreshError}}</p>
+  {{- end}}
+  {{- if .S.Guide.Error}}
+  <p class="alert error">The last read of the guide failed: {{.S.Guide.Error}}</p>
+  {{- end}}
+  <dl class="facts">
+    <div><dt>{{if eq .S.Type "m3u"}}Address{{else if eq .S.Type "folder"}}Folder{{else if eq .S.Type "stalker"}}Portal{{else}}Server{{end}}</dt><dd>
+      {{- if .S.AddressLocked}}<span class="badge blocked">Enter it again</span><div class="note">It was saved with another key file.</div>
+      {{- else if .S.AddressMissing}}<span class="badge blocked">None saved</span>
+      {{- else}}{{.S.Host}}{{end}}</dd></div>
+    {{- with .S.AccountLine}}
+    <div><dt>Account</dt><dd>{{.}}</dd></div>
+    {{- end}}
+    {{- if .S.LibraryOnly}}
+    <div><dt>Last checked</dt><dd>{{.S.LastRead}}</dd></div>
+    {{- else}}
+    <div><dt>Channels</dt><dd>{{.S.ChannelCount}}</dd></div>
+    <div><dt>Guide</dt><dd>{{.S.GuideLine}}</dd></div>
+    <div><dt>Last read</dt><dd>{{.S.LastRead}}</dd></div>
+    <div><dt>Read</dt><dd>Every {{.S.Every}}</dd></div>
+    {{- end}}
+    {{- if .S.HasLibrary}}
+    <div><dt>Films</dt><dd>{{.S.FilmsLine}}</dd></div>
+    <div><dt>Series</dt><dd>{{.S.SeriesLine}}</dd></div>
+    {{- end}}
+    <div><dt>Streams at once</dt><dd>{{.S.Limit}}</dd></div>
+    {{- if not .S.LibraryOnly}}
+    <div><dt>Numbers</dt><dd>{{if eq .S.Numbers "provider"}}The {{.S.Origin}}'s own{{else}}In {{if eq .S.Origin "playlist"}}playlist{{else}}the {{.S.Origin}}'s{{end}} order{{end}}</dd></div>
+    <div><dt>New categories</dt><dd>
+      <form method="post" action="/admin/sources/{{.S.ID}}/{{if .S.NewCategoriesHidden}}categories-shown{{else}}categories-hidden{{end}}" hx-post="/admin/sources/{{.S.ID}}/{{if .S.NewCategoriesHidden}}categories-shown{{else}}categories-hidden{{end}}" hx-target="#sources-main" hx-select="#sources-main" hx-swap="outerHTML" class="inline-form">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <span>Start {{if .S.NewCategoriesHidden}}hidden{{else}}shown{{end}}</span>
+        <button type="submit" class="link" title="Whether a category that the source adds later starts shown or hidden">{{if .S.NewCategoriesHidden}}Start them shown{{else}}Start them hidden{{end}}</button>
+      </form>
+    </dd></div>
+    {{- end}}
+  </dl>
+</section>
+{{end}}
+
+{{define "source-action"}}
+<form method="post" action="/admin/sources/{{.ID}}/{{.Action}}" hx-post="/admin/sources/{{.ID}}/{{.Action}}" hx-target="#sources-main" hx-select="#sources-main" hx-swap="outerHTML"{{with .Confirm}} hx-confirm="{{.}}"{{end}}>
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <button type="submit" class="{{if not .Menu}}small{{end}}{{if .Primary}} primary{{end}}{{if .Danger}} danger{{end}}">{{if .Icon}}{{template "i-refresh"}}{{end}}{{.Label}}</button>
+</form>
+{{- end}}
+
+{{define "source-form"}}
+{{- $f := .Data.Form}}
+<form method="post" action="{{if $f.ID}}/admin/sources/{{$f.ID}}{{else}}/admin/sources{{end}}" hx-post="{{if $f.ID}}/admin/sources/{{$f.ID}}{{else}}/admin/sources{{end}}" hx-target="#sources-main" hx-select="#sources-main" hx-swap="outerHTML" class="source-form">
+  <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+  <fieldset class="type-choice">
+    <legend>Type</legend>
+    <label class="type-tile"><input type="radio" name="type" value="m3u"{{if $f.IsM3U}} checked{{end}}><span><strong>M3U playlist</strong><small>An address, or a playlist file on this server</small></span></label>
+    <label class="type-tile"><input type="radio" name="type" value="xtream"{{if $f.IsXtream}} checked{{end}}><span><strong>Xtream server</strong><small>An address, a username and a password</small></span></label>
+    <label class="type-tile"><input type="radio" name="type" value="stalker"{{if $f.IsStalker}} checked{{end}}><span><strong>Stalker portal</strong><small>A portal's address, and the MAC address of the box it knows</small></span></label>
+    <label class="type-tile"><input type="radio" name="type" value="jellyfin"{{if $f.IsJellyfin}} checked{{end}}><span><strong>Jellyfin server</strong><small>Your own films and series: an address and an API key</small></span></label>
+    <label class="type-tile"><input type="radio" name="type" value="plex"{{if $f.IsPlex}} checked{{end}}><span><strong>Plex server</strong><small>Your own films and series: an address and a token</small></span></label>
+    <label class="type-tile"><input type="radio" name="type" value="folder"{{if $f.IsFolder}} checked{{end}}><span><strong>Folder</strong><small>Films and series in a folder on this server</small></span></label>
+  </fieldset>
+  {{- if and $f.ID (or (eq $f.SavedType "m3u") (eq $f.SavedType "xtream") (eq $f.SavedType "stalker"))}}
+  <p class="hint for-channels">A change of type keeps the channels, and your changes to them, that both kinds list.</p>
+  <p class="hint for-library">A media server or a folder has no channels: this source's channels would leave the lineup.</p>
+  {{- end}}
+
+  <div class="form-grid">
+    <div class="field">
+      <label for="source-name">Name</label>
+      <input id="source-name" name="name" value="{{$f.Settings.Name}}" maxlength="32" pattern="[a-z0-9][a-z0-9_\-]{0,31}" required spellcheck="false" autocapitalize="none" autocomplete="off" placeholder="Such as main">
+      <p class="hint">Lower-case letters, digits, hyphens and underscores. The log names the source by it.</p>
+    </div>
+
+    <div class="field for-m3u">
+      <label for="source-url">Address</label>
+      <input id="source-url" name="url" value="{{if $f.IsM3U}}{{$f.Settings.URL}}{{end}}" maxlength="4096" spellcheck="false" autocapitalize="none" autocomplete="off"
+        {{- if and $f.ID (eq $f.SavedType "m3u")}} placeholder="Leave empty to keep the saved address"{{else}} placeholder="http://provider.example/get.php?username=…"{{end}}>
+      <p class="hint">
+        {{- if or (not $f.ID) (ne $f.SavedType "m3u")}}An http or https address, or the absolute path of a playlist file on this server.
+        {{- else if $f.AddressLocked}}The saved address was encrypted with another key file, so it cannot be read. Enter it again.
+        {{- else if $f.AddressMissing}}No address is saved. Enter one.
+        {{- else}}Saved: {{$f.Host}}. Enter a new address only to change it.{{end}}</p>
+    </div>
+
+    {{- $keep := and $f.ID (eq $f.SavedType "xtream") (not $f.AddressLocked) (not $f.AddressMissing)}}
+    <div class="field for-xtream">
+      <label for="source-server">Server address</label>
+      <input id="source-server" name="server" value="{{if $f.IsXtream}}{{$f.Settings.URL}}{{end}}" maxlength="4096" spellcheck="false" autocapitalize="none" autocomplete="off"
+        placeholder="{{if $keep}}Leave empty to keep the saved address{{else}}http://provider.example:8080{{end}}">
+      <p class="hint">
+        {{- if $keep}}Saved: {{$f.Host}}. Enter only what changes; what you leave empty stays as saved.
+        {{- else if and $f.ID (eq $f.SavedType "xtream") $f.AddressLocked}}The saved login was encrypted with another key file, so it cannot be read. Enter all three again.
+        {{- else}}Your provider gives all three. The server's address is only its start, such as http://provider.example:8080, without get.php or player_api.php.{{end}}</p>
+    </div>
+    <div class="field for-xtream">
+      <label for="source-username">Username</label>
+      <input id="source-username" name="username" value="{{if $f.IsXtream}}{{$f.Settings.Username}}{{end}}" maxlength="256" spellcheck="false" autocapitalize="none" autocomplete="off"
+        {{- if $keep}} placeholder="Leave empty to keep the saved username"{{end}}>
+    </div>
+    <div class="field for-xtream">
+      <label for="source-password">Password</label>
+      <input id="source-password" name="password" type="password" value="{{if $f.IsXtream}}{{$f.Settings.Password}}{{end}}" maxlength="256" autocomplete="new-password"
+        {{- if $keep}} placeholder="Leave empty to keep the saved password"{{end}}>
+    </div>
+
+    {{- $keepST := and $f.ID (eq $f.SavedType "stalker") (not $f.AddressLocked) (not $f.AddressMissing)}}
+    <div class="field for-stalker">
+      <label for="source-portal">Portal address</label>
+      <input id="source-portal" name="portal" value="{{if $f.IsStalker}}{{$f.Settings.URL}}{{end}}" maxlength="4096" spellcheck="false" autocapitalize="none" autocomplete="off"
+        placeholder="{{if $keepST}}Leave empty to keep the saved address{{else}}http://portal.example/c/{{end}}">
+      <p class="hint">
+        {{- if $keepST}}Saved: {{$f.Host}}. Enter only what changes; what you leave empty stays as saved.
+        {{- else if and $f.ID (eq $f.SavedType "stalker") $f.AddressLocked}}The saved portal and box were encrypted with another key file, so they cannot be read. Enter them again.
+        {{- else}}The address your provider gave for the box, as it was given, such as http://portal.example/c/. Overscan signs in to it as that box, with your subscription, and reads its channels and guide.{{end}}</p>
+    </div>
+    <div class="field for-stalker">
+      <label for="source-mac">MAC address</label>
+      <input id="source-mac" name="mac" value="{{if $f.IsStalker}}{{$f.Settings.Device.MAC}}{{end}}" maxlength="17" spellcheck="false" autocapitalize="characters" autocomplete="off"
+        placeholder="{{if $keepST}}Leave empty to keep the saved MAC address{{else}}00:1A:79:12:34:56{{end}}">
+      <p class="hint">The MAC address that your provider registered for your subscription. Overscan uses only this one, and never tries others.</p>
+    </div>
+    <details class="field for-stalker wide"{{if and $f.IsStalker (or $f.Settings.Device.Serial $f.Settings.Device.DeviceID $f.Settings.Device.DeviceID2 $f.Settings.Device.Signature $f.Settings.Device.Model $f.Settings.Username)}} open{{end}}>
+      <summary>The box's other details, and a login <span class="muted">(if the provider asks for them)</span></summary>
+      <p class="hint">Some providers check more than the MAC address: enter what they registered, as they gave it.{{if $keepST}} What you leave empty stays as saved; to clear a detail, enter the MAC address again, and then only what you enter is kept.{{end}}</p>
+      <div class="form-grid">
+        <div class="field">
+          <label for="source-serial">Serial number</label>
+          <input id="source-serial" name="serial" value="{{if $f.IsStalker}}{{$f.Settings.Device.Serial}}{{end}}" maxlength="256" spellcheck="false" autocapitalize="none" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="source-model">Model</label>
+          <input id="source-model" name="model" value="{{if $f.IsStalker}}{{$f.Settings.Device.Model}}{{end}}" maxlength="32" spellcheck="false" autocapitalize="none" autocomplete="off" placeholder="MAG250">
+        </div>
+        <div class="field">
+          <label for="source-device-id">Device ID</label>
+          <input id="source-device-id" name="device_id" value="{{if $f.IsStalker}}{{$f.Settings.Device.DeviceID}}{{end}}" maxlength="256" spellcheck="false" autocapitalize="none" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="source-device-id2">Device ID 2</label>
+          <input id="source-device-id2" name="device_id2" value="{{if $f.IsStalker}}{{$f.Settings.Device.DeviceID2}}{{end}}" maxlength="256" spellcheck="false" autocapitalize="none" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="source-signature">Signature</label>
+          <input id="source-signature" name="signature" value="{{if $f.IsStalker}}{{$f.Settings.Device.Signature}}{{end}}" maxlength="256" spellcheck="false" autocapitalize="none" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="source-portal-login">Login</label>
+          <input id="source-portal-login" name="portal_login" value="{{if $f.IsStalker}}{{$f.Settings.Username}}{{end}}" maxlength="256" spellcheck="false" autocapitalize="none" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="source-portal-password">Password</label>
+          <input id="source-portal-password" name="portal_password" type="password" value="{{if $f.IsStalker}}{{$f.Settings.Password}}{{end}}" maxlength="256" autocomplete="new-password">
+        </div>
+      </div>
+    </details>
+
+    {{- $keepJF := and $f.ID (eq $f.SavedType "jellyfin") (not $f.AddressLocked) (not $f.AddressMissing)}}
+    <div class="field for-jellyfin">
+      <label for="source-jf-server">Server address</label>
+      <input id="source-jf-server" name="jf_server" value="{{if $f.IsJellyfin}}{{$f.Settings.URL}}{{end}}" maxlength="4096" spellcheck="false" autocapitalize="none" autocomplete="off"
+        placeholder="{{if $keepJF}}Leave empty to keep the saved address{{else}}http://jellyfin.example:8096{{end}}">
+      <p class="hint">
+        {{- if $keepJF}}Saved: {{$f.Host}}. Enter a new address or API key only to change them.
+        {{- else if and $f.ID (eq $f.SavedType "jellyfin") $f.AddressLocked}}The saved address and API key were encrypted with another key file, so they cannot be read. Enter them again, and the user.
+        {{- else}}The address you open Jellyfin at, such as http://192.168.1.20:8096. Only Overscan needs to reach it: films, episodes and pictures come to the boxes through Overscan.{{end}}</p>
+    </div>
+    <div class="field for-jellyfin">
+      <label for="source-jf-key">API key</label>
+      <input id="source-jf-key" name="jf_key" type="password" value="{{if $f.IsJellyfin}}{{$f.Settings.Password}}{{end}}" maxlength="256" autocomplete="new-password"
+        {{- if $keepJF}} placeholder="Leave empty to keep the saved key"{{end}}>
+      <p class="hint">Make one in Jellyfin's dashboard, under API Keys, and name it Overscan.</p>
+    </div>
+    <div class="field for-jellyfin">
+      <label for="source-jf-user">User <span class="muted">(optional)</span></label>
+      <input id="source-jf-user" name="jf_user" value="{{if $f.IsJellyfin}}{{$f.Settings.Username}}{{end}}" maxlength="256" spellcheck="false" autocapitalize="none" autocomplete="off">
+      <p class="hint">Boxes see the libraries that this Jellyfin user sees. Leave it empty for every library on the server.</p>
+    </div>
+    {{- $keepPX := and $f.ID (eq $f.SavedType "plex") (not $f.AddressLocked) (not $f.AddressMissing)}}
+    <div class="field for-plex">
+      <label for="source-px-server">Server address</label>
+      <input id="source-px-server" name="px_server" value="{{if $f.IsPlex}}{{$f.Settings.URL}}{{end}}" maxlength="4096" spellcheck="false" autocapitalize="none" autocomplete="off"
+        placeholder="{{if $keepPX}}Leave empty to keep the saved address{{else}}http://plex.example:32400{{end}}">
+      <p class="hint">
+        {{- if $keepPX}}Saved: {{$f.Host}}. Enter a new address or token only to change them.
+        {{- else if and $f.ID (eq $f.SavedType "plex") $f.AddressLocked}}The saved address and token were encrypted with another key file, so they cannot be read. Enter them again.
+        {{- else}}The server's address on your network, with its port, such as http://192.168.1.20:32400. Only Overscan needs to reach it: films, episodes and pictures come to the boxes through Overscan.{{end}}</p>
+    </div>
+    <div class="field for-plex">
+      <label for="source-px-token">Token</label>
+      <input id="source-px-token" name="px_token" type="password" value="{{if $f.IsPlex}}{{$f.Settings.Password}}{{end}}" maxlength="256" autocomplete="new-password"
+        {{- if $keepPX}} placeholder="Leave empty to keep the saved token"{{end}}>
+      <p class="hint">The X-Plex-Token of a Plex account that sees the libraries; boxes see what it sees. Plex's support pages explain how to find it: in Plex Web, a film's <em>Get Info → View XML</em> shows it in the address.</p>
+    </div>
+    {{- $keepFolder := and $f.ID (eq $f.SavedType "folder") (not $f.AddressLocked) (not $f.AddressMissing)}}
+    <div class="field for-folder">
+      <label for="source-folder">Folder</label>
+      <input id="source-folder" name="folder_path" value="{{if $f.IsFolder}}{{$f.Settings.URL}}{{end}}" maxlength="4096" spellcheck="false" autocapitalize="none" autocomplete="off"
+        placeholder="{{if $keepFolder}}Leave empty to keep the saved folder{{else}}/srv/media/films{{end}}">
+      <p class="hint">
+        {{- if $keepFolder}}Saved: {{$f.Host}}. Enter a new path only to change it.
+        {{- else}}The folder's absolute path on this server. Overscan reads its films and series, with their .nfo files and pictures, and never changes them. The service must be able to read it, and does not see folders under /home.{{end}}</p>
+    </div>
+
+    <div class="field for-library">
+      <label for="source-library-max">Streams at once</label>
+      <input id="source-library-max" class="num-input" name="library_max_connections" type="number" min="0" max="1000" value="{{$f.LibraryLimit}}">
+      <p class="hint">How many films and episodes may play from it at the same time; 0 for no limit.</p>
+    </div>
+
+    <div class="field for-channels">
+      <label for="source-max">Streams at once</label>
+      <input id="source-max" class="num-input" name="max_connections" type="number" min="0" max="1000" value="{{$f.ChannelLimit}}">
+      <p class="hint">How many channels your account lets you watch at the same time; 0 for no limit. For an Xtream server, Overscan also keeps to the account's own limit. A portal's box usually plays one at a time.</p>
+    </div>
+
+    <div class="field for-channels">
+      <label for="source-refresh">Read it</label>
+      <select id="source-refresh" name="refresh">
+        {{- range $f.RefreshChoices}}<option value="{{.Seconds}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
+      </select>
+    </div>
+
+    <div class="field for-channels">
+      <label for="source-numbers">Channel numbers</label>
+      <select id="source-numbers" name="numbers">
+        <option value="playlist"{{if eq $f.Settings.Numbers "playlist"}} selected{{end}}>In the source's order: 1, 2, 3 and on</option>
+        <option value="provider"{{if eq $f.Settings.Numbers "provider"}} selected{{end}}>The source's own numbers, where it gives any</option>
+      </select>
+      {{- if $f.ID}}<p class="hint">Changing it numbers the source's channels again. Numbers that you set in the lineup stay.</p>{{end}}
+    </div>
+
+    <div class="field for-channels">
+      <label for="source-agent">User agent <span class="muted">(optional)</span></label>
+      <input id="source-agent" name="user_agent" value="{{$f.Settings.UserAgent}}" maxlength="200" spellcheck="false" autocomplete="off">
+      <p class="hint">For a provider that expects a particular player. Leave it empty for Overscan's own.</p>
+    </div>
+  </div>
+
+  {{- with $f.Found}}<p class="alert notice" role="status">{{.}}</p>{{end}}
+  {{- with $f.TestErr}}<p class="alert error" role="alert">{{.}}</p>{{end}}
+  <div class="form-buttons">
+    <button type="submit" class="primary">{{if $f.ID}}Save{{else}}Add{{end}}</button>
+    <button type="submit" name="test" value="1" formnovalidate>Test</button>
+    {{- if $f.ID}}<a class="button" href="/admin/sources">Cancel</a>{{end}}
+  </div>
+</form>
+{{- end}}

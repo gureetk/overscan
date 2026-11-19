@@ -1,0 +1,355 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+{{define "content"}}
+<div class="page-head">
+  <div>
+    <h1>Live TV</h1>
+    <p class="lead">What devices see of the live channels: their groups, names and numbers. Edits here stay when sources refresh.</p>
+  </div>
+  <p class="hint"><strong>{{count .Data.Shown}}</strong> of {{count .Data.All}} {{plural .Data.All "channel"}} shown</p>
+</div>
+<div id="lineup-main">
+{{template "alerts" .}}
+{{- if and .Data.Locks (not .Data.PINSet)}}
+<p class="alert error locks-notice">The lineup's {{if eq .Data.Locks 1}}lock does{{else}}{{.Data.Locks}} locks do{{end}} nothing until there is a parental PIN. <a href="/admin/settings">Set one in Settings</a>.</p>
+{{- end}}
+<div class="lineup">
+  <aside class="card groups-panel" aria-labelledby="groups-title">
+    <div class="groups-head">
+      <h2 id="groups-title">Groups</h2>
+      <details class="popover">
+        <summary class="button quiet icon" aria-label="New group" title="New group">{{template "i-plus"}}</summary>
+        <div class="menu form-menu">
+          <form method="post" action="/admin/lineup/groups" hx-post="/admin/lineup/groups" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" class="row-form">
+            <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+            <input type="hidden" name="back" value="{{.Data.View.Back}}">
+            <input name="name" maxlength="100" placeholder="New group" aria-label="Name of a new group" required>
+            <button type="submit" class="primary">Add</button>
+          </form>
+        </div>
+      </details>
+    </div>
+    <input type="search" class="group-filter" placeholder="Filter the groups" aria-label="Filter the groups" data-filter="#group-list" data-js-only hidden>
+    <nav id="group-list" class="group-list" aria-label="Groups">
+      <a href="{{.Data.View.GroupURL -1}}"{{if not .Data.View.Group}} aria-current="page"{{end}} class="all"><span class="g-name">All channels</span><span class="g-count">{{count .Data.All}}</span></a>
+      {{- range .Data.Groups}}
+      <a href="{{$.Data.View.GroupURL .ID}}"{{if $.Data.View.IsGroup .ID}} aria-current="page"{{end}}{{if .Hidden}} class="is-hidden"{{end}} data-name="{{if .ID}}{{.Name}}{{else}}In no group{{end}}">
+        <span class="g-name">{{if .ID}}{{.Name}}{{else}}<em>In no group</em>{{end}}</span>
+        {{- if .Locked}}<span class="g-mark locked" title="Its channels need the parental PIN">{{template "i-lock"}}<span class="sr">locked</span></span>{{end}}
+        {{- if .Hidden}}<span class="g-mark" title="Hidden from devices">{{template "i-eye-off"}}<span class="sr">hidden</span></span>{{else}}<span class="g-count" title="{{.Shown}} of {{.Channels}} shown">{{.Shown}}{{if ne .Shown .Channels}}/{{.Channels}}{{end}}</span>{{end}}
+      </a>
+      {{- end}}
+    </nav>
+  </aside>
+
+  <section class="card channels-panel" id="lineup-channels" aria-labelledby="channels-title">
+    <form method="get" action="/admin/lineup" class="group-pick">
+      <label for="group-pick" class="sr">Group</label>
+      <select id="group-pick" name="group" data-autosubmit>
+        <option value=""{{if not .Data.View.Group}} selected{{end}}>All channels</option>
+        {{- range .Data.Groups}}<option value="{{.ID}}"{{if $.Data.View.IsGroup .ID}} selected{{end}}>{{if .ID}}{{.Name}}{{else}}In no group{{end}}</option>{{end}}
+      </select>
+      <button type="submit" class="small js-hide">Show</button>
+    </form>
+    {{- with .Data.Selected}}{{if .ID}}{{template "group-head" (dict "G" . "D" $.Data "CSRF" $.Session.CSRFToken)}}{{end}}{{end}}
+    {{- if .Data.View.IsGroup 0}}
+    <div class="group-head"><h2 id="channels-title">In no group</h2>
+    <p class="hint">Channels whose source gives them no category. Devices list them only among all channels; tick them to move them into a group.</p></div>
+    {{- else if not .Data.Selected}}
+    <div class="group-head"><h2 id="channels-title">{{if .Data.View.Group}}No such group{{else}}All channels{{end}}</h2></div>
+    {{- end}}
+
+    {{- if or .Data.Total .Data.View.Query}}
+    <form method="get" action="/admin/lineup" class="search" hx-get="/admin/lineup" hx-trigger="input changed delay:400ms, submit" hx-sync="this:replace" hx-target="#lineup-results" hx-select="#lineup-results" hx-swap="outerHTML" hx-push-url="true">
+      {{- with .Data.View.Group}}<input type="hidden" name="group" value="{{.}}">{{end}}
+      {{- with .Data.View.Add}}<input type="hidden" name="add" value="{{.}}">{{end}}
+      {{template "i-search"}}
+      <input type="search" name="q" value="{{.Data.View.Query}}" placeholder="Find a channel by name" aria-label="Find a channel by name">
+      <button type="submit" class="small js-hide">Find</button>
+    </form>
+    {{- end}}
+
+    <div id="lineup-results">
+    {{- if .Data.Entries}}
+    <div class="table-wrap">
+    <table class="list channels">
+      <thead><tr>
+        <th class="tick"><input type="checkbox" data-tick-all data-js-only hidden aria-label="Tick every channel on this page"></th>
+        <th class="num">No.</th>
+        <th>Name</th>
+        {{- if not .Data.View.Group}}<th class="group">Group</th>{{end}}
+        <th class="state"><span class="sr">What is set</span></th>
+      </tr></thead>
+      <tbody>
+      {{- range .Data.Entries}}{{template "entry-row" ($.Data.Row .)}}{{end}}
+      </tbody>
+    </table>
+    </div>
+    <nav class="pages" aria-label="Pages">
+      <span>{{.Data.First}}–{{.Data.Last}} of {{.Data.Total}}</span>
+      {{- with .Data.Prev}}<a href="{{$.Data.View.URL .}}">Previous</a>{{end}}
+      {{- with .Data.Next}}<a href="{{$.Data.View.URL .}}">Next</a>{{end}}
+      <span class="tick-hint">Tick channels to change several at once.</span>
+    </nav>
+    <form id="bulk" method="post" action="/admin/lineup/channels" hx-post="/admin/lineup/channels" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" class="bulk" role="toolbar" aria-label="Ticked channels">
+      <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+      <input type="hidden" name="back" value="{{.Data.View.Back}}">
+      <span class="bulk-count"></span>
+      <button type="submit" name="action" value="hide">Hide</button>
+      <button type="submit" name="action" value="show" class="phone-hide" title="Shown even when their group is hidden">Show</button>
+      <span class="bulk-move">
+        <select name="group" aria-label="Move the ticked channels to a group" data-autosubmit="move">
+          <option value="" selected disabled>Move to…</option>
+          <option value="0">Their categories' groups</option>
+          {{- range .Data.ByName}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+        </select>
+        <button type="submit" name="action" value="move" class="js-hide">Move</button>
+      </span>
+      <button type="submit" name="action" value="lock" class="phone-hide" title="They need the parental PIN to play">Lock</button>
+      <details class="popover up">
+        <summary class="button">More{{template "i-chevron-up"}}</summary>
+        <div class="menu">
+          <button type="submit" name="action" value="show" class="phone-only" title="Shown even when their group is hidden">Show</button>
+          <button type="submit" name="action" value="lock" class="phone-only" title="They need the parental PIN to play">Lock</button>
+          <button type="submit" name="action" value="group" title="Shown unless their group is hidden">Follow their group</button>
+          <button type="submit" name="action" value="unlock" title="Unless their group is locked">Unlock</button>
+          <hr>
+          <p class="menu-label">Stream repair</p>
+          <button type="submit" name="action" value="repair" title="Their streams go through ffmpeg, which rebuilds their timestamps">Repair</button>
+          <button type="submit" name="action" value="norepair" title="Their streams play as the source sends them, whatever the default">Don't repair</button>
+          <button type="submit" name="action" value="repairdefault" title="Their streams are repaired if the default says so">Repair as the default</button>
+        </div>
+      </details>
+      <button type="reset" class="icon untick" aria-label="Untick all" title="Untick all">{{template "i-close"}}</button>
+    </form>
+    {{- else}}
+    <p class="empty">{{if .Data.View.Query}}No channel here has “{{.Data.View.Query}}” in its name.{{else if .Data.All}}No channels here.{{else}}No channels yet. They appear here when a source has been read.{{end}}</p>
+    {{- end}}
+    </div>
+  </section>
+
+  {{- if .Data.Open}}{{template "entry-panel" .Data.Open}}{{else}}<div id="channel-panel"></div>{{end}}
+</div>
+</div>
+{{end}}
+
+{{define "group-head"}}
+<div class="group-head">
+  <div class="group-title">
+    <div class="group-name">
+      <h2 id="channels-title">{{.G.Name}}</h2>
+      {{- if .G.Hidden}}<span class="badge">{{template "i-eye-off"}}Hidden</span>{{end}}
+      {{- if .G.Locked}}<span class="badge locked">{{template "i-lock"}}Locked</span>{{end}}
+      <details class="popover">
+        <summary class="button quiet icon" aria-label="Rename the group" title="Rename the group">{{template "i-pencil"}}</summary>
+        <div class="menu form-menu">
+          <form method="post" action="/admin/lineup/groups/{{.G.ID}}/rename" hx-post="/admin/lineup/groups/{{.G.ID}}/rename" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" class="row-form">
+            <input type="hidden" name="csrf" value="{{.CSRF}}">
+            <input type="hidden" name="back" value="{{.D.View.Back}}">
+            <input name="name" maxlength="100" value="{{.G.Name}}" aria-label="Name of the group" required>
+            <button type="submit" class="primary">Rename</button>
+          </form>
+        </div>
+      </details>
+    </div>
+    <p class="hint">{{if .G.Channels}}{{.G.Shown}} of {{.G.Channels}} {{if eq .G.Channels 1}}channel{{else}}channels{{end}} shown.{{else}}No channels in it.{{end}}
+      {{- if .G.Categories}} From {{range $i, $c := .G.Categories}}{{if $i}}, {{end}}{{$c.Source}}: {{$c.Name}}{{if not $c.ID}} (gone){{end}}{{end}}.{{end}}</p>
+  </div>
+  <div class="group-actions">
+    <details class="popover">
+      <summary class="button small" title="Pins the numbers of the group's shown channels, in their order">{{template "i-hash"}}Number from…</summary>
+      <div class="menu form-menu">
+        <form method="post" action="/admin/lineup/groups/{{.G.ID}}/number" hx-post="/admin/lineup/groups/{{.G.ID}}/number" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" class="row-form">
+          <input type="hidden" name="csrf" value="{{.CSRF}}">
+          <input type="hidden" name="back" value="{{.D.View.Back}}">
+          <input class="num-input" name="from" type="number" min="1" max="999999" placeholder="From" aria-label="Number the group's shown channels from" required>
+          <button type="submit" class="primary">Number</button>
+        </form>
+        <p class="hint">Pins the numbers of the group's shown channels, in their order.</p>
+      </div>
+    </details>
+    <form method="post" action="/admin/lineup/groups/{{.G.ID}}/{{if .G.Hidden}}show{{else}}hide{{end}}" hx-post="/admin/lineup/groups/{{.G.ID}}/{{if .G.Hidden}}show{{else}}hide{{end}}" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <input type="hidden" name="back" value="{{.D.View.Back}}">
+      <button type="submit" class="small{{if .G.Hidden}} primary{{end}}">{{if .G.Hidden}}{{template "i-eye"}}Show the group{{else}}{{template "i-eye-off"}}Hide the group{{end}}</button>
+    </form>
+    <form method="post" action="/admin/lineup/groups/{{.G.ID}}/{{if .G.Locked}}unlock{{else}}lock{{end}}" hx-post="/admin/lineup/groups/{{.G.ID}}/{{if .G.Locked}}unlock{{else}}lock{{end}}" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <input type="hidden" name="back" value="{{.D.View.Back}}">
+      <button type="submit" class="small"{{if not .G.Locked}} title="Its channels need the parental PIN to play"{{end}}>{{template "i-lock"}}{{if .G.Locked}}Unlock the group{{else}}Lock the group{{end}}</button>
+    </form>
+    {{template "add-channels" .}}
+    <details class="popover">
+      <summary class="button small icon" aria-label="More for the group: merge it, move a category, delete it" title="Merge, move a category, delete">{{template "i-more"}}</summary>
+      <div class="menu form-menu wide">
+        <form method="post" action="/admin/lineup/groups/{{.G.ID}}/merge" hx-post="/admin/lineup/groups/{{.G.ID}}/merge" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" class="row-form" hx-confirm="Merge {{.G.Name}} into the group you chose? Its categories and channels go there, and {{.G.Name}} goes.">
+          <input type="hidden" name="csrf" value="{{.CSRF}}">
+          <input type="hidden" name="back" value="{{.D.View.Back}}">
+          <select name="into" aria-label="Group to merge into" required>
+            <option value="">Merge into…</option>
+            {{- range .D.ByName}}{{if ne .ID $.G.ID}}<option value="{{.ID}}">{{.Name}}</option>{{end}}{{end}}
+          </select>
+          <button type="submit">Merge</button>
+        </form>
+        {{- if .G.Categories}}
+        <form method="post" action="/admin/lineup/categories" hx-post="/admin/lineup/categories" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" class="row-form move-category">
+          <input type="hidden" name="csrf" value="{{.CSRF}}">
+          <input type="hidden" name="back" value="{{.D.View.Back}}">
+          <select name="category" aria-label="Category to move" required>
+            <option value="">Move a category…</option>
+            {{- range .G.Categories}}{{if .ID}}<option value="{{.ID}}">{{.Source}}: {{.Name}}</option>{{end}}{{end}}
+          </select>
+          <select name="group" aria-label="Group to move it to" required>
+            <option value="">…to the group</option>
+            {{- range .D.ByName}}{{if ne .ID $.G.ID}}<option value="{{.ID}}">{{.Name}}</option>{{end}}{{end}}
+          </select>
+          <button type="submit">Move</button>
+        </form>
+        {{- end}}
+        {{- if .D.Deletable .G}}
+        <form method="post" action="/admin/lineup/groups/{{.G.ID}}/delete" hx-post="/admin/lineup/groups/{{.G.ID}}/delete" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML">
+          <input type="hidden" name="csrf" value="{{.CSRF}}">
+          <input type="hidden" name="back" value="{{.D.View.Back}}">
+          <button type="submit" class="danger">Delete the group</button>
+        </form>
+        {{- else}}
+        <p class="hint">A group can be deleted once nothing is in it.</p>
+        {{- end}}
+      </div>
+    </details>
+  </div>
+</div>
+{{end}}
+
+{{/* Finding channels in the other groups, to add them to this one. */}}
+{{define "add-channels"}}
+<details class="popover add-channels"{{if .D.View.Add}} open{{end}}>
+  <summary class="button small">{{template "i-plus"}}Add channels</summary>
+  <section class="menu form-menu wide" aria-labelledby="add-channels-title">
+  <h3 id="add-channels-title" class="sr">Add channels</h3>
+  <form method="get" action="/admin/lineup" class="row-form" hx-get="/admin/lineup" hx-trigger="input changed delay:400ms, submit" hx-sync="this:replace" hx-target="#add-results" hx-select="#add-results" hx-swap="outerHTML" hx-push-url="true">
+    <input type="hidden" name="group" value="{{.G.ID}}">
+    {{- with .D.View.Query}}<input type="hidden" name="q" value="{{.}}">{{end}}
+    <input type="search" name="add" value="{{.D.View.Add}}" placeholder="Find channels in other groups by name" aria-label="Find channels in other groups by name">
+    <button type="submit" class="small js-hide">Find</button>
+  </form>
+  <div id="add-results">
+  {{- if not .D.View.Add}}
+    <p class="hint">Type part of a channel's name to find it in the other groups, then tick it to add it here.</p>
+  {{- else if .D.Candidates}}
+    <form method="post" action="/admin/lineup/channels" hx-post="/admin/lineup/channels" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <input type="hidden" name="back" value="{{.D.View.Back}}">
+      <input type="hidden" name="action" value="move">
+      <input type="hidden" name="group" value="{{.G.ID}}">
+      <ul class="plain candidates">
+        {{- range .D.Candidates}}
+        <li><label{{if .Hidden}} class="is-hidden"{{end}}><input type="checkbox" name="ids" value="{{.ID}}"> <span class="num">{{if .Number}}{{.Number}}{{else}}–{{end}}</span> <span class="c-name">{{.Name}}</span> <span class="muted">{{if .Group}}in {{.Group}}{{else}}in no group{{end}}{{if .Missing}}, missing{{else if .Hidden}}, hidden{{end}}</span></label></li>
+        {{- end}}
+      </ul>
+      {{- if gt .D.Found (len .D.Candidates)}}
+      <p class="hint">The first {{len .D.Candidates}} of {{.D.Found}}. Type more of the name to find the others.</p>
+      {{- end}}
+      <button type="submit" class="small primary">Add the ticked channels to {{.G.Name}}</button>
+    </form>
+  {{- else}}
+    <p class="empty">No channel in another group has “{{.D.View.Add}}” in its name.</p>
+  {{- end}}
+  </div>
+  </section>
+</details>
+{{end}}
+
+{{define "entry-row"}}
+<tr id="entry-{{.E.ID}}" class="{{if .Open}}open{{end}}{{if .E.Hidden}} is-hidden{{end}}">
+  <td class="tick"><input type="checkbox" name="ids" value="{{.E.ID}}" form="bulk" aria-label="Tick {{.E.Name}}"></td>
+  <td class="num">{{if .E.Number}}{{.E.Number}}{{else}}–{{end}}{{if .E.Pinned}}<span class="pin" title="Pinned: renumbering never moves it">{{template "i-pin"}}<span class="sr">pinned</span></span>{{end}}</td>
+  <td class="name">
+    <a class="entry-link" href="{{.View.EditURL .E.ID}}" hx-get="{{.View.PanelURL .E.ID}}" hx-target="#channel-panel" hx-swap="outerHTML" hx-push-url="{{.View.EditURL .E.ID}}">{{.E.Name}}</a>
+    {{- if .E.Renamed}}<div class="note">From its source: {{.E.ChannelName}}</div>{{else if and .E.Moved .InGroup}}<div class="note">Moved here</div>{{end}}
+  </td>
+  {{- if not .InGroup}}
+  <td class="group">{{if .E.Group}}{{.E.Group}}{{else}}<span class="muted">None</span>{{end}}{{if .E.Moved}}<div class="note">Moved here</div>{{end}}</td>
+  {{- end}}
+  <td class="state"><div class="chips">
+    {{- if .E.Missing}}<span class="badge bad" title="Its source no longer lists it. Overscan keeps it, with its edits, for a week in case it comes back.">{{template "i-alert"}}Missing</span>
+    {{- else if .E.Hidden}}<span class="badge">{{template "i-eye-off"}}{{if eq .Visibility "hidden"}}Hidden{{else}}Hidden with its group{{end}}</span>
+    {{- else if not .E.Number}}<span class="badge">No number</span>{{end}}
+    {{- if and (eq .Visibility "shown") (not .E.Missing)}}<span class="badge" title="Shown even if its group is hidden">{{template "i-eye"}}Always shown</span>{{end}}
+    {{- if .E.Locked}}<span class="badge locked" title="It needs the parental PIN to play">{{template "i-lock"}}Locked</span>
+    {{- else if and .E.GroupLocked (not .InGroup)}}<span class="badge locked" title="Its group is locked: it needs the parental PIN to play">{{template "i-lock"}}Locked</span>{{end}}
+    {{- $repair := .RepairChoice}}
+    {{- if eq $repair "on"}}<span class="badge accent" title="{{if .CanRepair}}Its stream goes through ffmpeg{{else}}Set to be repaired, but there is no ffmpeg to run{{end}}">{{template "i-repair"}}Repair</span>
+    {{- else if eq $repair "off"}}<span class="badge" title="Its stream plays as the source sends it, whatever the default">{{template "i-repair"}}No repair</span>{{end}}
+  </div></td>
+</tr>
+{{- end}}
+
+{{/* The panel alone, for htmx to put beside the list. */}}
+{{define "entry-panel-fragment"}}{{template "entry-panel" .Data}}{{end}}
+
+{{/* A channel open beside the list, to change. */}}
+{{define "entry-panel"}}
+<aside id="channel-panel" class="card channel-panel" aria-labelledby="panel-title">
+  <div class="panel-head">
+    <div>
+      <p class="eyebrow">Channel{{if .E.Number}} {{.E.Number}}{{end}}</p>
+      <h2 id="panel-title">{{.E.Name}}</h2>
+      <p class="note">From {{.E.Source}}, as {{.E.ChannelName}}{{if .E.Category}}, in its category {{.E.Category}}{{end}}</p>
+    </div>
+    <a class="button quiet icon" href="{{.View.URL 0}}" hx-get="{{.View.URL 0}}" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" hx-push-url="true" aria-label="Close" title="Close">{{template "i-close"}}</a>
+  </div>
+  <form method="post" action="/admin/lineup/channels/{{.E.ID}}" hx-post="/admin/lineup/channels/{{.E.ID}}" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" class="entry-form">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <input type="hidden" name="back" value="{{.View.Back}}">
+    <div class="field">
+      <label for="f-number">Number</label>
+      <div class="row-form">
+        <input id="f-number" class="num-input" name="number" type="number" min="1" max="999999" value="{{if .E.Number}}{{.E.Number}}{{end}}" placeholder="Automatic">
+        <label class="check"><input type="checkbox" name="pinned" value="1"{{if .E.Pinned}} checked{{end}}> Pinned</label>
+      </div>
+      <p class="hint">A number you set is pinned: renumbering never moves it, and a channel that held it takes this one's old number. Empty, its source numbers it.</p>
+    </div>
+    <div class="field">
+      <label for="f-name">Name</label>
+      <input id="f-name" name="name" maxlength="200" value="{{if .E.Renamed}}{{.E.Name}}{{end}}" placeholder="{{.E.ChannelName}}">
+      <p class="hint">Empty, it takes its source's name.</p>
+    </div>
+    <div class="field">
+      <label for="f-group">Group</label>
+      <select id="f-group" name="group">
+        <option value="0"{{if not .E.Moved}} selected{{end}}>{{if .Home}}Its category's group: {{.Home}}{{else}}None: its source gives no category{{end}}</option>
+        {{- range .Groups}}<option value="{{.ID}}"{{if and $.E.Moved (eq .ID $.E.GroupID)}} selected{{end}}>{{.Name}}</option>{{end}}
+      </select>
+    </div>
+    <fieldset class="field">
+      <legend>Shown</legend>
+      <div class="segmented">
+        <label><input type="radio" name="visibility" value="group"{{if eq .Visibility "group"}} checked{{end}}><span>With its group</span></label>
+        <label title="Shown, even if its group is hidden"><input type="radio" name="visibility" value="shown"{{if eq .Visibility "shown"}} checked{{end}}><span>Always</span></label>
+        <label><input type="radio" name="visibility" value="hidden"{{if eq .Visibility "hidden"}} checked{{end}}><span>Hidden</span></label>
+      </div>
+    </fieldset>
+    <div class="field">
+      <span class="label">Parental lock</span>
+      <label class="check"><input type="checkbox" name="locked" value="1"{{if .E.Locked}} checked{{end}}> It needs the PIN to play{{if .E.GroupLocked}}; its group is locked too{{end}}</label>
+    </div>
+    {{- $repair := .RepairChoice}}
+    <fieldset class="field">
+      <legend>Stream repair</legend>
+      <div class="segmented">
+        <label><input type="radio" name="repair" value=""{{if eq $repair ""}} checked{{end}}><span>As the default</span></label>
+        <label><input type="radio" name="repair" value="on"{{if eq $repair "on"}} checked{{end}}><span>Repair</span></label>
+        <label><input type="radio" name="repair" value="off"{{if eq $repair "off"}} checked{{end}}><span>Don't repair</span></label>
+      </div>
+      <p class="hint">The default is {{if .RepairDefault}}to repair every channel{{else}}not to repair{{end}}. ffmpeg rebuilds the timestamps of a channel that stutters, skips or jumps back, without re-encoding it.</p>
+      {{- if not .CanRepair}}
+      <p class="hint warn">There is no ffmpeg to run, so a channel set to be repaired plays as it is. Install ffmpeg on the server, or set its path in the configuration file, then restart Overscan.</p>
+      {{- end}}
+    </fieldset>
+    <div class="form-buttons">
+      <button type="submit" class="primary">Save</button>
+      <a class="button" href="{{.View.URL 0}}" hx-get="{{.View.URL 0}}" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" hx-push-url="true">Cancel</a>
+    </div>
+  </form>
+</aside>
+{{end}}

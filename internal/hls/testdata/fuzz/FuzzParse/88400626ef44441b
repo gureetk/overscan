@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("#EXT-X-KEY:METHOD=AES-128,IV=0XX\n0")

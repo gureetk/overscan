@@ -1,0 +1,43 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+{{define "content"}}
+<div id="capture-main">
+<div class="page-head">
+  <div>
+    <h1>Capture log</h1>
+    <p class="lead">Requests from boxes and clients that Overscan does not support yet, counted by kind. They show what to build next. Each keeps its last example, with credentials and tokens taken out.</p>
+  </div>
+  {{- if .Data}}
+  <form method="post" action="/admin/capture/clear" hx-post="/admin/capture/clear" hx-target="#capture-main" hx-select="#capture-main" hx-swap="outerHTML" hx-confirm="Clear the capture log? Overscan starts counting again." class="clear-log">
+    <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+    <button type="submit">Clear the log</button>
+  </form>
+  {{- end}}
+</div>
+{{template "alerts" .}}
+{{- if .Data}}
+<section class="card" aria-label="Requests">
+  <div class="table-wrap">
+  <table class="list capture">
+    <thead><tr><th>Request</th><th>Parameters</th><th class="right">Times</th><th>Last asked</th><th>Device</th></tr></thead>
+    <tbody>
+    {{- range .Data}}
+      <tr>
+        <td>
+          <code>{{.Module}}</code> · <code>{{.Action}}</code>
+          <details><summary>Last example</summary><pre>{{.Example}}</pre><div class="note">{{.UserAgent}}</div></details>
+        </td>
+        <td>{{range $i, $p := .ParamList}}{{if $i}}, {{end}}<code>{{$p}}</code>{{else}}<span class="muted">None</span>{{end}}</td>
+        <td class="right strong">{{.Count}}</td>
+        <td>{{.LastSeenAgo}}<div class="note">First {{.FirstSeenAgo}}</div></td>
+        <td>{{if .Device}}{{.Device}}{{else}}<span class="muted">Unknown</span>{{end}}</td>
+      </tr>
+    {{- end}}
+    </tbody>
+  </table>
+  </div>
+</section>
+{{- else}}
+<section class="card"><p class="empty">Nothing yet: no box or client has asked for something that Overscan does not support.</p></section>
+{{- end}}
+</div>
+{{end}}

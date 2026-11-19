@@ -1,0 +1,209 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+{{define "content"}}
+<div class="page-head">
+  <div>
+    <h1>Devices</h1>
+    <p class="lead">The boxes and players that use Overscan. A new one waits here until you approve it.</p>
+  </div>
+</div>
+<div id="device-sections" hx-select-oob="#nav-devices,#tab-devices">
+{{template "alerts" .}}
+<section class="card pair" aria-labelledby="pair-title">
+  <div class="pair-main">
+    <h2 id="pair-title">Pair a box</h2>
+    <p class="hint">A box running Overscan's page shows a six-digit code while it waits.</p>
+    <form method="post" action="/admin/devices/pair" hx-post="/admin/devices/pair" hx-target="#device-sections" hx-select="#device-sections" hx-swap="outerHTML" class="pair-form">
+      <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+      <div class="field">
+        <label for="pair-code">Code on the box</label>
+        <input id="pair-code" class="code-field" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="000000" required value="{{.Data.Code}}">
+      </div>
+      <div class="field grow">
+        <label for="pair-label">Label</label>
+        <input id="pair-label" name="label" maxlength="100" placeholder="Such as Living room" value="{{if .Data.Code}}{{.Data.Label}}{{end}}">
+      </div>
+      {{template "account-field" (dict "Accounts" .Data.Accounts "ID" "pair-account")}}
+      <button class="primary big" type="submit">Approve</button>
+    </form>
+  </div>
+  <div class="pair-mac">
+    <div>
+      <h3>Or approve a MAC address</h3>
+      <p class="hint">For a Stalker client, which a portal knows by its MAC address. It can be approved before it first connects.</p>
+    </div>
+    <form method="post" action="/admin/devices/approve" hx-post="/admin/devices/approve" hx-target="#device-sections" hx-select="#device-sections" hx-swap="outerHTML" class="row-form">
+      <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+      <input class="mac-input" name="mac" maxlength="40" placeholder="00:1A:79:00:00:00" aria-label="MAC address" spellcheck="false" autocapitalize="characters" required value="{{.Data.MAC}}">
+      <input name="label" maxlength="100" placeholder="Label" aria-label="Label" value="{{if .Data.MAC}}{{.Data.Label}}{{end}}">
+      {{template "account-field" (dict "Accounts" .Data.Accounts "ID" "mac-account")}}
+      <button type="submit">Approve</button>
+    </form>
+  </div>
+</section>
+{{template "waiting" .}}
+{{template "known" .}}
+{{template "checks" .}}
+</div>
+{{end}}
+
+{{define "account-field"}}
+{{- if gt (len .Accounts) 1}}
+<select name="account" aria-label="Account" id="{{.ID}}">
+  {{- range .Accounts}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+</select>
+{{- end}}
+{{- end}}
+
+{{define "waiting"}}
+<section id="waiting" class="card todo" hx-get="/admin/devices/waiting" hx-trigger="every 5s" hx-swap="outerHTML" aria-labelledby="waiting-title">
+  <div class="todo-head">
+    <h2 id="waiting-title">Waiting for approval{{if .Data.Waiting}} <span class="count">{{len .Data.Waiting}}</span>{{end}}</h2>
+    <p class="hint">A new box or player appears here when it first connects.</p>
+  </div>
+  {{- if .Data.Waiting}}
+  <ul class="todo-list">
+    {{- range .Data.Waiting}}
+    <li>
+      <span class="tile-icon accent">{{template "i-devices"}}</span>
+      <div class="todo-text">
+        <strong>{{if .Model}}{{.Model}}{{else}}A device of unknown model{{end}}</strong>
+        <span><span class="mac">{{.MAC}}</span> · seen {{ago .LastSeen $.Data.Now}}</span>
+        {{- if eq (print .State) "approved"}}<span>Already paired{{with .Label}} as {{.}}{{end}}. A box without its secret asks to take its place.</span>{{end}}
+      </div>
+      {{- if .PairingCode}}
+      <div class="todo-code"><small>Code on its screen</small><span class="code">{{.Code}}</span></div>
+      {{- end}}
+      <div class="todo-actions">
+        {{- if .PairingCode}}
+        <form method="post" action="/admin/devices/pair" hx-post="/admin/devices/pair" hx-target="#device-sections" hx-select="#device-sections" hx-swap="outerHTML">
+          <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+          <input type="hidden" name="code" value="{{.PairingCode}}">
+          <button class="primary" type="submit">{{if eq (print .State) "approved"}}Replace the pairing{{else}}Approve{{end}}</button>
+        </form>
+        {{- else}}
+        <form method="post" action="/admin/devices/{{.MAC}}/approve" hx-post="/admin/devices/{{.MAC}}/approve" hx-target="#device-sections" hx-select="#device-sections" hx-swap="outerHTML">
+          <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+          <button class="primary" type="submit">Approve</button>
+        </form>
+        {{- end}}
+        {{- if eq (print .State) "pending"}}
+        <form method="post" action="/admin/devices/{{.MAC}}/block" hx-post="/admin/devices/{{.MAC}}/block" hx-target="#device-sections" hx-select="#device-sections" hx-swap="outerHTML">
+          <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+          <button type="submit">Block</button>
+        </form>
+        {{- end}}
+      </div>
+    </li>
+    {{- end}}
+  </ul>
+  {{- else}}
+  <p class="empty todo-empty">No device is waiting.</p>
+  {{- end}}
+</section>
+{{end}}
+
+{{/* What the waiting list's refresh brings: the list, and the rail's and tabs' counts. */}}
+{{define "waiting-refresh"}}{{template "waiting" .}}{{template "nav-devices-oob" .}}{{end}}
+
+{{define "known"}}
+<section id="known" class="card" aria-labelledby="known-title">
+  <h2 id="known-title">Approved and blocked</h2>
+  {{- if .Data.Known}}
+  <div class="table-wrap">
+  <table class="list devices">
+    <thead><tr><th>Label</th><th>MAC address</th><th>State</th><th>Model</th><th>Plays</th>{{if gt (len .Data.Accounts) 1}}<th>Account</th>{{end}}<th>Last seen</th><th class="actions"><span class="sr">Actions</span></th></tr></thead>
+    <tbody>
+    {{- range .Data.Known}}
+      <tr>
+        <td>
+          <div class="label-cell">
+            {{- if .Label}}<span class="strong">{{.Label}}</span>{{else}}<span class="muted no-label">No label</span>{{end}}
+            <details class="popover">
+              <summary class="button quiet icon small" aria-label="{{if .Label}}Change the label of {{.Label}}{{else}}Give {{.MAC}} a label{{end}}" title="Change the label">{{template "i-pencil"}}</summary>
+              <div class="menu form-menu">
+                <form method="post" action="/admin/devices/{{.MAC}}/label" hx-post="/admin/devices/{{.MAC}}/label" hx-target="#device-sections" hx-select="#device-sections" hx-swap="outerHTML" class="row-form">
+                  <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+                  <input name="label" maxlength="100" value="{{.Label}}" placeholder="No label" aria-label="Label of {{.MAC}}">
+                  <button class="primary" type="submit">Save</button>
+                </form>
+              </div>
+            </details>
+          </div>
+        </td>
+        <td><span class="mac">{{.MAC}}</span></td>
+        <td><div class="chips">
+          <span class="badge {{.State}}">{{if eq (print .State) "approved"}}Approved{{else}}Blocked{{end}}</span>
+          {{- if .Paired}}<span class="badge" title="Paired with its secret: a copied MAC address alone is not enough">Paired</span>{{end}}
+        </div></td>
+        <td>{{if .Model}}{{.Model}}{{else}}<span class="muted">Unknown</span>{{end}}</td>
+        <td>{{template "plays" (dict "Check" .Check "ID" .ID "Now" $.Data.Now)}}</td>
+        {{- if gt (len $.Data.Accounts) 1}}<td>{{.Account}}</td>{{end}}
+        <td>{{ago .LastSeen $.Data.Now}}</td>
+        <td class="actions">
+          <details class="popover">
+            <summary class="button quiet icon small" aria-label="{{if eq (print .State) "approved"}}Block{{else}}Approve{{end}} or remove {{.MAC}}" title="{{if eq (print .State) "approved"}}Block{{else}}Approve{{end}}, remove">{{template "i-more"}}</summary>
+            <div class="menu">
+              {{- if eq (print .State) "approved"}}
+              {{template "action" (dict "MAC" .MAC "Action" "block" "Label" "Block" "CSRF" $.Session.CSRFToken)}}
+              {{- else}}
+              {{template "action" (dict "MAC" .MAC "Action" "approve" "Label" "Approve" "CSRF" $.Session.CSRFToken)}}
+              {{- end}}
+              {{template "action" (dict "MAC" .MAC "Action" "remove" "Label" "Remove" "Danger" true "CSRF" $.Session.CSRFToken "Confirm" (print "Remove " .MAC "? If it connects again, it waits for approval again."))}}
+            </div>
+          </details>
+        </td>
+      </tr>
+    {{- end}}
+    </tbody>
+  </table>
+  </div>
+  {{- else}}
+  <p class="empty">No device is approved or blocked yet.</p>
+  {{- end}}
+</section>
+{{end}}
+
+{{/* Where a box's playback check stands (D70), for the table. */}}
+{{define "plays"}}
+{{- with .Check}}
+{{- if .By}}<span class="muted" title="Not checked itself: it plays as {{.By}} was found to play">As {{.By}}</span>
+{{- else}}<a href="#check-{{$.ID}}">Checked {{ago .At $.Now}}</a>{{end}}
+{{- else}}<span class="muted">Not checked</span>{{end}}
+{{- end}}
+
+{{/* What each box's playback check found, and forgetting it. */}}
+{{define "checks"}}
+{{- if .Data.Checks}}
+<section id="checks" class="card" aria-labelledby="checks-title">
+  <h2 id="checks-title">What the boxes play</h2>
+  <p class="hint">What each box's playback check found. A box checks itself from its Settings, under Playback Check, and a film whose sound or file it does not play goes through ffmpeg. A box that was not checked plays as the last box of its model that was.</p>
+  <ul class="checks">
+    {{- range .Data.Checks}}
+    <li id="check-{{.ID}}">
+      <div class="check-head">
+        <strong>{{.Name}}</strong>
+        <span class="muted">{{if .Model}}{{.Model}}, {{end}}{{with .Firmware}}firmware {{.}}, {{end}}checked {{ago .At $.Data.Now}}</span>
+      </div>
+      {{- if .Plays}}
+      <p class="check-found"><span class="check-label">Plays</span> {{range $i, $p := .Plays}}{{if $i}}, {{end}}{{$p}}{{end}}</p>
+      {{- end}}
+      {{- if .Not}}
+      <p class="check-found"><span class="check-label">Does not play</span> {{range $i, $p := .Not}}{{if $i}}, {{end}}{{$p}}{{end}}</p>
+      {{- end}}
+      <form method="post" action="/admin/devices/{{.MAC}}/forget-check" hx-post="/admin/devices/{{.MAC}}/forget-check" hx-target="#device-sections" hx-select="#device-sections" hx-swap="outerHTML" hx-confirm="Forget what the playback check of {{.Name}} found? It then plays as its model's datasheet says, or as another box of its model was found to play.">
+        <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+        <button type="submit">Forget what it found</button>
+      </form>
+    </li>
+    {{- end}}
+  </ul>
+</section>
+{{- end}}
+{{- end}}
+
+{{define "action"}}
+<form method="post" action="/admin/devices/{{.MAC}}/{{.Action}}" hx-post="/admin/devices/{{.MAC}}/{{.Action}}" hx-target="#device-sections" hx-select="#device-sections" hx-swap="outerHTML"{{if .Confirm}} hx-confirm="{{.Confirm}}"{{end}}>
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <button type="submit"{{if .Danger}} class="danger"{{end}}>{{.Label}}</button>
+</form>
+{{- end}}

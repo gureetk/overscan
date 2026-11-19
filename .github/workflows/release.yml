@@ -1,0 +1,110 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Publishes a GitHub release with archives built by the toolchain pinned in
+# go.mod. There are three ways to start it:
+#
+# - Run this workflow from the Actions tab with a version such as v0.1.0. It
+#   tags the head of main and publishes the release.
+# - Push a tag such as v0.1.0.
+# - Publish a release from the Releases page, creating its tag there. The
+#   archives are added to that release.
+#
+# Versions v0.0.x and versions with a hyphen (v0.1.0-rc.1) are pre-releases.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release, such as v0.1.0
+        required: true
+        type: string
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # create the tag and the release, and upload files
+    env:
+      VERSION: ${{ inputs.version || github.ref_name }}
+    steps:
+      - name: Check the version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$VERSION' is not a version such as v0.1.0 or v0.1.0-rc.1"
+            exit 1
+          fi
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            if [ "$GITHUB_REF" != refs/heads/main ]; then
+              echo "::error::Run releases from main, not $GITHUB_REF"
+              exit 1
+            fi
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" >/dev/null 2>&1; then
+              echo "::error::The tag $VERSION already exists"
+              exit 1
+            fi
+          fi
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: false # build releases from a clean module cache
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build
+        run: tools/build-release.sh "$VERSION"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          files=(dist/*.tar.gz dist/SHA256SUMS)
+
+          # A release published from the Releases page already exists: add the
+          # archives to it.
+          if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$VERSION" "${files[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+            exit 0
+          fi
+
+          prerelease=()
+          case "$VERSION" in v0.0.* | *-*) prerelease=(--prerelease) ;; esac
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            tag=(--target "$GITHUB_SHA") # creates the tag
+          else
+            tag=(--verify-tag) # the pushed tag
+          fi
+
+          {
+            if [ "${#prerelease[@]}" -gt 0 ]; then
+              echo "A development build, not a supported release."
+              echo
+            fi
+            echo "Built from ${GITHUB_SHA} with $(go env GOVERSION)."
+            echo
+            echo 'Take the archive for your machine (`linux_amd64` for 64-bit x86, `linux_arm64` for 64-bit ARM) and check it with `sha256sum -c SHA256SUMS --ignore-missing`.'
+            echo
+            gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+              -f tag_name="$VERSION" -f target_commitish="$GITHUB_SHA" --jq .body
+          } >notes.md
+
+          gh release create "$VERSION" "${files[@]}" --repo "$GITHUB_REPOSITORY" "${tag[@]}" \
+            --title "$VERSION" --notes-file notes.md "${prerelease[@]}"

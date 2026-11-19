@@ -1,0 +1,28 @@
+{
+  "name": "overscan-mag-page",
+  "private": true,
+  "description": "Overscan's interface for MAG set-top boxes",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "node build.mjs",
+    "lint": "eslint dist",
+    "check": "npm run typecheck && npm run build && npm run lint"
+  },
+  "devDependencies": {
+    "@babel/core": "8.1.2",
+    "@babel/preset-env": "8.0.7",
+    "@babel/preset-typescript": "8.0.7",
+    "@rollup/plugin-terser": "1.0.2",
+    "acorn": "8.19.0",
+    "autoprefixer": "10.6.2",
+    "eslint": "10.14.0",
+    "postcss": "8.5.32",
+    "rollup": "4.68.2",
+    "typescript": "7.0.2"
+  }
+}

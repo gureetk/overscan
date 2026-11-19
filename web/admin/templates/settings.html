@@ -1,0 +1,151 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+{{define "content"}}
+<div id="settings-main">
+<div class="page-head">
+  <div>
+    <h1>Settings</h1>
+    <p class="lead">What applies to every channel and device, your account, and this server.</p>
+  </div>
+</div>
+{{template "alerts" .}}
+<div class="settings">
+<div>
+  <section class="panel" aria-labelledby="repair-title">
+    <div class="panel-title"><span class="tile-icon accent">{{template "i-repair"}}</span><h2 id="repair-title">Stream repair</h2></div>
+    {{- if .Data.CanRepair}}
+    <p class="state-line"><i class="dot ok" aria-hidden="true"></i>{{with .Data.FFmpeg}}ffmpeg {{.}}{{else}}ffmpeg is ready{{end}}</p>
+    {{- else}}
+    <p class="state-line warn"><i class="dot bad" aria-hidden="true"></i>There is no ffmpeg to run, so streams play as they are. Install ffmpeg on the server, or set its path in the configuration file, then restart Overscan.</p>
+    {{- end}}
+    <form method="post" action="/admin/settings/repair" hx-post="/admin/settings/repair" hx-trigger="change" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" class="switch-row">
+      <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+      <input class="switch" type="checkbox" id="repair-all" name="default" value="1"{{if .Data.RepairDefault}} checked{{end}} aria-describedby="repair-all-text">
+      <div>
+        <label for="repair-all">Repair every channel</label>
+        <p id="repair-all-text">{{if .Data.RepairDefault}}Every channel goes through ffmpeg unless it is set not to. Each starts a second or two later and loses its subtitles.{{else}}Off: only the channels set to be repaired go through ffmpeg, which rebuilds their timestamps.{{end}}</p>
+        <noscript><button class="small" type="submit">Save</button></noscript>
+      </div>
+    </form>
+    <form method="post" action="/admin/settings/repair-hls" hx-post="/admin/settings/repair-hls" hx-trigger="change" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" class="switch-row">
+      <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+      <input class="switch" type="checkbox" id="repair-hls" name="hls" value="1"{{if .Data.RepairHLS}} checked{{end}} aria-describedby="repair-hls-text">
+      <div>
+        <label for="repair-hls">Repair HLS streams</label>
+        <p id="repair-hls-text">{{if .Data.RepairHLS}}A repaired channel whose address is HLS comes to boxes as one stream that the server makes from it, in its best quality up to 1080p, and goes through ffmpeg. HLS that cannot be made one stream plays as HLS, unrepaired.{{else}}Off: a channel whose address is HLS plays as HLS, which repair cannot reach, even when it is set to be repaired.{{end}}</p>
+        <noscript><button class="small" type="submit">Save</button></noscript>
+      </div>
+    </form>
+    <p class="hint">A channel set on its own on the <a href="/admin/lineup">Live TV</a> page keeps its setting.</p>
+  </section>
+
+  <section class="panel" aria-labelledby="transcode-title">
+    <div class="panel-title"><span class="tile-icon accent">{{template "i-film"}}</span><h2 id="transcode-title">Converting and transcoding</h2></div>
+    {{- if not .Data.CanConvert}}
+    <p class="state-line warn"><i class="dot bad" aria-hidden="true"></i>There is no ffmpeg and ffprobe to run, so films and episodes go to boxes as they are. Install ffmpeg on the server, then restart Overscan.</p>
+    {{- else if not .Data.CanTranscode}}
+    <p class="state-line warn"><i class="dot bad" aria-hidden="true"></i>This server's ffmpeg has no libx264, so it can convert sound but not transcode video. Install an ffmpeg built with it, then restart Overscan.</p>
+    {{- else if not .Data.ToneMap}}
+    <p class="state-line warn"><i class="dot bad" aria-hidden="true"></i>This server's ffmpeg has no zscale filter, so HDR video it transcodes comes out washed out.</p>
+    {{- else}}
+    <p class="state-line"><i class="dot ok" aria-hidden="true"></i>ffmpeg can convert sound, transcode with libx264, and map HDR to SDR</p>
+    {{- end}}
+    <form method="post" action="/admin/settings/convert" hx-post="/admin/settings/convert" hx-trigger="change" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" class="switch-row">
+      <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+      <input class="switch" type="checkbox" id="convert" name="convert" value="1"{{if .Data.ConvertSound}} checked{{end}}{{if not .Data.CanConvert}} disabled{{end}} aria-describedby="convert-text">
+      <div>
+        <label for="convert">Convert sound a box cannot play</label>
+        <p id="convert-text">{{if .Data.ConvertSound}}A film or an episode whose sound or file a box cannot play, such as DTS, goes through ffmpeg, which copies its picture and converts its sound to Dolby Digital. It takes little of the server.{{else}}Off: films and episodes whose sound or file a box cannot play go to it as they are, and it may play them without sound, or not at all.{{end}}</p>
+        <noscript><button class="small" type="submit">Save</button></noscript>
+      </div>
+    </form>
+    <form method="post" action="/admin/settings/transcode" hx-post="/admin/settings/transcode" hx-trigger="change" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" class="switch-row with-select">
+      <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+      <div>
+        <label for="transcode">Transcode video on this server</label>
+        <p id="transcode-text">{{if .Data.Transcodes}}Films and episodes whose video a box cannot play, such as 4K or AV1, come to it as 1080p H.264 that this server's ffmpeg makes as they play, {{.Data.Transcodes}} at a time. Another box that asks then is told the server is busy.{{else}}Off: films and episodes whose video a box cannot play, such as 4K or AV1, go to it as they are, and it may not show them.{{end}}</p>
+        <noscript><button class="small" type="submit">Save</button></noscript>
+      </div>
+      <select id="transcode" name="at_once" aria-describedby="transcode-text"{{if not .Data.CanTranscode}} disabled{{end}}>
+        <option value="0"{{if eq .Data.Transcodes 0}} selected{{end}}>Off</option>
+        <option value="1"{{if eq .Data.Transcodes 1}} selected{{end}}>1 at a time</option>
+        <option value="2"{{if eq .Data.Transcodes 2}} selected{{end}}>2 at a time</option>
+        <option value="3"{{if eq .Data.Transcodes 3}} selected{{end}}>3 at a time</option>
+      </select>
+    </form>
+    <form method="post" action="/admin/settings/server-transcode" hx-post="/admin/settings/server-transcode" hx-trigger="change" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" class="switch-row">
+      <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+      <input class="switch" type="checkbox" id="server-transcode" name="server" value="1"{{if .Data.ServerTranscodes}} checked{{end}} aria-describedby="server-transcode-text">
+      <div>
+        <label for="server-transcode">Let Jellyfin transcode</label>
+        <p id="server-transcode-text">{{if .Data.ServerTranscodes}}A Jellyfin server transcodes its own films and episodes whose video a box cannot play, on its own processor, whatever this server is set to do.{{else}}Off: Jellyfin's films and episodes whose video a box cannot play go to it as they are.{{end}}</p>
+        <noscript><button class="small" type="submit">Save</button></noscript>
+      </div>
+    </form>
+    <p class="hint">Transcoding needs a fast processor, above all for 4K: when ffmpeg cannot keep up, the box stops to wait, and the server's log says so. Stalker clients always get films as they are.</p>
+  </section>
+
+  <section class="panel" aria-labelledby="pin-title">
+    <div class="panel-title"><span class="tile-icon warn">{{template "i-lock"}}</span><h2 id="pin-title">Parental PIN</h2>{{if .Data.PINSet}}<span class="badge ok">Set</span>{{else}}<span class="badge">Not set</span>{{end}}</div>
+    {{- if .Data.PINSet}}
+    <p>Boxes ask for it before they play a locked channel.{{if .Data.Locks}} The lineup has {{.Data.Locks}} {{plural .Data.Locks "lock"}}.{{else}} Nothing is locked yet: lock groups or channels in the <a href="/admin/lineup">Lineup</a>.{{end}}</p>
+    {{- else if .Data.Locks}}
+    <p class="hint warn">Not set, so the lineup's {{.Data.Locks}} {{plural .Data.Locks "lock"}} {{if eq .Data.Locks 1}}does{{else}}do{{end}} nothing yet.</p>
+    {{- else}}
+    <p>Lock groups or channels on the <a href="/admin/lineup">Live TV</a> page, and set a PIN that boxes ask for before they play them.</p>
+    {{- end}}
+    <div class="pin-forms">
+      <form method="post" action="/admin/settings/pin" hx-post="/admin/settings/pin" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" class="row-form">
+        <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+        <input name="pin" type="password" inputmode="numeric" pattern="[0-9]{4,8}" minlength="4" maxlength="8" autocomplete="new-password" placeholder="{{if .Data.PINSet}}New PIN, {{end}}4 to 8 digits" aria-label="{{if .Data.PINSet}}New parental PIN{{else}}Parental PIN{{end}}" required>
+        <button type="submit">{{if .Data.PINSet}}Change{{else}}Set{{end}}</button>
+      </form>
+      {{- if .Data.PINSet}}
+      <form method="post" action="/admin/settings/pin" hx-post="/admin/settings/pin" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" hx-confirm="Remove the parental PIN? Locked channels then play without one.">
+        <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+        <button type="submit" class="danger" name="remove" value="1">Remove the PIN</button>
+      </form>
+      {{- end}}
+    </div>
+  </section>
+
+  <section class="panel" id="account" aria-labelledby="account-title">
+    <div class="panel-title"><span class="tile-icon">{{template "i-user"}}</span><h2 id="account-title">Your account</h2></div>
+    <p>Signed in as <strong>{{.Session.Username}}</strong> since {{.Session.CreatedAt.Format "2 January 2006, 15:04 UTC"}}.</p>
+    <p><a class="button" href="/admin/password">Change the password</a></p>
+  </section>
+</div>
+
+<div>
+  <section class="panel" aria-labelledby="server-title">
+    <div class="panel-title"><span class="tile-icon">{{template "i-sources"}}</span><h2 id="server-title">This server</h2></div>
+    <dl class="facts-list">
+      <div><dt>Version</dt><dd>{{.Version}}</dd></div>
+      <div><dt>Running since</dt><dd>{{.Data.Started.Format "2 January 2006, 15:04 UTC"}}</dd></div>
+      {{- with .Data.Portal}}
+      <div><dt>Portal for a MAG box</dt><dd class="mono">{{.}}</dd></div>
+      {{- end}}
+      {{- with .Data.StalkerPortal}}
+      <div><dt>For a Stalker client</dt><dd class="mono">{{.}}</dd></div>
+      {{- end}}
+      {{- range .Data.Facts}}
+      <div><dt>{{.Name}}</dt><dd>{{.Value}}</dd></div>
+      {{- end}}
+    </dl>
+  </section>
+
+  <section class="panel" aria-labelledby="backup-title">
+    <div class="panel-title"><span class="tile-icon">{{template "i-backup"}}</span><h2 id="backup-title">Backups</h2></div>
+    <p>Overscan keeps everything in one database. As the user that runs Overscan, this writes a copy of it to the backups folder in the data directory, even while the server runs:</p>
+    <pre>overscan backup</pre>
+    <p class="hint">On an installation from install.sh, that is <code>runuser -u overscan -- overscan backup</code>. Keep a copy of the key file apart from the backups: whoever has both can read the sources' logins. The backup guide in Overscan's docs says how to restore.</p>
+  </section>
+
+  <section class="panel" aria-labelledby="bundle-title">
+    <div class="panel-title"><span class="tile-icon">{{template "i-bundle"}}</span><h2 id="bundle-title">Support bundle</h2></div>
+    <p>For a bug report: the version and settings, the state of sources, the lineup and devices, and the last lines of the log, without addresses, logins or MAC addresses. Read it before you share it.</p>
+    <p><a class="button" href="/admin/support-bundle" download>{{template "i-download"}}Download the support bundle</a></p>
+  </section>
+</div>
+</div>
+</div>
+{{end}}

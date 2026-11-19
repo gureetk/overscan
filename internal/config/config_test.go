@@ -1,0 +1,341 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"overscan.gureet.ca/internal/source"
+)
+
+func env(vars map[string]string) func(string) (string, bool) {
+	return func(name string) (string, bool) {
+		v, ok := vars[name]
+		return v, ok
+	}
+}
+
+func writeFile(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "overscan.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestMissingOptionalFileGivesDefaults(t *testing.T) {
+	cfg, readFile, err := Load(filepath.Join(t.TempDir(), "absent.yaml"), false, env(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if readFile {
+		t.Error("readFile = true for a missing file")
+	}
+	if !reflect.DeepEqual(cfg, Default()) {
+		t.Errorf("got %+v, want the defaults %+v", cfg, Default())
+	}
+}
+
+func TestMissingRequiredFileIsAnError(t *testing.T) {
+	if _, _, err := Load(filepath.Join(t.TempDir(), "absent.yaml"), true, env(nil)); err == nil {
+		t.Error("no error for a missing required file")
+	}
+}
+
+func TestFileOverridesDefaults(t *testing.T) {
+	path := writeFile(t, "listen: \"127.0.0.1:9090\"\nlog:\n  level: debug\n")
+	cfg, readFile, err := Load(path, true, env(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !readFile {
+		t.Error("readFile = false")
+	}
+	want := Default()
+	want.Listen = "127.0.0.1:9090"
+	want.Log.Level = "debug"
+	if !reflect.DeepEqual(cfg, want) {
+		t.Errorf("got %+v, want %+v", cfg, want)
+	}
+}
+
+func TestEmptyAndNullValuesKeepDefaults(t *testing.T) {
+	for name, content := range map[string]string{
+		"empty file":             "",
+		"only comments":          "# listen: \":9090\"\n",
+		"null value":             "listen:\n",
+		"section with no values": "log:\n  # level: debug\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg, readFile, err := Load(writeFile(t, content), true, env(nil))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !readFile || !reflect.DeepEqual(cfg, Default()) {
+				t.Errorf("got %+v (readFile %v), want the defaults", cfg, readFile)
+			}
+		})
+	}
+}
+
+func TestEnvironmentOverridesFile(t *testing.T) {
+	path := writeFile(t, "listen: \":9090\"\ndata_dir: /srv/overscan\n")
+	cfg, _, err := Load(path, true, env(map[string]string{
+		"OVERSCAN_LISTEN":     ":7070",
+		"OVERSCAN_LOG_FORMAT": "json",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Listen != ":7070" || cfg.DataDir != "/srv/overscan" || cfg.Log.Format != "json" {
+		t.Errorf("got %+v", cfg)
+	}
+}
+
+func TestUnknownKeyIsAnError(t *testing.T) {
+	_, _, err := Load(writeFile(t, "lisen: \":9090\"\n"), true, env(nil))
+	if err == nil || !strings.Contains(err.Error(), "lisen") {
+		t.Errorf("got %v, want an error naming the unknown key", err)
+	}
+}
+
+func TestInvalidSettingsAreErrors(t *testing.T) {
+	for name, vars := range map[string]map[string]string{
+		"listen without port": {"OVERSCAN_LISTEN": "8080"},
+		"empty listen":        {"OVERSCAN_LISTEN": ""},
+		"empty data dir":      {"OVERSCAN_DATA_DIR": ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, _, err := Load(filepath.Join(t.TempDir(), "absent.yaml"), false, env(vars)); err == nil {
+				t.Error("no error")
+			}
+		})
+	}
+}
+
+func TestAdminListen(t *testing.T) {
+	cfg, _, err := Load(writeFile(t, "admin_listen: \"127.0.0.1:8081\"\n"), true, env(nil))
+	if err != nil || cfg.AdminListen != "127.0.0.1:8081" {
+		t.Fatalf("from the file: %q, %v", cfg.AdminListen, err)
+	}
+	cfg, _, err = Load(filepath.Join(t.TempDir(), "absent.yaml"), false, env(map[string]string{"OVERSCAN_ADMIN_LISTEN": ":9091"}))
+	if err != nil || cfg.AdminListen != ":9091" {
+		t.Fatalf("from the environment: %q, %v", cfg.AdminListen, err)
+	}
+	if cfg, _, err = Load(filepath.Join(t.TempDir(), "absent.yaml"), false, env(nil)); err != nil || cfg.AdminListen != "" {
+		t.Errorf("default: %q, %v; want none", cfg.AdminListen, err)
+	}
+	for name, vars := range map[string]map[string]string{
+		"no port":        {"OVERSCAN_ADMIN_LISTEN": "8081"},
+		"same as listen": {"OVERSCAN_ADMIN_LISTEN": ":8080"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := Load(filepath.Join(t.TempDir(), "absent.yaml"), false, env(vars))
+			if err == nil || !strings.Contains(err.Error(), "admin_listen") {
+				t.Errorf("got %v, want an error about admin_listen", err)
+			}
+		})
+	}
+}
+
+func TestKeyFile(t *testing.T) {
+	cfg, _, err := Load(writeFile(t, "data_dir: /srv/overscan\n"), true, env(nil))
+	if err != nil || cfg.KeyPath() != "/srv/overscan/secret.key" {
+		t.Fatalf("default: %q, %v", cfg.KeyPath(), err)
+	}
+	cfg, _, err = Load(writeFile(t, "key_file: /etc/overscan/secret.key\n"), true, env(nil))
+	if err != nil || cfg.KeyPath() != "/etc/overscan/secret.key" {
+		t.Fatalf("from the file: %q, %v", cfg.KeyPath(), err)
+	}
+	cfg, _, err = Load(filepath.Join(t.TempDir(), "absent.yaml"), false, env(map[string]string{"OVERSCAN_KEY_FILE": "/run/keys/overscan"}))
+	if err != nil || cfg.KeyPath() != "/run/keys/overscan" {
+		t.Fatalf("from the environment: %q, %v", cfg.KeyPath(), err)
+	}
+	_, _, err = Load(writeFile(t, "key_file: secret.key\n"), true, env(nil))
+	if err == nil || !strings.Contains(err.Error(), "key_file") {
+		t.Errorf("a relative path: %v", err)
+	}
+}
+
+func TestFFmpeg(t *testing.T) {
+	absent := filepath.Join(t.TempDir(), "absent.yaml")
+	if cfg, _, err := Load(absent, false, env(nil)); err != nil || cfg.FFmpeg != "ffmpeg" {
+		t.Fatalf("default: %q, %v", cfg.FFmpeg, err)
+	}
+	for content, want := range map[string]string{
+		"ffmpeg: /usr/lib/jellyfin-ffmpeg/ffmpeg\n": "/usr/lib/jellyfin-ffmpeg/ffmpeg",
+		"ffmpeg: \"off\"\n":                         FFmpegOff,
+	} {
+		if cfg, _, err := Load(writeFile(t, content), true, env(nil)); err != nil || cfg.FFmpeg != want {
+			t.Errorf("%q: %q, %v", content, cfg.FFmpeg, err)
+		}
+	}
+	if cfg, _, err := Load(absent, false, env(map[string]string{"OVERSCAN_FFMPEG": "/opt/ffmpeg/bin/ffmpeg"})); err != nil ||
+		cfg.FFmpeg != "/opt/ffmpeg/bin/ffmpeg" {
+		t.Fatalf("from the environment: %q, %v", cfg.FFmpeg, err)
+	}
+	for _, bad := range []string{"", "bin/ffmpeg"} {
+		_, _, err := Load(absent, false, env(map[string]string{"OVERSCAN_FFMPEG": bad}))
+		if err == nil || !strings.Contains(err.Error(), "ffmpeg") {
+			t.Errorf("%q: %v", bad, err)
+		}
+	}
+}
+
+func TestExampleConfigLoads(t *testing.T) {
+	cfg, readFile, err := Load(filepath.Join("..", "..", "deploy", "overscan.example.yaml"), true, env(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !readFile || !reflect.DeepEqual(cfg, Default()) {
+		t.Errorf("the example should spell out the defaults; got %+v", cfg)
+	}
+}
+
+func TestSources(t *testing.T) {
+	path := writeFile(t, `sources:
+  - name: main
+    type: m3u
+    url: https://provider.example/get.php?username=u&password=p
+  - name: local-file
+    type: m3u
+    url: /srv/playlists/local.m3u
+    refresh: 30m
+    max_connections: 0
+    user_agent: TestPlayer/1.0
+    numbers: provider
+  - name: server
+    type: xtream
+    url: http://provider.example:8080
+    username: viewer
+    password: p
+  - name: den
+    type: jellyfin
+    url: http://jellyfin.example:8096
+    api_key: 0123456789abcdef
+    user: Anna
+  - name: films
+    type: folder
+    url: /srv/media/Films
+  - name: lounge
+    type: plex
+    url: http://plex.example:32400
+    token: fictional-token
+`)
+	cfg, _, err := Load(path, true, env(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Sources) != 6 {
+		t.Fatalf("sources %+v", cfg.Sources)
+	}
+	if x := cfg.Sources[2].Settings(); x.Type != "xtream" || x.Username != "viewer" || x.Password != "p" || x.IsFile() {
+		t.Errorf("server %+v", x)
+	}
+	if jf := cfg.Sources[3].Settings(); jf.Type != "jellyfin" || jf.Username != "Anna" || jf.Password != "0123456789abcdef" ||
+		jf.MaxConnections != 0 || jf.Refresh != DefaultRefresh {
+		t.Errorf("den %+v", jf)
+	}
+	if f := cfg.Sources[4].Settings(); f.Type != "folder" || f.URL != "/srv/media/Films" || f.MaxConnections != 0 || f.IsFile() {
+		t.Errorf("films %+v", f)
+	}
+	if px := cfg.Sources[5].Settings(); px.Type != "plex" || px.Password != "fictional-token" || px.Username != "" ||
+		px.MaxConnections != 0 {
+		t.Errorf("lounge %+v", px)
+	}
+	remote, local := cfg.Sources[0], cfg.Sources[1]
+	if remote.Refresh != DefaultRefresh || *remote.MaxConnections != DefaultMaxConnections || remote.IsFile() || remote.Numbers != NumbersPlaylist {
+		t.Errorf("remote %+v", remote)
+	}
+	if local.Refresh != 30*time.Minute || *local.MaxConnections != 0 || !local.IsFile() || local.UserAgent != "TestPlayer/1.0" ||
+		local.Numbers != NumbersProvider {
+		t.Errorf("local-file %+v", local)
+	}
+}
+
+func TestStalkerSource(t *testing.T) {
+	path := writeFile(t, `sources:
+  - name: portal
+    type: stalker
+    url: http://portal.example/stalker_portal/c/
+    mac: 00:1A:79:00:00:51
+    serial: FICTIONAL0001
+    device_id: made-up-1
+    device_id2: made-up-2
+    signature: made-up-3
+    model: MAG322
+    username: viewer
+    password: p
+`)
+	cfg, _, err := Load(path, true, env(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := cfg.Sources[0].Settings()
+	want := source.Device{MAC: "00:1A:79:00:00:51", Serial: "FICTIONAL0001", DeviceID: "made-up-1", DeviceID2: "made-up-2",
+		Signature: "made-up-3", Model: "MAG322"}
+	if st.Type != source.TypeStalker || st.Device != want || st.Username != "viewer" || st.Password != "p" ||
+		st.MaxConnections != 1 || st.URL != "http://portal.example/stalker_portal/c/" {
+		t.Errorf("portal %+v", st)
+	}
+}
+
+func TestInvalidSources(t *testing.T) {
+	const secret = "s3cret"
+	for name, src := range map[string]string{
+		"no name":        "type: m3u\n    url: http://provider.example/" + secret,
+		"bad name":       "name: Main\n    type: m3u\n    url: http://provider.example/" + secret,
+		"bad type":       "name: main\n    type: tvheadend\n    url: http://provider.example/" + secret,
+		"stalker mac":    "name: portal\n    type: stalker\n    url: http://portal.example/c/\n    mac: 00:1A:79:" + secret,
+		"stalker page":   "name: portal\n    type: stalker\n    url: http://portal.example/c/?" + secret + "\n    mac: 00:1A:79:00:00:51",
+		"xtream mac":     "name: main\n    type: xtream\n    url: http://provider.example\n    username: viewer\n    password: p\n    mac: " + secret,
+		"relative path":  "name: main\n    type: m3u\n    url: playlists/" + secret + ".m3u",
+		"ftp":            "name: main\n    type: m3u\n    url: ftp://provider.example/" + secret,
+		"no host":        "name: main\n    type: m3u\n    url: http:///" + secret,
+		"short refresh":  "name: main\n    type: m3u\n    url: http://provider.example/" + secret + "\n    refresh: 1m",
+		"negative limit": "name: main\n    type: m3u\n    url: http://provider.example/" + secret + "\n    max_connections: -1",
+		"user agent":     "name: main\n    type: m3u\n    url: http://provider.example/" + secret + "\n    user_agent: \"a\\nb\"",
+		"numbers":        "name: main\n    type: m3u\n    url: http://provider.example/" + secret + "\n    numbers: tvg",
+		"xtream login":   "name: main\n    type: xtream\n    url: http://provider.example/" + secret,
+		"xtream page":    "name: main\n    type: xtream\n    url: http://provider.example/get.php?password=" + secret + "\n    username: viewer\n    password: " + secret,
+		"jellyfin key":   "name: den\n    type: jellyfin\n    url: http://jellyfin.example/" + secret,
+		"jellyfin login": "name: den\n    type: jellyfin\n    url: http://jellyfin.example\n    username: viewer\n    password: " + secret,
+		"xtream api key": "name: main\n    type: xtream\n    url: http://provider.example\n    username: viewer\n    password: p\n    api_key: " + secret,
+		"folder path":    "name: films\n    type: folder\n    url: media/" + secret,
+		"folder login":   "name: films\n    type: folder\n    url: /srv/media\n    password: " + secret,
+		"plex login":     "name: lounge\n    type: plex\n    url: http://plex.example\n    username: viewer\n    password: " + secret,
+		"plex page":      "name: lounge\n    type: plex\n    url: http://plex.example/web?" + secret + "\n    token: t",
+		"xtream token":   "name: main\n    type: xtream\n    url: http://provider.example\n    username: viewer\n    password: p\n    token: " + secret,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := Load(writeFile(t, "sources:\n  - "+src+"\n"), true, env(nil))
+			if err == nil {
+				t.Fatal("no error")
+			}
+			if strings.Contains(err.Error(), secret) {
+				t.Errorf("the error quotes the URL: %v", err)
+			}
+		})
+	}
+
+	_, _, err := Load(writeFile(t, "sources:\n  - name: den\n    type: jellyfin\n    url: http://jellyfin.example\n"), true, env(nil))
+	if err == nil || !strings.Contains(err.Error(), "api_key: ") {
+		t.Errorf("a Jellyfin source without a key: %v", err)
+	}
+
+	_, _, err = Load(writeFile(t, "sources:\n  - name: lounge\n    type: plex\n    url: http://plex.example:32400\n"), true, env(nil))
+	if err == nil || !strings.Contains(err.Error(), "token: ") {
+		t.Errorf("a Plex source without a token: %v", err)
+	}
+
+	dup := "sources:\n  - name: main\n    type: m3u\n    url: /a.m3u\n  - name: main\n    type: m3u\n    url: /b.m3u\n"
+	if _, _, err := Load(writeFile(t, dup), true, env(nil)); err == nil || !strings.Contains(err.Error(), "twice") {
+		t.Errorf("duplicate names: %v", err)
+	}
+}

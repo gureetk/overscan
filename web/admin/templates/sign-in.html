@@ -1,0 +1,21 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+{{define "content"}}
+<section class="card sign-in">
+  <div class="sign-in-head">{{template "mark"}}<h1>Overscan</h1></div>
+  {{- if .Data.NoAdmin}}
+  <p>No password is set yet. On the server, as the user that runs Overscan, run:</p>
+  <pre><code>overscan admin password</code></pre>
+  <p class="hint">Add <code>-config</code> with the server's configuration file if it has one. Then reload this page.</p>
+  {{- else}}
+  {{template "alerts" .}}
+  <form method="post" action="/admin/sign-in" class="stack">
+    <input type="hidden" name="next" value="{{.Data.Next}}">
+    <label for="username">Username</label>
+    <input id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required value="{{.Data.Username}}"{{if not .Data.Username}} autofocus{{end}}>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required{{if .Data.Username}} autofocus{{end}}>
+    <button type="submit" class="primary">Sign in</button>
+  </form>
+  {{- end}}
+</section>
+{{end}}

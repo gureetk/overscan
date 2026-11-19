@@ -1,0 +1,58 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Runs the soak test (tools/soak, docs/testing.md) for ten minutes: Overscan
+# with a lineup of 20,000 channels and four simulated boxes that watch
+# channels and switch between them, checked against the memory budgets of
+# the plan (section 15). It runs every Monday and on demand, not on every
+# pull request; the 24-hour run belongs on the LXC.
+name: Soak
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: How long the boxes run, such as 10m
+        required: false
+        default: 10m
+        type: string
+  schedule:
+    - cron: "23 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: soak
+  cancel-in-progress: false
+
+jobs:
+  soak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      - name: Soak test
+        env:
+          DURATION: ${{ inputs.duration || '10m' }}
+        run: |
+          if ! [[ "$DURATION" =~ ^[0-9]+[mh]$ ]]; then
+            echo "::error::'$DURATION' is not a duration such as 10m or 2h"
+            exit 1
+          fi
+          go run ./tools/soak -duration "$DURATION" -out soak.csv
+
+      - name: Keep the samples
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: soak-samples
+          path: soak.csv
+          if-no-files-found: ignore
+          retention-days: 30

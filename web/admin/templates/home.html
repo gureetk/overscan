@@ -1,0 +1,175 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+{{define "content"}}
+<div id="overview" hx-get="/admin/" hx-trigger="every 15s" hx-select="#overview" hx-swap="outerHTML">
+<div class="page-head">
+  <div>
+    <h1>Overview</h1>
+    <p class="lead">Overscan {{.Version}}, running for {{.Data.Uptime}}.</p>
+  </div>
+  <p class="hint">Updates every 15 seconds</p>
+</div>
+{{template "alerts" .}}
+
+{{- if .Data.ToDo}}
+<section class="card todo" aria-labelledby="todo-title">
+  <h2 id="todo-title">To do <span class="count quiet">{{.Data.ToDo}}</span></h2>
+  <ul class="todo-list">
+  {{- range .Data.Waiting}}
+    <li>
+      <span class="tile-icon accent">{{template "i-devices"}}</span>
+      <div class="todo-text">
+        <strong>{{if eq (print .State) "approved"}}{{with .Label}}{{.}}{{else}}A paired box{{end}} asks to pair again{{else}}A {{if .PairingCode}}box{{else}}device{{end}} is waiting for approval{{end}}</strong>
+        <span>{{with .Model}}{{.}} · {{end}}<span class="mac">{{.MAC}}</span> · seen {{ago .LastSeen $.Data.Now}}</span>
+      </div>
+      {{- if .PairingCode}}
+      <div class="todo-code"><small>Code on its screen</small><span class="code">{{.Code}}</span></div>
+      {{- end}}
+      <div class="todo-actions">
+        {{- if .PairingCode}}
+        <form method="post" action="/admin/devices/pair" hx-post="/admin/devices/pair" hx-target="#overview" hx-select="#overview" hx-swap="outerHTML">
+          <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+          <input type="hidden" name="back" value="overview">
+          <input type="hidden" name="code" value="{{.PairingCode}}">
+          <button class="primary" type="submit">{{if eq (print .State) "approved"}}Replace the pairing{{else}}Approve{{end}}</button>
+        </form>
+        {{- else}}
+        <form method="post" action="/admin/devices/{{.MAC}}/approve" hx-post="/admin/devices/{{.MAC}}/approve" hx-target="#overview" hx-select="#overview" hx-swap="outerHTML">
+          <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+          <input type="hidden" name="back" value="overview">
+          <button class="primary" type="submit">Approve</button>
+        </form>
+        {{- end}}
+        {{- if eq (print .State) "pending"}}
+        <form method="post" action="/admin/devices/{{.MAC}}/block" hx-post="/admin/devices/{{.MAC}}/block" hx-target="#overview" hx-select="#overview" hx-swap="outerHTML">
+          <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+          <input type="hidden" name="back" value="overview">
+          <button type="submit">Block</button>
+        </form>
+        {{- end}}
+      </div>
+    </li>
+  {{- end}}
+  {{- range .Data.SourceTroubles}}
+    <li>
+      <span class="tile-icon bad">{{template "i-alert"}}</span>
+      <div class="todo-text">
+        {{- if .AddressLocked}}
+        <strong>Enter the address of {{.Name}} again</strong>
+        <span>It was saved with another key file, so Overscan cannot read it.</span>
+        {{- else if .AddressMissing}}
+        <strong>{{.Name}} has no address</strong>
+        <span>Overscan reads it once it has one.</span>
+        {{- else}}
+        {{- if .LibraryOnly}}
+        <strong>The last check of {{.Name}} failed</strong>
+        <span>{{.RefreshError}}. Boxes may not reach its films and series until it can be read again.</span>
+        {{- else}}
+        <strong>The last read of {{.Name}} failed</strong>
+        <span>{{.RefreshError}}. Devices still see the channels from the read before.</span>
+        {{- end}}
+        {{- end}}
+      </div>
+      <div class="todo-actions"><a class="button" href="/admin/sources#source-{{.ID}}">See the source</a></div>
+    </li>
+  {{- end}}
+  {{- if .Data.LocksWait}}
+    <li>
+      <span class="tile-icon warn">{{template "i-lock"}}</span>
+      <div class="todo-text">
+        <strong>The lineup's {{if eq .Data.Locks 1}}lock does{{else}}{{.Data.Locks}} locks do{{end}} nothing yet</strong>
+        <span>There is no parental PIN, so boxes play locked channels without one.</span>
+      </div>
+      <div class="todo-actions"><a class="button" href="/admin/settings">Set a PIN</a></div>
+    </li>
+  {{- end}}
+  {{- if .Data.RepairWaits}}
+    <li>
+      <span class="tile-icon warn">{{template "i-repair"}}</span>
+      <div class="todo-text">
+        <strong>Every channel is to be repaired, but there is no ffmpeg</strong>
+        <span>Streams play as they are until ffmpeg is installed on the server and Overscan restarts.</span>
+      </div>
+      <div class="todo-actions"><a class="button" href="/admin/settings">See Settings</a></div>
+    </li>
+  {{- end}}
+  {{- if not .Data.Sources}}
+    <li>
+      <span class="tile-icon accent">{{template "i-sources"}}</span>
+      <div class="todo-text">
+        <strong>Add a source</strong>
+        <span>A playlist or an Xtream server: Overscan has no channels until it reads one.</span>
+      </div>
+      <div class="todo-actions"><a class="button primary" href="/admin/sources#add-source">Add a source</a></div>
+    </li>
+  {{- end}}
+  </ul>
+</section>
+{{- end}}
+
+<div class="tiles">
+  <a class="tile" href="#playing">
+    <span class="tile-label"><i class="dot live" aria-hidden="true"></i>Playing now</span>
+    <span class="tile-value">{{len .Data.Streams}}</span>
+    <span class="tile-note">{{if .Data.Streams}}{{.Data.Repaired}} repaired, {{.Data.FromHLS}} from HLS{{else}}Nothing at the moment{{end}}</span>
+  </a>
+  <a class="tile" href="/admin/lineup">
+    <span class="tile-label">Channels shown</span>
+    <span class="tile-value">{{count .Data.Shown}}</span>
+    <span class="tile-note">of {{count .Data.Channels}}, in {{.Data.Groups}} {{plural .Data.Groups "group"}}</span>
+  </a>
+  <a class="tile" href="/admin/devices">
+    <span class="tile-label">Devices approved</span>
+    <span class="tile-value">{{.Data.Approved}}</span>
+    <span class="tile-note">{{.Data.Pending}} waiting, {{.Data.Blocked}} blocked</span>
+  </a>
+  <a class="tile" href="/admin/sources">
+    <span class="tile-label">Sources</span>
+    <span class="tile-value">{{len .Data.Sources}}</span>
+    <span class="tile-note">{{if not .Data.Sources}}None yet{{else if or .Data.SourcesOff .Data.SourceTroubles}}{{.Data.SourcesOff}} off, {{len .Data.SourceTroubles}} with trouble{{else}}All read as they should be{{end}}</span>
+  </a>
+</div>
+
+<section class="card" id="playing" aria-labelledby="playing-title">
+  <h2 id="playing-title" class="with-dot"><i class="dot live" aria-hidden="true"></i>Playing now{{if .Data.Streams}} <span class="count quiet">{{len .Data.Streams}}</span>{{end}}</h2>
+  {{- if .Data.Streams}}
+  <div class="table-wrap">
+  <table class="list playing">
+    <thead><tr><th>Channel</th><th>Device</th><th>Source</th><th>Started</th><th class="right">Sent</th></tr></thead>
+    <tbody>
+    {{- range .Data.Streams}}
+      <tr>
+        <td><div class="channel-cell"><span class="num-chip">{{if eq .Kind "movie"}}Film{{else if eq .Kind "episode"}}Ep.{{else if .Number}}{{.Number}}{{else}}–{{end}}</span><div><span class="strong">{{.Channel}}</span>{{if not .Playing}}<div class="note warn">Waiting for the player to come back</div>{{end}}</div></div></td>
+        <td>{{.Device}}{{with .Model}}<div class="note">{{.}}</div>{{end}}</td>
+        <td><div class="chips">{{.Source}}{{if .HLS}}<span class="badge" title="The source sends HLS">HLS</span>{{end}}{{if .Repaired}}<span class="badge accent" title="It goes through ffmpeg, which rebuilds its timestamps">Repaired</span>{{end}}{{if and .Converted (not .Transcoded)}}<span class="badge accent" title="It goes through ffmpeg, which converts what the box cannot play">Converted</span>{{end}}{{if .Transcoded}}<span class="badge accent" title="{{if eq .TranscodedBy "overscan"}}This server's ffmpeg transcodes{{else}}Its source's server transcodes{{end}} the picture, which the box cannot play">Transcoded</span>{{end}}</div></td>
+        <td>{{.Since}}</td>
+        <td class="right">{{.Received}}</td>
+      </tr>
+    {{- end}}
+    </tbody>
+  </table>
+  </div>
+  {{- else}}
+  <p class="empty">Nothing is playing.</p>
+  {{- end}}
+</section>
+
+<div class="columns">
+  <section class="card side-card" aria-labelledby="capture-title">
+    <span class="tile-icon">{{template "i-capture"}}</span>
+    <div>
+      <h2 id="capture-title">Capture log</h2>
+      <p>{{if .Data.Captured}}{{.Data.Captured}} {{plural .Data.Captured "kind"}} of request that Overscan does not support yet.{{else}}No unsupported requests so far.{{end}}</p>
+      <a href="/admin/capture">See the capture log</a>
+    </div>
+  </section>
+  <section class="card side-card" aria-labelledby="bundle-title">
+    <span class="tile-icon">{{template "i-bundle"}}</span>
+    <div>
+      <h2 id="bundle-title">Support bundle</h2>
+      <p>For a bug report, without addresses, logins or MAC addresses.</p>
+      <a href="/admin/support-bundle" download>Download the support bundle</a>
+    </div>
+  </section>
+</div>
+</div>
+{{end}}
