@@ -39,6 +39,12 @@ A source declared in `/etc/overscan/overscan.yaml` (the file explains each setti
     systemctl restart overscan
     journalctl -u overscan -f
 
+Recordings (D89), once turned on in the admin's *Settings*, go in `/var/lib/overscan/Recordings`, the only place the service may write. To keep them elsewhere, such as a disk mounted at `/srv/recordings` and owned by the `overscan` user, set `recordings_dir: /srv/recordings` in the configuration file, let the service write there, and restart it:
+
+    systemctl edit overscan     # add the two lines below, then save
+    [Service]
+    ReadWritePaths=/srv/recordings
+
 ## 4. Manage
 
 Run Overscan's commands as its user. Debian containers may not have `sudo`; `runuser` is always there:

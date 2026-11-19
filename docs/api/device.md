@@ -20,6 +20,7 @@ Version 0, in M1, covers what the first page needs: a session, the channel list,
 | `no_archive` | 404 | The programme does not play from its channel's archive: the channel's source keeps none that Overscan plays, the programme has not ended, or it began longer ago than the archive reaches back ([D81](../decisions.md)). |
 | `recording_off` | 409 | The server does not record: the administrator has not turned recording on ([D89](../decisions.md)). |
 | `programme_ended` | 409 | The programme has ended, so it cannot be recorded. |
+| `too_many` | 409 | The household has 100 recordings to come or under way, the most it may. |
 | `recorded` | 409 | The programme has been recorded already: its recording was called off while it recorded, which kept what it had written. |
 | `pin_required` | 403 | The channel, film or series is locked: send the parental PIN ([D55](../decisions.md), [D85](../decisions.md)). |
 | `pin_wrong` | 403 | The PIN is not the account's. |
@@ -147,7 +148,7 @@ Answers whether the server records, and the account's recordings that are to com
 
 ### `POST /api/device/v1/recordings`
 
-Schedules a programme of a channel in the box's lineup, named by when it begins, as the guide gives it, with the parental PIN for a locked channel, as for `play`: `{"channel": 17, "start": 1796414400, "pin": "1234"}`. The programme must not have ended (`programme_ended`), and the server must record (`recording_off`). The answer is the recording, as in the list. Scheduling a programme again answers the recording already scheduled; one that failed or was called off before it began is scheduled again, and one that has been recorded is refused (`recorded`). The server records it from a minute before its start to two minutes after its end, through the stream hub as a device of its own: it holds one of its source's connections all that time, and fails if the source has none free when it begins. It never ends a box's stream.
+Schedules a programme of a channel in the box's lineup, named by when it begins, as the guide gives it, with the parental PIN for a locked channel, as for `play`: `{"channel": 17, "start": 1796414400, "pin": "1234"}`. The programme must not have ended (`programme_ended`), the server must record (`recording_off`), and the household may have at most 100 recordings to come (`too_many`). The answer is the recording, as in the list. Scheduling a programme again answers the recording already scheduled; one that failed or was called off before it began is scheduled again, and one that has been recorded is refused (`recorded`). The server records it from a minute before its start to two minutes after its end, through the stream hub as a device of its own: it holds one of its source's connections all that time, and fails if the source has none free when it begins. It never ends a box's stream.
 
 ### `DELETE /api/device/v1/recordings/{id}`
 

@@ -68,6 +68,10 @@ func (a *API) recordings(w http.ResponseWriter, r *http.Request, d store.Device)
 	writeJSON(w, http.StatusOK, out)
 }
 
+// maxUpcoming is the most recordings to come or under way that a household
+// may have.
+const maxUpcoming = 100
+
 // recordRequest is the body of POST recordings: the channel, and when the
 // programme begins, as the guide gives it, with the parental PIN for a
 // locked channel (D55).
@@ -124,6 +128,15 @@ func (a *API) record(w http.ResponseWriter, r *http.Request, d store.Device) {
 		return
 	}
 	if entry.Locked && acct.PINHash != "" && !a.pinOK(w, r, d, acct, req.PIN) {
+		return
+	}
+	upcoming, err := a.store.UpcomingRecordings(ctx, acct.ID)
+	if err != nil {
+		a.internalError(w, "count recordings", err)
+		return
+	}
+	if upcoming >= maxUpcoming {
+		writeError(w, http.StatusConflict, errTooMany)
 		return
 	}
 	rec, err := a.store.ScheduleRecording(ctx, store.Recording{AccountID: acct.ID, DeviceID: d.ID, EntryID: req.Channel,

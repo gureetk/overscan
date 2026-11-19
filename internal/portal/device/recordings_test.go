@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	"overscan.gureet.ca/internal/store"
 )
@@ -107,6 +108,19 @@ func TestRecordings(t *testing.T) {
 	if code, e := h.errorCodeBody("POST", Prefix+"recordings", token, body); code != http.StatusConflict || e != errRecorded {
 		t.Errorf("recorded: %d %s", code, e)
 	}
+	// A household may have a hundred recordings to come.
+	for i := range maxUpcoming {
+		if _, err := h.store.ScheduleRecording(ctx, store.Recording{AccountID: 1, EntryID: ch, Channel: "Channel 0",
+			Title: "Many", Start: h.now.Add(time.Duration(48+i) * time.Hour), Stop: h.now.Add(time.Duration(49+i) * time.Hour),
+			CreatedAt: h.now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	later := fmt.Sprintf(`{"channel":%d,"start":%d}`, ch, next+3600)
+	if code, e := h.errorCodeBody("POST", Prefix+"recordings", token, later); code != http.StatusConflict || e != errTooMany {
+		t.Errorf("too many: %d %s", code, e)
+	}
+
 	// An unknown recording.
 	if code, e := h.errorCode("DELETE", fmt.Sprintf("%srecordings/%d", Prefix, 999), token); code != http.StatusNotFound || e != errNotFound {
 		t.Errorf("unknown: %d %s", code, e)

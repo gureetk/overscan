@@ -492,6 +492,8 @@ export function describe(err: ApiError | null): string {
       return 'It has ended.';
     case 'recorded':
       return 'It has been recorded already, and is on Movies.';
+    case 'too_many':
+      return 'There are as many recordings to come as there may be. Cancel some first.';
     case 'internal':
       return "The server failed. Its log says why.";
   }
