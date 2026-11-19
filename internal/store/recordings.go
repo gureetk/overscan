@@ -168,6 +168,18 @@ func (s *Store) SetRecordingState(ctx context.Context, id int64, state, file str
 	return mustAffect(res)
 }
 
+// UpcomingRecordings counts an account's recordings that are to come or
+// under way.
+func (s *Store) UpcomingRecordings(ctx context.Context, accountID int64) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM recordings WHERE account_id = ? AND state IN (?, ?)`,
+		accountID, RecordingScheduled, RecordingRecording).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("store: count an account's recordings: %w", err)
+	}
+	return n, nil
+}
+
 // RecordingCounts counts the recordings in each state.
 func (s *Store) RecordingCounts(ctx context.Context) (map[string]int, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT state, COUNT(*) FROM recordings GROUP BY state`)

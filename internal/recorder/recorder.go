@@ -43,8 +43,11 @@ var (
 	// tick is how often the recorder looks for recordings to start.
 	tick = 10 * time.Second
 	// retry is how long the recorder waits to play the channel again when
-	// its stream breaks off.
-	retry = 5 * time.Second
+	// its stream breaks off; the wait doubles, up to maxRetry, while the
+	// channel gives nothing, so that a source that refuses is not asked
+	// every few seconds.
+	retry    = 5 * time.Second
+	maxRetry = time.Minute
 )
 
 // keep is how long the recorder keeps recordings that failed with no file
@@ -344,7 +347,9 @@ func (r *Recorder) run(ctx context.Context, rec store.Recording, entry store.Pla
 // record plays the channel until ctx ends, writing its stream to out, and
 // plays it again when it breaks off. It returns why it failed, or "".
 func (r *Recorder) record(ctx context.Context, rec store.Recording, entry store.PlayableEntry, out *file) string {
+	wait := retry
 	for attempt := 0; ctx.Err() == nil; attempt++ {
+		before := out.n
 		// The link that plays the channel as one continuous stream, even
 		// one whose address is HLS. The device is the recording's own.
 		link := strings.TrimSuffix(r.hub.Link(-rec.ID, entry), ".m3u8")
@@ -370,12 +375,15 @@ func (r *Recorder) record(ctx context.Context, rec store.Recording, entry store.
 		if ctx.Err() != nil {
 			break
 		}
-		if out.n > 0 {
+		if out.n > before {
+			wait = retry
 			r.log.Warn("a recording's stream broke off; it plays the channel again", "title", rec.Title, "channel", rec.Channel)
+		} else if attempt > 0 {
+			wait = min(2*wait, maxRetry)
 		}
 		select {
 		case <-ctx.Done():
-		case <-time.After(retry):
+		case <-time.After(wait):
 		}
 	}
 	if out.n == 0 {

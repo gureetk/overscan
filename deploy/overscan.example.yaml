@@ -30,7 +30,7 @@ data_dir: /var/lib/overscan
 # The folder that recordings are written in, once recording is turned on in
 # the admin (D89): Recordings in data_dir, unless an absolute path is set
 # here. The service can write only in /var/lib/overscan, so a folder
-# elsewhere needs that to change too.
+# elsewhere needs a ReadWritePaths line for it too (install-lxc.md says how).
 # recordings_dir: /var/lib/overscan/Recordings
 
 log:

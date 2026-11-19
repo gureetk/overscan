@@ -22,11 +22,14 @@ import (
 )
 
 // fakeHub plays any link as packets of MPEG-TS until the request ends, or
-// refuses it as a source at its limit does.
+// refuses it as a source at its limit does. With once, it plays the first
+// request for a moment, and refuses the others.
 type fakeHub struct {
-	mu      sync.Mutex
-	refuse  bool
-	devices []int64
+	mu       sync.Mutex
+	refuse   bool
+	once     bool
+	requests int
+	devices  []int64
 }
 
 func (h *fakeHub) Link(deviceID int64, entry store.PlayableEntry) string {
@@ -38,13 +41,19 @@ func (h *fakeHub) Link(deviceID int64, entry store.PlayableEntry) string {
 
 func (h *fakeHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
-	refuse := h.refuse
+	h.requests++
+	refuse := h.refuse || (h.once && h.requests > 1)
+	brief := h.once
 	h.mu.Unlock()
 	if refuse || !strings.HasSuffix(r.URL.Path, ".ts") {
 		http.Error(w, "the source is at its limit", http.StatusServiceUnavailable)
 		return
 	}
 	w.Header().Set("Content-Type", "video/mp2t")
+	if brief {
+		_, _ = w.Write(bytes.Repeat([]byte{0x47}, 188))
+		return
+	}
 	for {
 		if _, err := w.Write(bytes.Repeat([]byte{0x47}, 188)); err != nil {
 			return
@@ -261,6 +270,31 @@ func TestCancelAndRecover(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(r.Dir(), "."+FileName(empty))); !os.IsNotExist(err) {
 		t.Errorf("an empty file is left: %v", err)
+	}
+}
+
+// A source that refuses once the stream breaks off is asked less and less
+// often, not every few seconds.
+func TestRetryBacksOff(t *testing.T) {
+	hub := &fakeHub{once: true}
+	r, st, entry := newRecorder(t, hub)
+	rt, mr := retry, maxRetry
+	retry, maxRetry = 10*time.Millisecond, 40*time.Millisecond
+	t.Cleanup(func() { retry, maxRetry = rt, mr })
+	now := time.Now()
+	rec := schedule(t, st, entry, "Refused", now.Add(-time.Second), now.Add(time.Hour))
+	r.Check(context.Background())
+	waitState(t, st, rec.ID, store.RecordingRecording)
+	time.Sleep(400 * time.Millisecond)
+	r.Cancel(rec.ID)
+	done := waitState(t, st, rec.ID, store.RecordingDone)
+	hub.mu.Lock()
+	n := hub.requests
+	hub.mu.Unlock()
+	// Every 10 ms, it would have asked about 40 times; doubling up to 40 ms,
+	// about 12.
+	if n < 4 || n > 20 || done.Size != 188 {
+		t.Errorf("%d requests in 400 ms, %d bytes", n, done.Size)
 	}
 }
 

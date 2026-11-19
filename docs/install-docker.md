@@ -8,7 +8,7 @@ On a machine with Docker and its Compose plugin, on the same network as the MAG 
 
     docker compose up -d --build
 
-Overscan then listens on port 8080 of the machine, and keeps its data in a volume named `overscan_data`: the database, the key file (`secret.key`, D46) and the logo cache. Set the administrator's password, then sign in to the admin at `http://<machine>:8080/admin/` and add your sources there:
+Overscan then listens on port 8080 of the machine, and keeps its data in a volume named `overscan_data`: the database, the key file (`secret.key`, D46), the logo cache, and the recordings once they are turned on (D89). Set the administrator's password, then sign in to the admin at `http://<machine>:8080/admin/` and add your sources there:
 
     docker compose exec overscan overscan admin password
 
