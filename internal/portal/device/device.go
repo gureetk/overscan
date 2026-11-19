@@ -61,8 +61,11 @@ const (
 	errInternal     = "internal"
 	errPINRequired  = "pin_required" // what it asks for is locked (D55, D85)
 	errPINWrong     = "pin_wrong"
-	errPINLocked    = "pin_locked" // too many wrong PINs; wait
-	errNoArchive    = "no_archive" // the programme does not play from its source's archive (D81)
+	errPINLocked    = "pin_locked"      // too many wrong PINs; wait
+	errNoArchive    = "no_archive"      // the programme does not play from its source's archive (D81)
+	errRecordingOff = "recording_off"   // the server does not record (D89)
+	errEnded        = "programme_ended" // the programme has ended, so it cannot be recorded
+	errRecorded     = "recorded"        // the programme has been recorded already
 )
 
 // API is the device API, an http.Handler for the paths under Prefix.
@@ -82,6 +85,7 @@ type API struct {
 	mux         *http.ServeMux
 	pins        pinGuard
 	reports     reportLimiter // POST playback, per device
+	recorder    Recorder      // ends recordings under way; nil for none (D89)
 }
 
 // New returns the API, keeping its state in st, admitting devices through
@@ -98,6 +102,9 @@ func New(st *store.Store, reg *devices.Registry, h *hub.Hub, log *slog.Logger, v
 	mux.HandleFunc("POST "+Prefix+"channels/{id}/play", a.authorized(a.play))
 	mux.HandleFunc("POST "+Prefix+"channels/{id}/archive", a.authorized(a.playArchive))
 	mux.HandleFunc("POST "+Prefix+"pin", a.authorized(a.checkPIN))
+	mux.HandleFunc("GET "+Prefix+"recordings", a.authorized(a.recordings))
+	mux.HandleFunc("POST "+Prefix+"recordings", a.authorized(a.record))
+	mux.HandleFunc("DELETE "+Prefix+"recordings/{id}", a.authorized(a.unrecord))
 	mux.HandleFunc("PUT "+Prefix+"channels/{id}/favourite", a.authorized(a.favourite(true)))
 	mux.HandleFunc("DELETE "+Prefix+"channels/{id}/favourite", a.authorized(a.favourite(false)))
 	mux.HandleFunc("GET "+Prefix+"guide", a.authorized(a.guide))

@@ -486,6 +486,12 @@ export function describe(err: ApiError | null): string {
       return 'The server is transcoding as many films as it may at once.';
     case 'no_archive':
       return "It isn't in the channel's archive.";
+    case 'recording_off':
+      return "The server doesn't record. Recording is turned on in the admin's settings.";
+    case 'programme_ended':
+      return 'It has ended.';
+    case 'recorded':
+      return 'It has been recorded already, and is on Movies.';
     case 'internal':
       return "The server failed. Its log says why.";
   }

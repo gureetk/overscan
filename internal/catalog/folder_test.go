@@ -52,6 +52,11 @@ func TestFolderCheck(t *testing.T) {
 	if _, err := r.Test(ctx, empty); err == nil || err.Error() != "the folder holds no films or series" {
 		t.Errorf("an empty folder: %v", err)
 	}
+	// The recordings folder may be empty (D89).
+	r.AllowEmpty(empty.URL + "/")
+	if got, err := r.Test(ctx, empty); err != nil || got.Films+got.Series != 0 {
+		t.Errorf("the empty recordings folder: %+v, %v", got, err)
+	}
 	gone := settings
 	gone.URL = filepath.Join(dir, "gone")
 	if _, err := r.Refresh(ctx, gone, id); err == nil || err.Error() != "the folder does not exist" {

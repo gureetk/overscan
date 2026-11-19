@@ -130,8 +130,15 @@ func (a *Admin) streamRowsOf(ctx context.Context, devices []store.Device, lineup
 	rows := make([]streamRow, len(streams))
 	for i, s := range streams {
 		rows[i] = streamRow{Stream: s, Device: "a removed device", Now: now}
-		if s.DeviceID == 0 {
+		switch {
+		case s.DeviceID == 0:
 			rows[i].Device = "the debug playlist" // which plays as no device
+		case s.DeviceID < 0:
+			// A recording plays as a device of its own (D89).
+			rows[i].Device = "a recording on this server"
+			if rec, err := a.store.RecordingByID(ctx, -s.DeviceID); err == nil {
+				rows[i].Model = rec.Title
+			}
 		}
 		if d, ok := byID[s.DeviceID]; ok {
 			rows[i].Device, rows[i].Model = d.MAC, d.Model

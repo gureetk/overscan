@@ -5,8 +5,8 @@
 #
 # Each setting can also come from an environment variable, which wins over
 # this file: OVERSCAN_LISTEN, OVERSCAN_ADMIN_LISTEN, OVERSCAN_DATA_DIR,
-# OVERSCAN_KEY_FILE, OVERSCAN_LOG_LEVEL, OVERSCAN_LOG_FORMAT and
-# OVERSCAN_FFMPEG.
+# OVERSCAN_KEY_FILE, OVERSCAN_RECORDINGS_DIR, OVERSCAN_LOG_LEVEL,
+# OVERSCAN_LOG_FORMAT and OVERSCAN_FFMPEG.
 
 # Address of the device-facing HTTP server, which boxes and players use.
 listen: ":8080"
@@ -26,6 +26,12 @@ data_dir: /var/lib/overscan
 # write only in /var/lib/overscan, so a key file elsewhere must be put in
 # place before it starts.
 # key_file: /var/lib/overscan/secret.key
+
+# The folder that recordings are written in, once recording is turned on in
+# the admin (D89): Recordings in data_dir, unless an absolute path is set
+# here. The service can write only in /var/lib/overscan, so a folder
+# elsewhere needs that to change too.
+# recordings_dir: /var/lib/overscan/Recordings
 
 log:
   # debug, info, warn or error.

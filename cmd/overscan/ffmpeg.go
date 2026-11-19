@@ -195,6 +195,7 @@ func serverFacts(cfg config.Config, ffmpegPath, ffmpegVersion, ffprobePath, ffpr
 		{Name: "Admin on", Value: adminAt},
 		{Name: "Data directory", Value: cfg.DataDir},
 		{Name: "Key file", Value: cfg.KeyPath()},
+		{Name: "Recordings folder", Value: cfg.RecordingsPath()},
 		{Name: "Log", Value: cfg.Log.Level + ", " + cfg.Log.Format},
 		{Name: "ffmpeg", Value: ffmpeg},
 		{Name: "ffprobe", Value: ffprobe},

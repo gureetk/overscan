@@ -54,7 +54,8 @@ check on each box measures what it plays. The fourth milestone has begun: past
 programmes play from the archives of the Xtream servers, playlists and Stalker
 portals that keep them, on the box and in Stalker clients; films and series
 can be locked with the parental PIN, as channels can; radio stations play on
-a screen of their own; and a folder's titles can get their details from TMDB.
+a screen of their own; a folder's titles can get their details from TMDB; and
+boxes can record programmes from the guide on the server.
 [docs/trying-it.md](docs/trying-it.md) says how to try it.
 
 ## What it is meant to do

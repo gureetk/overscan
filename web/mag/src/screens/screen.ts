@@ -14,6 +14,7 @@ import type { LineupModel } from '../lineup';
 import type { PickItem } from '../overlays';
 import type { Platform, Rect } from '../platform';
 import type { Player } from '../player';
+import type { Recordings } from '../recordings';
 import type { SettingsModel } from '../settings';
 import { clock, date, now } from '../time';
 
@@ -52,6 +53,8 @@ export interface Ctx {
   film: FilmPlayer;
   /** The playback check (D70). */
   check: PlaybackCheck;
+  /** The household's recordings to come (D89). */
+  recordings: Recordings;
   /** The server's version, and the box's label in the admin. */
   server: { version: string; label: string };
   /** go shows another screen, which Back leaves. */

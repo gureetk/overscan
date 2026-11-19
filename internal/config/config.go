@@ -40,6 +40,9 @@ type Config struct {
 	// the database (D46); KeyFileName in DataDir if not set. Overscan makes
 	// it at its first start.
 	KeyFile string `yaml:"key_file"`
+	// RecordingsDir is the folder that recordings are written in (D89);
+	// RecordingsDirName in DataDir if not set.
+	RecordingsDir string `yaml:"recordings_dir"`
 	// Log controls logging.
 	Log Log `yaml:"log"`
 	// FFmpeg is the ffmpeg program that repairs the streams of channels set
@@ -129,6 +132,18 @@ const FFmpegOff = "off"
 // unless key_file names another place.
 const KeyFileName = "secret.key"
 
+// RecordingsDirName is the recordings folder's name in the data directory,
+// where it is unless recordings_dir names another place.
+const RecordingsDirName = "Recordings"
+
+// RecordingsPath returns the path of the recordings folder.
+func (c Config) RecordingsPath() string {
+	if c.RecordingsDir != "" {
+		return c.RecordingsDir
+	}
+	return filepath.Join(c.DataDir, RecordingsDirName)
+}
+
 // KeyPath returns the path of the key file.
 func (c Config) KeyPath() string {
 	if c.KeyFile != "" {
@@ -197,6 +212,7 @@ var envVars = []struct {
 	{"OVERSCAN_ADMIN_LISTEN", func(c *Config, v string) { c.AdminListen = v }},
 	{"OVERSCAN_DATA_DIR", func(c *Config, v string) { c.DataDir = v }},
 	{"OVERSCAN_KEY_FILE", func(c *Config, v string) { c.KeyFile = v }},
+	{"OVERSCAN_RECORDINGS_DIR", func(c *Config, v string) { c.RecordingsDir = v }},
 	{"OVERSCAN_LOG_LEVEL", func(c *Config, v string) { c.Log.Level = v }},
 	{"OVERSCAN_LOG_FORMAT", func(c *Config, v string) { c.Log.Format = v }},
 	{"OVERSCAN_FFMPEG", func(c *Config, v string) { c.FFmpeg = v }},
@@ -273,6 +289,9 @@ func (c Config) validate() error {
 	}
 	if c.KeyFile != "" && !filepath.IsAbs(c.KeyFile) {
 		return errors.New("key_file must be an absolute path")
+	}
+	if c.RecordingsDir != "" && !filepath.IsAbs(c.RecordingsDir) {
+		return errors.New("recordings_dir must be an absolute path")
 	}
 	if c.FFmpeg == "" {
 		return errors.New(`ffmpeg must not be empty; set it to "off" to turn stream repair off`)

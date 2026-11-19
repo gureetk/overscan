@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -65,6 +66,9 @@ type Refresher struct {
 
 	mu    sync.Mutex
 	locks map[int64]*sync.Mutex // by source: one refresh of a source at a time
+	// mayBeEmpty is a folder that may hold no films or series: the
+	// recordings folder (D89).
+	mayBeEmpty string
 
 	// Overridden by tests.
 	maxBytes   int64
@@ -729,9 +733,18 @@ func (r *Refresher) readPlex(ctx context.Context, src source.Settings) (readResu
 	return res, nil
 }
 
+// AllowEmpty lets the folder at dir hold no films or series without its
+// source's checks failing: the recordings folder, which is empty until the
+// first recording is made (D89).
+func (r *Refresher) AllowEmpty(dir string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.mayBeEmpty = filepath.Clean(dir)
+}
+
 // readFolder checks a folder (D67): that it can be read, and that it holds
-// films or series, which it counts. Videos that cannot be read are counted
-// as skipped.
+// films or series, which it counts, unless it may be empty. Videos that
+// cannot be read are counted as skipped.
 func (r *Refresher) readFolder(ctx context.Context, src source.Settings) (readResult, error) {
 	f, err := folder.Open(src.URL)
 	if err != nil {
@@ -742,7 +755,10 @@ func (r *Refresher) readFolder(ctx context.Context, src source.Settings) (readRe
 	if err != nil {
 		return readResult{}, err
 	}
-	if films+series == 0 {
+	r.mu.Lock()
+	mayBeEmpty := r.mayBeEmpty != "" && filepath.Clean(src.URL) == r.mayBeEmpty
+	r.mu.Unlock()
+	if films+series == 0 && !mayBeEmpty {
 		return readResult{}, errors.New("the folder holds no films or series")
 	}
 	return readResult{folder: f.Name(), films: films, series: series, skipped: skipped}, nil

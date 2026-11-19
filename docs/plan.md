@@ -345,7 +345,7 @@ The first M1 task was a probe page on the real box, because its answers would de
 | Favorites | Per profile. |
 | Settings | Language, time zone, PIN, diagnostics (version, last request, memory), reload portal. |
 | Messages | From the admin. |
-| Later | Recordings, radio. |
+| Later | Recordings, radio (both in M4, D87 and D89). |
 
 Performance rules: small DOM, no layout thrash, lazy images at small sizes (thumbnails produced by the server), memory checks in the diagnostics screen. Targets to validate in M1: a visible response to a key press within about 150 ms, and the channel list on screen within about 3 s of the page loading.
 
@@ -486,7 +486,7 @@ Each phase ends with a pre-release of v0.3.0 (`v0.3.0-alpha.N`), as M3's phases 
 - Full parental control, adult marks: the PIN for films and series as for channels (D55, D79), and the marks that sources give. **In place:** shelves of films and series, and titles, are locked from the *Movies* and *Series* pages; the box marks a locked title, hides its picture and its details until the PIN is typed, and plays it only with the PIN; Stalker clients do not see locked titles (D85). Xtream servers' and Stalker portals' marks for adults are kept, and do nothing, lock or hide, as a setting says, nothing at first (D86).
 - Radio. **In place:** the radio stations that Xtream servers and playlists list are marked in the lineup; the box plays them on a *Radio* screen, without a picture, and a setting keeps them out of its Live TV (D87).
 - Optional TMDB metadata for local files, with the administrator's own key. **In place:** with a key given on the *Settings* page, the films and series in folders that lack a poster or a plot get what their folders leave out from TMDB, found by the TMDB ID in their names or `.nfo` files or by name and year, looked up in the background one request at a time; a series' episodes when a box opens it (D88).
-- Local recording and timeshift (optional).
+- Local recording and timeshift (optional). **In place:** recordings made on the server, off until the administrator gives them room: a box records a programme from its guide, the server plays the channel through the hub as a device of its own, within its source's limit, and writes it to a folder that a folder source reads, so that boxes play it on *Movies*; the admin lists, calls off and deletes them (D89). Timeshift is left for later, until the box tests show how its player seeks (D90).
 *Done when:* a past programme plays on the box, with seeking, from each kind of source that keeps catch-up (an Xtream server, a playlist, a Stalker portal), and a Stalker client sees and plays the same; a recording made on the server plays back on the box; a locked or adult film asks for the PIN on the box and is hidden from Stalker clients; a radio station plays; and a folder's titles get TMDB details once a key is set.
 
 ### M5: Households (M)

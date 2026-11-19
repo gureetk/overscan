@@ -15,6 +15,7 @@ import { LineupModel } from './lineup';
 import { type Modal, NumberBox, type PickItem, Picker, PinDialog, Toast } from './overlays';
 import type { Platform, Rect } from './platform';
 import { label, Player } from './player';
+import { Recordings } from './recordings';
 import { CheckScreen } from './screens/check';
 import { EpisodesScreen } from './screens/episodes';
 import { FilmScreen } from './screens/film';
@@ -45,6 +46,7 @@ export class App {
   private client: Client;
   private lineup: LineupModel;
   private guide: GuideCache;
+  private recordings: Recordings;
   private settings: SettingsModel;
   private player: Player;
   private film: FilmPlayer;
@@ -80,6 +82,7 @@ export class App {
     });
     this.lineup = new LineupModel();
     this.guide = new GuideCache(this.client);
+    this.recordings = new Recordings(this.client);
     this.settings = new SettingsModel(this.client);
     this.lineup.numbering = function () {
       return self.settings.current.numbers;
@@ -183,6 +186,7 @@ export class App {
       series: series,
       film: this.film,
       check: this.check,
+      recordings: this.recordings,
       server: this.server,
       go: function (name, arg) {
         self.go(name, arg);
