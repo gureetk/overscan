@@ -32,32 +32,34 @@ you are entitled to use.
 
 ## Status
 
-**Early development.** Version 0.1, the end of the second milestone, "Live TV",
-is the first release meant for a household to try. It plays live channels from
-M3U playlists and Xtream servers, with their programme guides, on a MAG322w1
-through Overscan's own interface, and in apps that speak the Stalker portal
-protocol. The admin adds sources, arranges the lineup (groups, names, numbers,
-hidden channels, parental locks), approves devices and shows what is playing.
-The stream hub proxies every stream, relays HLS, leaves out what a source sends
-again, and can repair a channel's timestamps with ffmpeg. Overscan installs as a
-service in a Proxmox container or another Debian system, or runs in Docker.
-The third milestone, "Libraries", has begun: the MAG interface browses and plays
-the films and series of Xtream servers, Jellyfin and Plex servers and folders
-on the server, with seeking and resuming, in pre-releases, and Stalker clients
-browse and play them too. A provider's Stalker portal is a source of live
-channels, guides, films and series, read as the box that the provider
-registered, its films and series a page at a time as boxes browse them. Films
-whose sound the box cannot play go through ffmpeg; those whose picture it cannot play are
-transcoded by Jellyfin or, where the administrator lets it, by Overscan's own
-ffmpeg; subtitles beside a film or in Jellyfin show on the box, and a playback
-check on each box measures what it plays. The fourth milestone is built, in
-pre-releases that wait for tests on a box: past programmes play from the
-archives of the Xtream servers, playlists and Stalker portals that keep them,
-on the box and in Stalker clients; films and series can be locked with the
-parental PIN, as channels can; radio stations play on a screen of their own;
-a folder's titles can get their details from TMDB; boxes can record
-programmes from the guide on the server; and, where the administrator turns it
-on, they can pause live TV and go back in it.
+**Early development.** Version 0.3.0 is the newest release. It ends the third
+and fourth milestones, "Libraries" and "Catch-up, recording, parental control",
+and holds everything before them.
+
+It plays live channels from M3U playlists, Xtream servers and providers' Stalker
+portals, with their programme guides, on a MAG322w1 through Overscan's own
+interface, and in apps that speak the Stalker portal protocol. The admin adds
+sources, arranges the lineup (groups, names, numbers, hidden channels, parental
+locks), approves devices and shows what is playing. The stream hub proxies every
+stream, relays HLS, leaves out what a source sends again, and can repair a
+channel's timestamps with ffmpeg. Overscan installs as a service in a Proxmox
+container or another Debian system, or runs in Docker.
+
+The box and Stalker clients browse and play the films and series of Xtream
+servers, Stalker portals, Jellyfin and Plex servers and folders on the server,
+with seeking and resuming. Films whose sound the box cannot play go through
+ffmpeg; those whose picture it cannot play are transcoded by Jellyfin or, where
+the administrator lets it, by Overscan's own ffmpeg; subtitles beside a film or
+in Jellyfin show on the box, and a playback check on each box measures what it
+plays. Past programmes play from the archives of the sources that keep them.
+Films and series can be locked with the parental PIN, as channels can; radio
+stations play on a screen of their own; a folder's titles can get their details
+from TMDB; boxes can record programmes from the guide on the server; and, where
+the administrator turns it on, they can pause live TV and go back in it.
+
+Much of what the third and fourth milestones added has been tested against test
+servers and in a desktop browser, but not yet on a MAG box or with real
+providers and media servers: treat it as early.
 [docs/trying-it.md](docs/trying-it.md) says how to try it.
 
 ## What it is meant to do
