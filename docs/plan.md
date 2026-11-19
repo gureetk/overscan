@@ -481,11 +481,13 @@ Order matters: the probe page comes first, because the box's real browser decide
 *Status:* the admin's redesign and the Live TV follow-ups are in place (pre-releases v0.2.0-alpha.1 to alpha.4), and so are Xtream films and series on the MAG page (v0.2.0-alpha.5), Jellyfin sources (v0.2.0-alpha.6), folders (v0.2.0-alpha.7), the sound of films that the box cannot play converted, with subtitles (v0.2.0-alpha.8), the playback check that measures what each box plays (v0.2.0-alpha.9), Jellyfin's transcodes of the video a box cannot play (v0.2.0-alpha.10), Plex sources (v0.2.0-alpha.11), transcodes with Overscan's own ffmpeg (v0.2.0-alpha.12), and the Stalker API's films and series (v0.2.0-alpha.13). Next: the upstream Stalker source, whose live channels and guides (D76) and films and series (D77) are in place.
 
 ### M4: Catch-up, recording, parental control (M)
-- Archive passthrough from sources that have it.
-- Local recording and timeshift (optional).
-- Full parental control, adult marks.
+Each phase ends with a pre-release of v0.3.0 (`v0.3.0-alpha.N`), as M3's phases did with v0.2.0.
+- Archive passthrough from sources that have it: Xtream servers, playlists that describe their catch-up, and Stalker portals, on the box and for Stalker clients.
+- Full parental control, adult marks: the PIN for films and series as for channels (D55, D79), and the marks that sources give.
 - Radio.
-- Optional TMDB metadata for local files.
+- Optional TMDB metadata for local files, with the administrator's own key.
+- Local recording and timeshift (optional).
+*Done when:* a past programme plays on the box, with seeking, from each kind of source that keeps catch-up (an Xtream server, a playlist, a Stalker portal), and a Stalker client sees and plays the same; a recording made on the server plays back on the box; a locked or adult film asks for the PIN on the box and is hidden from Stalker clients; a radio station plays; and a folder's titles get TMDB details once a key is set.
 
 ### M5: Households (M)
 - Several profiles per account, switchable on the box; expiry; messages and events.
