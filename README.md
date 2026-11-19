@@ -26,6 +26,10 @@ It is built for a household or a small group of friends running one server at
 home, not for a reseller business. One binary, one SQLite file and ffmpeg, in a
 small LXC or VM, should be all it takes.
 
+Overscan comes with no channels, films or playlists, and points to none. It
+plays only the sources its administrator adds: use it with services and media
+you are entitled to use.
+
 ## Status
 
 **Early development.** Version 0.1, the end of the second milestone, "Live TV",
