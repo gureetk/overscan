@@ -42,6 +42,7 @@ type Admin struct {
 	// tmdbBase is TMDB's address, which a test changes (D88).
 	tmdbBase string
 	recorder Recorder // records programmes; nil if this server cannot (D89)
+	folders  Folders  // reads the folder sources again; nil for none (D88)
 }
 
 // New returns the admin, which keeps its administrator and sessions in st.

@@ -119,6 +119,9 @@ func New(cfg config.Config, log *slog.Logger, version string, svc Services) *Ser
 	if svc.Recorder != nil {
 		a.UseRecorder(svc.Recorder)
 	}
+	if svc.Library != nil {
+		a.UseFolders(svc.Library)
+	}
 	a.UseSupport(svc.Support)
 	adm := a.Handler()
 	amux := mux

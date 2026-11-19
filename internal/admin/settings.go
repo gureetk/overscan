@@ -340,7 +340,8 @@ func (a *Admin) setTMDBKey(ctx context.Context, key string) (warning string, err
 		if err := a.store.SetTMDBKey(ctx, ""); err != nil {
 			return "", err
 		}
-		a.log.Info("TMDB's key removed in the admin; folders' titles show what their folders have from their next read")
+		a.log.Info("TMDB's key removed in the admin; folders' titles show what their folders have")
+		a.readFolders(ctx)
 		return "", nil
 	}
 	if len(key) > 1024 || strings.ContainsAny(key, " \t\r\n") {
@@ -364,7 +365,25 @@ func (a *Admin) setTMDBKey(ctx context.Context, key string) (warning string, err
 	if err := a.store.SetTMDBKey(ctx, key); err != nil {
 		return "", err
 	}
+	a.readFolders(ctx)
 	return warning, nil
+}
+
+// Folders reads the folder sources again.
+type Folders interface {
+	ReadFoldersAgain(ctx context.Context)
+}
+
+// UseFolders gives the admin what reads the folder sources again, which a
+// change to TMDB's key or language does (D88).
+func (a *Admin) UseFolders(f Folders) { a.folders = f }
+
+// readFolders reads the folder sources again, so that a change to TMDB's
+// settings shows at once.
+func (a *Admin) readFolders(ctx context.Context) {
+	if a.folders != nil {
+		a.folders.ReadFoldersAgain(ctx)
+	}
 }
 
 // setTMDBLanguage sets the language that TMDB is asked in: such as en-GB,
@@ -374,10 +393,17 @@ func (a *Admin) setTMDBLanguage(ctx context.Context, language string) error {
 	if language != "" && !tmdb.ValidLanguage(language) {
 		return badEdit(http.StatusBadRequest, "bad_tmdb_language", "A language for TMDB is two small letters, and a region if you like: en or en-GB.")
 	}
+	old, err := a.store.TMDBLanguage(ctx)
+	if err != nil {
+		return err
+	}
 	if err := a.store.SetTMDBLanguage(ctx, language); err != nil {
 		return err
 	}
-	a.log.Info("TMDB's language set in the admin", "language", language)
+	if language != old {
+		a.log.Info("TMDB's language set in the admin", "language", language)
+		a.readFolders(ctx)
+	}
 	return nil
 }
 
@@ -387,7 +413,7 @@ func (a *Admin) tmdbForm(w http.ResponseWriter, r *http.Request, s store.AdminSe
 	ctx := r.Context()
 	if r.PostFormValue("remove") != "" {
 		_, err := a.setTMDBKey(ctx, "")
-		a.settingsDone(w, r, s, err, "TMDB's key is removed. Titles in folders show what their folders have from their next read.")
+		a.settingsDone(w, r, s, err, "TMDB's key is removed. Titles in folders show what their folders have.")
 		return
 	}
 	if err := a.setTMDBLanguage(ctx, r.PostFormValue("language")); err != nil {
@@ -400,7 +426,7 @@ func (a *Admin) tmdbForm(w http.ResponseWriter, r *http.Request, s store.AdminSe
 		return
 	}
 	warning, err := a.setTMDBKey(ctx, key)
-	a.settingsDone(w, r, s, err, strings.TrimSpace("TMDB's key is saved. Titles in folders that lack a poster or a plot get them from TMDB from their folder's next read. "+warning))
+	a.settingsDone(w, r, s, err, strings.TrimSpace("TMDB's key is saved. The folders are read again, and their titles that lack a poster or a plot are looked up on TMDB in the background. "+warning))
 }
 
 // repairChoice reads a channel's repair switch from a form: "on" or "off",
