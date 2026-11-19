@@ -70,7 +70,9 @@ func TestArchive(t *testing.T) {
 	}
 	now := time.Now()
 	var past, toCome *programme
-	for _, day := range []time.Time{now.AddDate(0, 0, -1), now} {
+	// Tomorrow's table too: in the last hour of the day, the programmes to
+	// come start tomorrow.
+	for _, day := range []time.Time{now.AddDate(0, 0, -1), now, now.AddDate(0, 0, 1)} {
 		for _, p := range c.dayTable(news, day.In(london).Format("2006-01-02")) {
 			start, stop := p.times(t)
 			ended := !stop.After(now)
