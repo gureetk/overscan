@@ -94,7 +94,7 @@ func TestRecordings(t *testing.T) {
 	if h.call("POST", Prefix+"recordings", token, body, &got); got.State != store.RecordingScheduled {
 		t.Fatalf("scheduled again %+v", got)
 	}
-	if err := h.store.SetRecordingState(ctx, got.ID, store.RecordingRecording, "f.ts", 0, ""); err != nil {
+	if err := h.store.SetRecordingState(ctx, got.ID, store.RecordingRecording, "", "f.ts", 0, ""); err != nil {
 		t.Fatal(err)
 	}
 	h.call("DELETE", fmt.Sprintf("%srecordings/%d", Prefix, got.ID), token, "", &off)
@@ -102,7 +102,7 @@ func TestRecordings(t *testing.T) {
 		t.Errorf("cancelled %v", rec.cancelled)
 	}
 	// What it wrote is kept, so the programme has been recorded.
-	if err := h.store.SetRecordingState(ctx, got.ID, store.RecordingDone, "f.ts", 188, ""); err != nil {
+	if err := h.store.SetRecordingState(ctx, got.ID, store.RecordingDone, "", "f.ts", 188, ""); err != nil {
 		t.Fatal(err)
 	}
 	if code, e := h.errorCodeBody("POST", Prefix+"recordings", token, body); code != http.StatusConflict || e != errRecorded {

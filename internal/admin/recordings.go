@@ -64,7 +64,8 @@ func (a *Admin) setRecordingsCap(ctx context.Context, gb int) error {
 }
 
 // recordingSource makes the recordings folder, and a folder source that
-// reads it unless one does.
+// reads it unless one does. When recordings_dir has changed, the source
+// named recordings reads the new folder instead of the one before.
 func (a *Admin) recordingSource(ctx context.Context) error {
 	dir := a.recorder.Dir()
 	if err := os.MkdirAll(dir, 0o750); err != nil {
@@ -76,21 +77,58 @@ func (a *Admin) recordingSource(ctx context.Context) error {
 	}
 	name := recordingSourceName
 	names := map[string]bool{}
-	for _, s := range sources {
+	var moved *store.Source
+	var before source.Settings
+	for i, s := range sources {
 		names[s.Name] = true
 		if s.Type != source.TypeFolder {
 			continue
 		}
 		settings, err := a.store.SourceSettings(ctx, s.ID)
-		if err == nil && filepath.Clean(settings.URL) == filepath.Clean(dir) {
+		if err != nil {
+			continue
+		}
+		if filepath.Clean(settings.URL) == filepath.Clean(dir) {
 			return nil
 		}
+		if s.Name == recordingSourceName {
+			moved, before = &sources[i], settings
+		}
+	}
+	if moved != nil {
+		from := before.URL
+		before.URL = dir
+		if err := a.updateSource(ctx, moved.ID, before); err != nil {
+			return err
+		}
+		a.log.Warn("the recordings folder changed, so its source reads the new one; recordings made before stay where they were",
+			"source", moved.Name, "from", from, "to", dir)
+		return nil
 	}
 	for i := 2; names[name]; i++ {
 		name = recordingSourceName + "-" + strconv.Itoa(i)
 	}
 	_, err = a.addSource(ctx, source.Settings{Name: name, Type: source.TypeFolder, URL: dir})
 	return err
+}
+
+// PrepareRecordings makes the recordings folder and its source as the
+// server starts, while recording is on, so that a recordings_dir changed
+// in the configuration file takes effect at once.
+func (a *Admin) PrepareRecordings(ctx context.Context) {
+	if a.recorder == nil {
+		return
+	}
+	gb, err := a.store.RecordingsCap(ctx)
+	if err != nil || gb == 0 {
+		if err != nil && ctx.Err() == nil {
+			a.log.Error("cannot read the recordings' room", "error", err)
+		}
+		return
+	}
+	if err := a.recordingSource(ctx); err != nil && ctx.Err() == nil {
+		a.log.Error("cannot make the recordings folder or its source", "error", err)
+	}
 }
 
 // recordingsForm sets from the Settings page the room that recordings may
@@ -147,7 +185,7 @@ func (a *Admin) cancelRecording(ctx context.Context, id string) (store.Recording
 	}
 	switch rec.State {
 	case store.RecordingScheduled:
-		err = a.store.SetRecordingState(ctx, rec.ID, store.RecordingCancelled, "", 0, "")
+		err = a.store.SetRecordingState(ctx, rec.ID, store.RecordingCancelled, "", "", 0, "")
 	case store.RecordingRecording:
 		if a.recorder != nil {
 			a.recorder.Cancel(rec.ID)
@@ -172,9 +210,16 @@ func (a *Admin) deleteRecording(ctx context.Context, id string) (store.Recording
 		return rec, badEdit(http.StatusConflict, "to_come", "It is still to come or under way: call it off first.")
 	}
 	if rec.File != "" && a.recorder != nil {
-		// Only a name, in the recordings folder.
-		if err := os.Remove(filepath.Join(a.recorder.Dir(), filepath.Base(rec.File))); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return rec, badEdit(http.StatusInternalServerError, "no_delete", "Its file cannot be deleted: %v", err)
+		// Only a name, in the folder it was made in, else in the recordings
+		// folder, where it may have been moved since.
+		for _, dir := range recordingDirs(rec, a.recorder.Dir()) {
+			err := os.Remove(filepath.Join(dir, filepath.Base(rec.File)))
+			if err == nil {
+				break
+			}
+			if !errors.Is(err, os.ErrNotExist) {
+				return rec, badEdit(http.StatusInternalServerError, "no_delete", "Its file cannot be deleted: %v", err)
+			}
 		}
 		a.recorder.Changed()
 	}
@@ -183,6 +228,15 @@ func (a *Admin) deleteRecording(ctx context.Context, id string) (store.Recording
 	}
 	a.log.Info("a recording deleted in the admin", "title", rec.Title, "channel", rec.Channel)
 	return rec, nil
+}
+
+// recordingDirs returns where rec's file may be: the folder it was made in,
+// then the recordings folder now, dir.
+func recordingDirs(rec store.Recording, dir string) []string {
+	if rec.Dir == "" || filepath.Clean(rec.Dir) == filepath.Clean(dir) {
+		return []string{dir}
+	}
+	return []string{filepath.Clean(rec.Dir), dir}
 }
 
 // apiRecording is a recording, as the API describes it.

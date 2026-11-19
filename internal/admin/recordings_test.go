@@ -113,7 +113,7 @@ func TestRecordings(t *testing.T) {
 			t.Fatal(err)
 		}
 		if state != store.RecordingScheduled {
-			if err := ta.st.SetRecordingState(ctx, r.ID, state, file, size, why); err != nil {
+			if err := ta.st.SetRecordingState(ctx, r.ID, state, "", file, size, why); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -234,4 +234,86 @@ func TestRecordings(t *testing.T) {
 		t.Errorf("folder sources %q", got)
 	}
 	apiErrorOf(t, ta.apiDo("POST", "recordings", body(ta.clock.Add(time.Hour)), c, h...), http.StatusConflict, "recording_off")
+}
+
+// TestRecordingsFolderMoved changes the recordings folder, as a new
+// recordings_dir and a restart do: the recordings source reads the new
+// folder from the start, and recordings made before are deleted from the
+// folder they were made in, or from the new one if they were moved there.
+func TestRecordingsFolderMoved(t *testing.T) {
+	ta := newTestAdmin(t)
+	c, h := ta.withLineup()
+	ctx := context.Background()
+	before := filepath.Join(t.TempDir(), "Recordings")
+	rec := &fakeRecorder{dir: before}
+	ta.UseRecorder(rec)
+	if err := ta.setRecordingsCap(ctx, 10); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := ta.st.LineupChannels(ctx, store.DefaultLineupID)
+	if err != nil || len(cs) == 0 {
+		t.Fatalf("channels %+v, %v", cs, err)
+	}
+	at := time.Date(2026, 12, 4, 20, 0, 0, 0, time.UTC)
+	made := func(title string, start time.Time, dir string) store.Recording {
+		t.Helper()
+		r, err := ta.st.ScheduleRecording(ctx, store.Recording{EntryID: cs[0].EntryID, Channel: "Alpha", Title: title,
+			Start: start, Stop: start.Add(time.Hour), CreatedAt: at})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := ta.st.SetRecordingState(ctx, r.ID, store.RecordingDone, dir, title+".ts", 2, ""); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(before, title+".ts"), []byte("ts"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		r.File, r.Dir = title+".ts", dir
+		return r
+	}
+	stays := made("Nature Hour", at, before)
+	moves := made("Quiz Night", at.Add(time.Hour), "")
+
+	// The configuration names another folder, and the server starts again.
+	after := filepath.Join(t.TempDir(), "TV")
+	rec.dir = after
+	ta.PrepareRecordings(ctx)
+	sources, err := ta.st.Sources(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var folders []string
+	for _, s := range sources {
+		if s.Type == source.TypeFolder {
+			settings, _ := ta.st.SourceSettings(ctx, s.ID)
+			folders = append(folders, s.Name+" "+settings.URL)
+		}
+	}
+	if len(folders) != 1 || folders[0] != "recordings "+after {
+		t.Errorf("folder sources %q", folders)
+	}
+	if info, err := os.Stat(after); err != nil || !info.IsDir() {
+		t.Errorf("the new folder: %v", err)
+	}
+	// Starting again changes nothing more.
+	ta.PrepareRecordings(ctx)
+	if again, _ := ta.st.Sources(ctx); len(again) != len(sources) {
+		t.Errorf("%d sources, then %d", len(sources), len(again))
+	}
+
+	// One stays where it was made; the other was moved by hand.
+	if err := os.Rename(filepath.Join(before, moves.File), filepath.Join(after, moves.File)); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []store.Recording{stays, moves} {
+		got := ta.apiDo("DELETE", fmt.Sprintf("recordings/%d", r.ID), "", c, h...)
+		if got.Code != http.StatusNoContent {
+			t.Errorf("delete %s: status %d, %s", r.Title, got.Code, got.Body)
+		}
+	}
+	for _, p := range []string{filepath.Join(before, stays.File), filepath.Join(after, moves.File)} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("%s: %v", p, err)
+		}
+	}
 }

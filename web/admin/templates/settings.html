@@ -157,7 +157,7 @@
       </select>
     </form>
     {{- if .Data.CanRecord}}
-    <p class="hint">They go in <code>{{.Data.RecordingsDir}}</code>, and take {{.Data.RecordingsUsedText}} there. A recording runs from a minute before its programme to two minutes after it, and uses one of its source's connections all that time.</p>
+    <p class="hint">They go in <code>{{.Data.RecordingsDir}}</code>, and take {{.Data.RecordingsUsedText}} there. Another folder is set with <code>recordings_dir</code> in the configuration file, and takes effect when the server starts again. A recording runs from a minute before its programme to two minutes after it, and uses one of its source's connections all that time.</p>
     {{- end}}
     {{- if or .Data.Upcoming .Data.Recent}}
     <div class="table-wrap">

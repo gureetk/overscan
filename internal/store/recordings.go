@@ -61,19 +61,22 @@ type Recording struct {
 	Start     time.Time
 	Stop      time.Time
 	State     string
-	File      string // its file's name in the recordings folder, "" until it is made
+	File      string // its file's name, "" until it is made
+	// Dir is the folder its file was made in, "" for the recordings
+	// folder (schema 30).
+	Dir       string
 	Size      int64
 	Error     string
 	CreatedAt time.Time
 }
 
-const recordingColumns = `id, account_id, device_id, entry_id, channel, title, start, stop, state, file, size, error, created_at`
+const recordingColumns = `id, account_id, device_id, entry_id, channel, title, start, stop, state, file, size, error, created_at, dir`
 
 func scanRecording(row rowScanner) (Recording, error) {
 	var r Recording
 	var start, stop, created int64
 	err := row.Scan(&r.ID, &r.AccountID, &r.DeviceID, &r.EntryID, &r.Channel, &r.Title, &start, &stop, &r.State,
-		&r.File, &r.Size, &r.Error, &created)
+		&r.File, &r.Size, &r.Error, &created, &r.Dir)
 	r.Start, r.Stop, r.CreatedAt = time.Unix(start, 0), time.Unix(stop, 0), time.Unix(created, 0)
 	return r, err
 }
@@ -87,7 +90,7 @@ func (s *Store) ScheduleRecording(ctx context.Context, r Recording) (Recording, 
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (entry_id, start) DO UPDATE SET
 			account_id = excluded.account_id, device_id = excluded.device_id, channel = excluded.channel,
-			title = excluded.title, stop = excluded.stop, state = excluded.state, error = '', size = 0, file = '',
+			title = excluded.title, stop = excluded.stop, state = excluded.state, error = '', size = 0, file = '', dir = '',
 			created_at = excluded.created_at
 		WHERE recordings.state IN (?, ?)`,
 		r.AccountID, r.DeviceID, r.EntryID, r.Channel, r.Title, r.Start.Unix(), r.Stop.Unix(), RecordingScheduled,
@@ -157,11 +160,12 @@ func (s *Store) recordings(ctx context.Context, order string, limit int, states 
 	return out, rows.Err()
 }
 
-// SetRecordingState records what became of a recording: its state, its
-// file, its size and, for one that failed, why.
-func (s *Store) SetRecordingState(ctx context.Context, id int64, state, file string, size int64, why string) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE recordings SET state = ?, file = ?, size = ?, error = ? WHERE id = ?`,
-		state, file, size, why, id)
+// SetRecordingState records what became of a recording: its state, the
+// folder its file is in and the file's name, its size and, for one that
+// failed, why.
+func (s *Store) SetRecordingState(ctx context.Context, id int64, state, dir, file string, size int64, why string) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE recordings SET state = ?, dir = ?, file = ?, size = ?, error = ? WHERE id = ?`,
+		state, dir, file, size, why, id)
 	if err != nil {
 		return fmt.Errorf("store: recording %d: %w", id, err)
 	}

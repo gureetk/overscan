@@ -94,11 +94,20 @@ func partName(name string) string { return "." + name }
 
 // New returns a recorder that writes recordings into dir.
 func New(st *store.Store, hub Hub, log *slog.Logger, dir string) *Recorder {
-	return &Recorder{store: st, hub: hub, log: log, dir: dir, now: time.Now, running: map[int64]context.CancelFunc{}}
+	return &Recorder{store: st, hub: hub, log: log, dir: filepath.Clean(dir), now: time.Now, running: map[int64]context.CancelFunc{}}
 }
 
 // Dir returns the recordings folder.
 func (r *Recorder) Dir() string { return r.dir }
+
+// dirOf returns the folder that rec's file is in: the one it was made in,
+// or the recordings folder for one made before schema 30 kept it.
+func (r *Recorder) dirOf(rec store.Recording) string {
+	if rec.Dir != "" {
+		return filepath.Clean(rec.Dir)
+	}
+	return r.dir
+}
 
 // Run starts and ends recordings until ctx is done, and then stops those
 // under way, keeping what they wrote.
@@ -204,7 +213,7 @@ func (r *Recorder) Cancel(id int64) bool {
 
 func (r *Recorder) fail(ctx context.Context, rec store.Recording, why string) {
 	r.log.Warn("a recording failed", "title", rec.Title, "channel", rec.Channel, "reason", why)
-	if err := r.store.SetRecordingState(ctx, rec.ID, store.RecordingFailed, rec.File, rec.Size, why); err != nil {
+	if err := r.store.SetRecordingState(ctx, rec.ID, store.RecordingFailed, rec.Dir, rec.File, rec.Size, why); err != nil {
 		r.log.Error("cannot record what became of a recording", "title", rec.Title, "error", err)
 	}
 }
@@ -227,13 +236,13 @@ func (r *Recorder) start(ctx context.Context, rec store.Recording, limit int64) 
 		r.fail(ctx, rec, "its file cannot be made: "+err.Error())
 		return
 	}
-	if err := r.store.SetRecordingState(ctx, rec.ID, store.RecordingRecording, name, 0, ""); err != nil {
+	if err := r.store.SetRecordingState(ctx, rec.ID, store.RecordingRecording, r.dir, name, 0, ""); err != nil {
 		r.log.Error("cannot record that a recording began", "title", rec.Title, "error", err)
 		_ = f.Close()
 		_ = os.Remove(f.Name())
 		return
 	}
-	rec.File = name
+	rec.File, rec.Dir = name, r.dir
 	r.log.Info("a recording began", "title", rec.Title, "channel", rec.Channel,
 		"until", rec.Stop.Add(tail).UTC().Format(time.DateTime))
 	r.run(ctx, rec, entry, r.fileFor(f, limit, used), false)
@@ -248,6 +257,10 @@ func (r *Recorder) resume(ctx context.Context, rec store.Recording, limit int64)
 		r.finish(ctx, rec, rec.File, stopped)
 		return
 	}
+	if r.dirOf(rec) != r.dir {
+		r.finish(ctx, rec, rec.File, "the server stopped while it recorded, and the recordings folder changed")
+		return
+	}
 	entry, used, why, err := r.ready(ctx, rec, limit)
 	if err != nil || why != "" {
 		if why == "" {
@@ -258,6 +271,7 @@ func (r *Recorder) resume(ctx context.Context, rec store.Recording, limit int64)
 	}
 	name := filepath.Base(rec.File)
 	part, own := filepath.Join(r.dir, partName(name)), filepath.Join(r.dir, name)
+	rec.Dir = r.dir
 	if _, err := os.Stat(part); errors.Is(err, fs.ErrNotExist) {
 		// It stopped as it took its own name.
 		_ = os.Rename(own, part)
@@ -399,15 +413,16 @@ const errNothing = "nothing came from its source"
 // or removes it if it is empty.
 func (r *Recorder) finish(ctx context.Context, rec store.Recording, name, why string) {
 	var size int64
+	dir := r.dirOf(rec)
 	if name != "" {
-		part := filepath.Join(r.dir, partName(filepath.Base(name)))
+		part := filepath.Join(dir, partName(filepath.Base(name)))
 		if size = sizeOf(part); size > 0 {
-			if err := os.Rename(part, filepath.Join(r.dir, filepath.Base(name))); err != nil {
+			if err := os.Rename(part, filepath.Join(dir, filepath.Base(name))); err != nil {
 				r.log.Error("cannot give a recording's file its name", "title", rec.Title, "error", err)
 			}
 		} else {
 			_ = os.Remove(part)
-			size = sizeOf(filepath.Join(r.dir, filepath.Base(name)))
+			size = sizeOf(filepath.Join(dir, filepath.Base(name)))
 		}
 		if size == 0 {
 			name = ""
@@ -423,7 +438,10 @@ func (r *Recorder) finish(ctx context.Context, rec store.Recording, name, why st
 	} else {
 		r.log.Info("a recording ended", "title", rec.Title, "channel", rec.Channel, "bytes", size)
 	}
-	if err := r.store.SetRecordingState(ctx, rec.ID, state, name, size, why); err != nil {
+	if name == "" {
+		dir = ""
+	}
+	if err := r.store.SetRecordingState(ctx, rec.ID, state, dir, name, size, why); err != nil {
 		r.log.Error("cannot record what became of a recording", "title", rec.Title, "error", err)
 	}
 	if name != "" {
