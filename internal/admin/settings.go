@@ -17,8 +17,9 @@ import (
 // made one stream so that they can be (D61), how many films and episodes at
 // once ffmpeg may transcode whose video a box cannot play (D73), and
 // whether films go through ffmpeg to convert their sound, and through
-// their source's server to transcode their video (D78), and what sources'
-// marks for adults do (D86).
+// their source's server to transcode their video (D78), what sources'
+// marks for adults do (D86), and whether boxes show radio stations on their
+// Radio screen alone (D87).
 
 type apiSettings struct {
 	RepairDefault    bool   `json:"repair_default"`
@@ -27,6 +28,7 @@ type apiSettings struct {
 	ConvertSound     bool   `json:"convert_sound"`
 	ServerTranscodes bool   `json:"server_transcodes"`
 	AdultMarks       string `json:"adult_marks"`
+	RadioApart       bool   `json:"radio_apart"`
 }
 
 func (a *Admin) apiSettings(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
@@ -38,7 +40,9 @@ func (a *Admin) apiSettings(w http.ResponseWriter, r *http.Request, _ store.Admi
 			if v.TranscodeVideo, err = a.store.Transcodes(ctx); err == nil {
 				if v.ConvertSound, err = a.store.ConvertsSound(ctx); err == nil {
 					if v.ServerTranscodes, err = a.store.ServerTranscodes(ctx); err == nil {
-						v.AdultMarks, err = a.store.AdultMarks(ctx)
+						if v.AdultMarks, err = a.store.AdultMarks(ctx); err == nil {
+							v.RadioApart, err = a.store.RadioApart(ctx)
+						}
 					}
 				}
 			}
@@ -109,6 +113,15 @@ func (a *Admin) apiChangeSettings(w http.ResponseWriter, r *http.Request, _ stor
 				return
 			}
 			if a.editAnswer(w, a.setAdultMarks(r.Context(), marks)) {
+				return
+			}
+		case "radio_apart":
+			var on bool
+			if json.Unmarshal(v, &on) != nil {
+				apiError(w, http.StatusBadRequest, "bad_json", "radio_apart is true or false.")
+				return
+			}
+			if a.editAnswer(w, a.setRadioApart(r.Context(), on)) {
 				return
 			}
 		default:
@@ -249,6 +262,27 @@ func (a *Admin) adultForm(w http.ResponseWriter, r *http.Request, s store.AdminS
 		store.AdultHide:    "Channels, films and series that their sources mark for adults are hidden from devices.",
 	}[marks]
 	a.settingsDone(w, r, s, a.setAdultMarks(r.Context(), marks), done)
+}
+
+// setRadioApart sets whether boxes show radio stations on their Radio
+// screen alone, and not among the channels of Live TV and the guide (D87).
+func (a *Admin) setRadioApart(ctx context.Context, on bool) error {
+	if err := a.store.SetRadioApart(ctx, on); err != nil {
+		return err
+	}
+	a.log.Info("where boxes show radio stations set in the admin", "radio_apart", on)
+	return nil
+}
+
+// radioForm sets from the Settings page whether boxes show radio stations
+// on their Radio screen alone.
+func (a *Admin) radioForm(w http.ResponseWriter, r *http.Request, s store.AdminSession) {
+	on := r.PostFormValue("apart") != ""
+	done := "Boxes show radio stations on their Radio screen, and among the channels of Live TV and the TV Guide too."
+	if on {
+		done = "Boxes show radio stations on their Radio screen alone."
+	}
+	a.settingsDone(w, r, s, a.setRadioApart(r.Context(), on), done)
 }
 
 // repairChoice reads a channel's repair switch from a form: "on" or "off",

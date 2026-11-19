@@ -2,7 +2,8 @@
 
 // Home: Simple, six big buttons on a plain background, or With a Picture, a
 // picture behind the last channel watched, smaller buttons and the
-// favourite channels (D52). The box's settings choose.
+// favourite channels (D52). The box's settings choose. A seventh button,
+// Radio, shows when the sources list radio stations (D87).
 
 import type { Channel } from '../api';
 import { el, Logo, setClass, setText, setWidth, show } from '../dom';
@@ -18,6 +19,10 @@ interface Tile {
   icon: string;
   line: string;
   open: () => void;
+  /** Whether the button shows; always, if missing. */
+  when?: () => boolean;
+  /** A shorter line for a narrower button, four to a row. */
+  short?: string;
 }
 
 /** How many favourite channels With a Picture shows. */
@@ -28,12 +33,14 @@ export class HomeScreen implements Screen {
   tunes = true;
   private ctx: Ctx;
   private tiles: Tile[];
+  /** The place of the focused button among those that show. */
   private focusTile = 0;
   /** With a Picture: 0 the buttons, 1 the favourites. */
   private focusRow = 0;
   private focusFav = 0;
 
   private simple: HTMLElement;
+  private bigGrid: HTMLElement;
   private bigTiles: { box: HTMLElement; line: HTMLElement }[] = [];
   private footer: Footer;
 
@@ -41,6 +48,7 @@ export class HomeScreen implements Screen {
   private pictureImage: HTMLElement;
   private pictureName = '';
   private last: { label: HTMLElement; logo: Logo; channel: HTMLElement; title: HTMLElement; when: HTMLElement; bar: HTMLElement; barBox: HTMLElement; next: HTMLElement };
+  private smallRow: HTMLElement;
   private smallTiles: HTMLElement[] = [];
   private favTitle: HTMLElement;
   private favCards: { box: HTMLElement; logo: Logo; bar: HTMLElement }[] = [];
@@ -52,19 +60,20 @@ export class HomeScreen implements Screen {
     this.tiles = [
       { name: 'Live TV', icon: 'tv', line: '', open: () => ctx.go('live') },
       { name: 'TV Guide', icon: 'guide', line: "What's on now and later", open: () => ctx.go('guide') },
+      { name: 'Radio', icon: 'radio', line: '', open: () => ctx.go('radio'), when: () => ctx.lineup.stations.length > 0 },
       { name: 'Movies', icon: 'movies', line: 'Films from your sources', open: () => ctx.go('movies') },
       { name: 'Series', icon: 'series', line: 'Series from your sources', open: () => ctx.go('series') },
-      { name: 'Search', icon: 'search', line: 'Channels, programmes and films', open: () => ctx.go('search') },
+      { name: 'Search', icon: 'search', line: 'Channels, programmes and films', short: 'Channels, guide, films', open: () => ctx.go('search') },
       { name: 'Settings', icon: 'settings', line: 'This box, appearance, about', open: () => ctx.go('settings') },
     ];
 
     // Simple.
     this.simple = el('div', 'simple', this.el);
     this.header(this.simple);
-    const grid = el('div', 'big-tiles', this.simple);
+    this.bigGrid = el('div', 'big-tiles', this.simple);
     for (let i = 0; i < this.tiles.length; i++) {
       const t = this.tiles[i]!;
-      const box = el('div', 'big-tile', grid);
+      const box = el('div', 'big-tile', this.bigGrid);
       el('div', 'tile-icon', box).innerHTML = icon(t.icon, 44, 1.6);
       const text = el('div', 'tile-text', box);
       el('div', 'tile-name', text, t.name);
@@ -95,10 +104,10 @@ export class HomeScreen implements Screen {
     const next = el('span', '', nextRow);
     this.last = { label: lastLabel, logo: lastLogo, channel: lastChannel, title: lastTitle, when: whenText, bar: bar, barBox: barBox, next: next };
 
-    const row = el('div', 'small-tiles', this.picture);
+    this.smallRow = el('div', 'small-tiles', this.picture);
     for (let i = 0; i < this.tiles.length; i++) {
       const t = this.tiles[i]!;
-      const box = el('div', 'small-tile', row);
+      const box = el('div', 'small-tile', this.smallRow);
       el('div', 'tile-face', box).innerHTML = icon(t.icon, 28, 1.7);
       el('div', 'tile-name', box, t.name);
       this.smallTiles.push(box);
@@ -123,6 +132,23 @@ export class HomeScreen implements Screen {
 
   private withPicture(): boolean {
     return this.ctx.settings.current.home === 'picture';
+  }
+
+  /** shown returns the places in tiles of the buttons that show. */
+  private shown(): number[] {
+    const out: number[] = [];
+    for (let i = 0; i < this.tiles.length; i++) {
+      const when = this.tiles[i]!.when;
+      if (!when || when()) {
+        out.push(i);
+      }
+    }
+    return out;
+  }
+
+  /** columns returns how many big buttons a row of Simple holds: four when there are seven. */
+  private columns(n: number): number {
+    return n > 6 ? 4 : 3;
   }
 
   enter(): void {
@@ -158,13 +184,22 @@ export class HomeScreen implements Screen {
     const last = this.ctx.lineup.lastWatched();
     const count = this.ctx.lineup.channels.length;
     this.tiles[0]!.line = last ? 'Last watched: ' + label(last) : count + (count === 1 ? ' channel' : ' channels');
+    const stations = this.ctx.lineup.stations.length;
+    this.tiles[2]!.line = stations + (stations === 1 ? ' station' : ' stations');
+    const shown = this.shown();
+    this.focusTile = Math.min(this.focusTile, shown.length - 1);
     if (picture) {
-      this.renderPicture(last);
+      this.renderPicture(last, shown);
     } else {
+      const cols = this.columns(shown.length);
+      setClass(this.bigGrid, 'big-tiles' + (cols === 4 ? ' four' : ''));
       for (let i = 0; i < this.bigTiles.length; i++) {
         const t = this.bigTiles[i]!;
-        setClass(t.box, 'big-tile' + (i === this.focusTile ? ' focus' : ''));
-        setText(t.line, this.tiles[i]!.line);
+        const at = shown.indexOf(i);
+        show(t.box, at >= 0);
+        setClass(t.box, 'big-tile' + (at === this.focusTile ? ' focus' : '') + ((at + 1) % cols === 0 ? ' row-end' : ''));
+        const tile = this.tiles[i]!;
+        setText(t.line, cols === 4 && tile.short ? tile.short : tile.line);
       }
       this.footer.set(
         [
@@ -178,7 +213,7 @@ export class HomeScreen implements Screen {
     }
   }
 
-  private renderPicture(last: Channel | null): void {
+  private renderPicture(last: Channel | null, shown: number[]): void {
     const name = this.ctx.settings.current.picture;
     if (name !== this.pictureName) {
       this.pictureName = name;
@@ -210,8 +245,11 @@ export class HomeScreen implements Screen {
       show(l.barBox, false);
       setText(l.next, '');
     }
+    setClass(this.smallRow, 'small-tiles' + (shown.length > 6 ? ' seven' : ''));
     for (let i = 0; i < this.smallTiles.length; i++) {
-      setClass(this.smallTiles[i]!, 'small-tile' + (this.focusRow === 0 && i === this.focusTile ? ' focus' : ''));
+      const at = shown.indexOf(i);
+      show(this.smallTiles[i]!, at >= 0);
+      setClass(this.smallTiles[i]!, 'small-tile' + (this.focusRow === 0 && at === this.focusTile ? ' focus' : ''));
     }
     const favs = this.ctx.lineup.favouriteChannels();
     show(this.favTitle, favs.length > 0);
@@ -234,8 +272,10 @@ export class HomeScreen implements Screen {
   }
 
   key(p: Press): boolean {
-    const n = this.tiles.length;
+    const shown = this.shown();
+    const n = shown.length;
     if (!this.withPicture()) {
+      const cols = this.columns(n);
       switch (p.key) {
         case 'left':
           this.focusTile = (this.focusTile + n - 1) % n;
@@ -245,10 +285,11 @@ export class HomeScreen implements Screen {
           break;
         case 'up':
         case 'down':
-          this.focusTile = (this.focusTile + 3) % n;
+          // Two rows: from the first to the one below, or the last button; from the second, up.
+          this.focusTile = this.focusTile < cols ? Math.min(this.focusTile + cols, n - 1) : this.focusTile - cols;
           break;
         case 'ok':
-          this.tiles[this.focusTile]!.open();
+          this.tiles[shown[this.focusTile]!]!.open();
           return true;
         default:
           return false;
@@ -282,7 +323,7 @@ export class HomeScreen implements Screen {
         break;
       case 'ok':
         if (this.focusRow === 0) {
-          this.tiles[this.focusTile]!.open();
+          this.tiles[shown[this.focusTile]!]!.open();
         } else {
           const list = this.ctx.lineup.favouriteChannels();
           const c = list[this.focusFav];

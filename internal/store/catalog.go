@@ -50,6 +50,9 @@ type CatalogChannel struct {
 	// Adult is set when the source marks the channel as one for adults
 	// (D86).
 	Adult bool
+	// Radio is set when the source lists the channel as a radio station
+	// (D87).
+	Radio bool
 }
 
 // CatalogChanges counts what ApplyCatalog changed.
@@ -137,8 +140,8 @@ func (s *Store) ApplyCatalog(ctx context.Context, sourceID int64, channels []Cat
 	// can hold the provider's login (D82).
 	upsert, err := tx.PrepareContext(ctx, `
 		INSERT INTO channels (source_id, identity_key, name, number, logo, category_id, xmltv_id,
-			stream_url, stream_secret, archive_days, catchup_secret, adult, position, listed_at, missing_since)
-		VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, NULL)
+			stream_url, stream_secret, archive_days, catchup_secret, adult, radio, position, listed_at, missing_since)
+		VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, NULL)
 		ON CONFLICT (source_id, identity_key) DO UPDATE SET
 			name = excluded.name,
 			number = excluded.number,
@@ -150,6 +153,7 @@ func (s *Store) ApplyCatalog(ctx context.Context, sourceID int64, channels []Cat
 			archive_days = excluded.archive_days,
 			catchup_secret = excluded.catchup_secret,
 			adult = excluded.adult,
+			radio = excluded.radio,
 			position = excluded.position,
 			listed_at = excluded.listed_at,
 			missing_since = NULL`)
@@ -177,7 +181,7 @@ func (s *Store) ApplyCatalog(ctx context.Context, sourceID int64, channels []Cat
 			}
 		}
 		if _, err := upsert.ExecContext(ctx, sourceID, c.IdentityKey, c.Name, c.Number, c.Logo, category,
-			c.XMLTVID, sealed, c.ArchiveDays, catchupSealed, c.Adult, i+1, when); err != nil {
+			c.XMLTVID, sealed, c.ArchiveDays, catchupSealed, c.Adult, c.Radio, i+1, when); err != nil {
 			return fail(err)
 		}
 		if known[c.IdentityKey] {
@@ -487,6 +491,7 @@ type LineupChannel struct {
 	// without one, or whose archive Overscan cannot play.
 	ArchiveDays int
 	Locked      bool // it, or its group, needs the parental PIN (D55)
+	Radio       bool // it is a radio station (D87)
 }
 
 // lineupEntryJoins joins a lineup entry e to its channel c, the channel's
@@ -524,7 +529,7 @@ const shownEntry = `e.number IS NOT NULL AND COALESCE(e.hidden, g.hidden, 0) = 0
 func (s *Store) LineupChannels(ctx context.Context, lineupID int64) ([]LineupChannel, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT e.id, c.id, e.number, COALESCE(e.name, c.name), c.logo, COALESCE(g.id, 0), COALESCE(g.name, ''),
-			c.xmltv_id, `+archiveDaysSQL+`, `+lockedEntry+lineupEntryJoins+`
+			c.xmltv_id, `+archiveDaysSQL+`, `+lockedEntry+`, c.radio`+lineupEntryJoins+`
 		WHERE e.lineup_id = ? AND `+shownEntry+`
 		ORDER BY e.number`,
 		lineupID)
@@ -536,7 +541,7 @@ func (s *Store) LineupChannels(ctx context.Context, lineupID int64) ([]LineupCha
 	for rows.Next() {
 		var c LineupChannel
 		if err := rows.Scan(&c.EntryID, &c.ChannelID, &c.Number, &c.Name, &c.Logo, &c.GroupID, &c.Group,
-			&c.XMLTVID, &c.ArchiveDays, &c.Locked); err != nil {
+			&c.XMLTVID, &c.ArchiveDays, &c.Locked, &c.Radio); err != nil {
 			return nil, fmt.Errorf("store: lineup %d: %w", lineupID, err)
 		}
 		out = append(out, c)
@@ -545,6 +550,17 @@ func (s *Store) LineupChannels(ctx context.Context, lineupID int64) ([]LineupCha
 		return nil, fmt.Errorf("store: lineup %d: %w", lineupID, err)
 	}
 	return out, nil
+}
+
+// RadioStations counts the radio stations that enabled sources list (D87).
+func (s *Store) RadioStations(ctx context.Context) (int, error) {
+	var n int
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT count(*) FROM channels c JOIN sources s ON s.id = c.source_id
+		WHERE c.radio = 1 AND s.enabled = 1 AND c.missing_since IS NULL`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("store: radio stations: %w", err)
+	}
+	return n, nil
 }
 
 // PlayableEntry is what the stream hub needs to play a lineup entry. It

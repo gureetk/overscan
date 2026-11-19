@@ -16,7 +16,8 @@ import (
 // The Settings page gathers what applies to the whole server: stream
 // repair's default and whether it reaches HLS, whether films are converted
 // and transcoded and how many at once ffmpeg may transcode (D78), the
-// parental PIN and what sources' marks for adults do (D86), the
+// parental PIN and what sources' marks for adults do (D86), where boxes
+// show radio stations (D87), the
 // administrator's account, and facts about the server, its backups and the
 // support bundle (D59).
 
@@ -37,6 +38,8 @@ type settingsData struct {
 	Locks            int    // locked groups, and channels locked one by one
 	LibraryLocks     int    // locked shelves of films and series, and titles locked one by one (D85)
 	Adult            string // what sources' marks for adults do (D86)
+	RadioApart       bool   // boxes show radio stations on their Radio screen alone (D87)
+	RadioStations    int    // radio stations that the sources list
 	Facts            []Fact
 	Started          time.Time
 	Portal           string // the address a MAG box loads
@@ -97,6 +100,12 @@ func (a *Admin) settings(r *http.Request) (settingsData, error) {
 		return d, err
 	}
 	if d.Adult, err = a.store.AdultMarks(ctx); err != nil {
+		return d, err
+	}
+	if d.RadioApart, err = a.store.RadioApart(ctx); err != nil {
+		return d, err
+	}
+	if d.RadioStations, err = a.store.RadioStations(ctx); err != nil {
 		return d, err
 	}
 	d.Portal, d.StalkerPortal = portalAddresses(r.Host, a.support.Listen)

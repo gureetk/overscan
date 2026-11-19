@@ -249,7 +249,7 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var shown, missing, pinned, renamed, moved, locked, repaired, repairOn, repairOff, adult int
+	var shown, missing, pinned, renamed, moved, locked, repaired, repairOn, repairOff, adult, radio int
 	for _, e := range entries {
 		count := func(n *int, yes bool) {
 			if yes {
@@ -263,6 +263,7 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 		count(&moved, e.Moved)
 		count(&locked, e.Locked || e.GroupLocked || e.AdultLocked)
 		count(&adult, e.Adult)
+		count(&radio, e.Radio)
 		count(&repaired, e.Repair)
 		count(&repairOn, e.RepairOwn != nil && *e.RepairOwn)
 		count(&repairOff, e.RepairOwn != nil && !*e.RepairOwn)
@@ -287,12 +288,17 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	radioApart, err := a.store.RadioApart(ctx)
+	if err != nil {
+		return "", err
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "Channels: %s, %s shown, %s missing from their source\n", count(len(entries)), count(shown), count(missing))
 	fmt.Fprintf(&b, "Edited: %d numbers pinned, %d renamed, %d moved to another group\n", pinned, renamed, moved)
 	fmt.Fprintf(&b, "Locked: %d channels, parental PIN set: %v\n", locked, pin)
 	fmt.Fprintf(&b, "Marked for adults by their sources: %d channels; what marks do: %s\n", adult, marks)
 	fmt.Fprintf(&b, "Locks on shelves of films and series, and on titles: %d\n", libraryLocks)
+	fmt.Fprintf(&b, "Radio stations: %d; on the Radio screen alone: %v\n", radio, radioApart)
 	fmt.Fprintf(&b, "Stream repair: every channel by default: %v; HLS too: %v; %d channels set to be repaired, %d set not to be; %s repaired in all\n",
 		repairDefault, repairHLS, repairOn, repairOff, count(repaired))
 	fmt.Fprintf(&b, "\nGroups: %d\n", len(groups))

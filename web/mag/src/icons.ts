@@ -29,6 +29,8 @@ const paths: { [name: string]: string } = {
   playcheck:
     '<path d="M4 4.5h16a1.5 1.5 0 0 1 1.5 1.5v10a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 16V6A1.5 1.5 0 0 1 4 4.5z"/><path d="M8.5 21h7"/><path d="M8.5 11l2.5 2.5 4.5-5"/>',
   right: '<path d="M9 5l7 7-7 7"/>',
+  radio: '<rect x="3" y="9" width="18" height="11" rx="2"/><path d="M7 9l9.5-5"/><circle cx="8.5" cy="14.5" r="2.5"/><path d="M14 12.5h3.5M14 16.5h3.5"/>',
+  sound: '<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M15.5 9.5a3.5 3.5 0 0 1 0 5M18 7a7 7 0 0 1 0 10"/>',
 };
 
 /** box returns an SVG's markup in a span size pixels square, in rem. */

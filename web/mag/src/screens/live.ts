@@ -328,7 +328,8 @@ export class LiveScreen implements Screen {
     const c = this.focused();
     const t = now();
     const playing = this.ctx.player.channel;
-    show(this.plate, !playing);
+    // A radio station has no picture: its logo shows in its place (D87).
+    show(this.plate, !playing || !!playing.radio);
     if (!c) {
       setText(this.title, '');
       show(this.nowLine, false);
@@ -337,8 +338,14 @@ export class LiveScreen implements Screen {
       setHTML(this.nextList, '');
       return;
     }
-    this.plateLogo.set(this.sparse ? '' : c.logo || '', c.name);
-    setText(this.plateHint, c.locked ? 'Locked: OK asks for the PIN' : 'OK to watch here');
+    const station = playing && playing.radio ? playing : null;
+    if (station) {
+      this.plateLogo.set(station.logo || '', station.name);
+      setText(this.plateHint, 'Radio · ' + station.number + ' ' + station.name);
+    } else {
+      this.plateLogo.set(this.sparse ? '' : c.logo || '', c.name);
+      setText(this.plateHint, c.locked ? 'Locked: OK asks for the PIN' : 'OK to watch here');
+    }
     const details = this.ctx.guide.detailsOf(c.id);
     let p = this.ctx.guide.at(c.id, t);
     if (p && details) {
@@ -372,7 +379,7 @@ export class LiveScreen implements Screen {
       }
     }
     setHTML(this.nextList, html);
-    toggle(this.el, 'with-video', !!playing);
+    toggle(this.el, 'with-video', !!playing && !playing.radio);
   }
 
   key(p: Press): boolean {
@@ -465,7 +472,11 @@ export class LiveScreen implements Screen {
     }
     const playing = this.ctx.player.channel;
     if (playing && playing.id === c.id) {
-      this.ctx.go('watch');
+      if (c.radio) {
+        this.ctx.go('radio', { channel: c });
+      } else {
+        this.ctx.go('watch');
+      }
     } else {
       this.ctx.watch(c, this.channels, false, this.groupKey);
     }
@@ -550,8 +561,12 @@ export class LiveScreen implements Screen {
   }
 
   video(): VideoArea {
-    if (!this.ctx.player.channel) {
+    const playing = this.ctx.player.channel;
+    if (!playing) {
       return 'none';
+    }
+    if (playing.radio) {
+      return 'audio';
     }
     // The frame's place in the 1280×720 layout, in the page's pixels.
     const unit = parseFloat(document.documentElement.style.fontSize) || 16;

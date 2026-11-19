@@ -44,6 +44,8 @@ The notes in [protocol/plex-api-notes.md](protocol/plex-api-notes.md) are **Docu
 
 The notes in [protocol/catchup-notes.md](protocol/catchup-notes.md) are **Documented** from the public documentation of two players that read catch-up from playlists, one of them open source, whose code was not read, and from a streaming server's own documentation; Overscan's choices where they leave room are marked as such.
 
+The notes in [protocol/playlist-notes.md](protocol/playlist-notes.md) are **Documented** from the public documentation of the same two players, and not from their code.
+
 ## Contributor rules
 
 - Do not paste proprietary code, or text from it, into issues, pull requests, comments or commit messages, even to ask a question.

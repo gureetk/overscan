@@ -271,6 +271,7 @@
   <td class="group">{{if .E.Group}}{{.E.Group}}{{else}}<span class="muted">None</span>{{end}}{{if .E.Moved}}<div class="note">Moved here</div>{{end}}</td>
   {{- end}}
   <td class="state"><div class="chips">
+    {{- if .E.Radio}}<span class="badge" title="Its source lists it as a radio station: boxes play it on their Radio screen">{{template "i-radio"}}Radio</span>{{end}}
     {{- if .E.Missing}}<span class="badge bad" title="Its source no longer lists it. Overscan keeps it, with its edits, for a week in case it comes back.">{{template "i-alert"}}Missing</span>
     {{- else if .E.Hidden}}<span class="badge">{{template "i-eye-off"}}{{if eq .Visibility "hidden"}}Hidden{{else}}Hidden with its group{{end}}</span>
     {{- else if not .E.Number}}<span class="badge">No number</span>{{end}}

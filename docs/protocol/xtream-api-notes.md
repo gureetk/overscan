@@ -53,7 +53,7 @@ What a client sees when it reads a provider through the Xtream API: the account 
 - `stream_id`: a number, unique in every recording [2]. It identifies the channel and goes into its stream address. **Documented** [1, 2].
 - `num`: the panel's order, counting from 1 with no repeats in the recordings. **Documented** [2].
 - `name`, and `stream_icon`, a logo address that is often empty. **Documented** [1, 2].
-- `stream_type`: `"live"`. The recordings also hold `"created_live"` and `"radio_streams"`. **Documented** [2]. **Assumed:** `"radio_streams"` entries are radio stations.
+- `stream_type`: `"live"`. The recordings also hold `"created_live"` and `"radio_streams"`. **Documented** [2]. **Assumed:** `"radio_streams"` entries are radio stations, which play at a live stream's address (section 4). Overscan marks them so (D87).
 - `epg_channel_id`: the channel's id in the provider's guide, or `null`. Most channels in the recordings had none. **Documented** [1, 2].
 - `category_id`: a string, and sometimes `null`. **Documented** [2]. [1] also lists `category_ids`, an array. **Documented.**
 - `tv_archive` (`0` or `1`) and `tv_archive_duration` (days, as a number or a string) describe catch-up (section 6). **Documented** [1, 2, 6].

@@ -359,6 +359,10 @@ export class SearchScreen implements Screen {
     const channel = r.channel;
     const t = now();
     const p = r.programme;
+    if (channel.radio && !p) {
+      this.ctx.go('radio', { channel: channel, play: true });
+      return;
+    }
     if (p && p.start > t) {
       this.ctx.toast(p.title + ' starts at ' + clock(p.start) + ', ' + day(p.start).toLowerCase() + ', on ' + label(channel) + '.');
       return;

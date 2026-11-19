@@ -41,6 +41,11 @@ const (
 	// titles for adults do: AdultLock or AdultHide; nothing until it is set
 	// (D86).
 	settingAdultMarks = "adult_marks"
+
+	// settingRadioApart is "1" if the box shows radio stations on its
+	// Radio screen alone, and not among the channels of Live TV and the
+	// guide; off until it is set (D87).
+	settingRadioApart = "radio_apart"
 )
 
 // What a source's mark for adults does (D86).
@@ -184,6 +189,20 @@ func (s *Store) SetAdultMarks(ctx context.Context, v string) error {
 		return fmt.Errorf("store: marks for adults: %q is not %s, %s or %s", v, AdultNothing, AdultLock, AdultHide)
 	}
 	return s.setSetting(ctx, settingAdultMarks, v)
+}
+
+// RadioApart reports whether the box shows radio stations on its Radio
+// screen alone, and not among the channels of Live TV and the guide (D87).
+// It is off until set.
+func (s *Store) RadioApart(ctx context.Context) (bool, error) {
+	v, _, err := s.setting(ctx, settingRadioApart)
+	return v == "1", err
+}
+
+// SetRadioApart sets whether the box shows radio stations on its Radio
+// screen alone.
+func (s *Store) SetRadioApart(ctx context.Context, on bool) error {
+	return s.setSetting(ctx, settingRadioApart, onOff(on))
 }
 
 // onOff writes a switch as a setting's value.

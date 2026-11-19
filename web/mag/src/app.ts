@@ -22,6 +22,7 @@ import { GuideScreen } from './screens/guide';
 import { HomeScreen } from './screens/home';
 import { LibraryScreen } from './screens/library';
 import { LiveScreen } from './screens/live';
+import { RadioScreen } from './screens/radio';
 import { type MessageArg, MessageScreen } from './screens/message';
 import type { Ctx, Screen, ScreenName } from './screens/screen';
 import { SearchScreen } from './screens/search';
@@ -222,6 +223,7 @@ export class App {
       message: this.message,
       home: new HomeScreen(screensBox, this.ctx),
       live: new LiveScreen(screensBox, this.ctx),
+      radio: new RadioScreen(screensBox, this.ctx),
       watch: new WatchScreen(screensBox, this.ctx),
       guide: new GuideScreen(screensBox, this.ctx),
       search: new SearchScreen(screensBox, this.ctx),
@@ -592,12 +594,12 @@ export class App {
    * applyVideo puts the video where the screen wants it: in a window with
    * the page drawn around it, full screen under the page while anything
    * shows over it, or full screen over the page. A screen without video
-   * stops it.
+   * stops it; a radio station plays on under the page (D87).
    */
   private applyVideo(): void {
     const area = this.current.video();
     const root = document.documentElement;
-    if (area === 'none' || (!this.player.channel && !this.film.item && !this.check.playing())) {
+    if (area === 'none' || area === 'audio' || (!this.player.channel && !this.film.item && !this.check.playing())) {
       if (area === 'none' && this.player.channel) {
         this.player.stop();
         this.current.playback();

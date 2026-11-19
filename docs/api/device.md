@@ -2,7 +2,7 @@
 
 Overscan's own MAG page talks to the server through the device API, a JSON API under `/api/device/v1/` built for the box ([plan](../plan.md), section 9). The page and the server ship together, so the API changes with them. It is not meant for other clients: third-party players have the Stalker API.
 
-Version 0, in M1, covers what the first page needs: a session, the channel list, and playing a channel. M2 adds what the page's new interface needs ([D52](../decisions.md)): the guide, favourites, what the box watched, search, and the box's own settings. M3 adds films and series ([D63](../decisions.md) to [D65](../decisions.md)), plays through ffmpeg those whose sound the box cannot play ([D68](../decisions.md)), checks what each box plays ([D70](../decisions.md)), and has Jellyfin transcode the video it cannot play ([D71](../decisions.md)). M4 adds past programmes from their sources' archives ([D81](../decisions.md), [D84](../decisions.md)), and locks on films and series ([D85](../decisions.md)).
+Version 0, in M1, covers what the first page needs: a session, the channel list, and playing a channel. M2 adds what the page's new interface needs ([D52](../decisions.md)): the guide, favourites, what the box watched, search, and the box's own settings. M3 adds films and series ([D63](../decisions.md) to [D65](../decisions.md)), plays through ffmpeg those whose sound the box cannot play ([D68](../decisions.md)), checks what each box plays ([D70](../decisions.md)), and has Jellyfin transcode the video it cannot play ([D71](../decisions.md)). M4 adds past programmes from their sources' archives ([D81](../decisions.md), [D84](../decisions.md)), locks on films and series ([D85](../decisions.md)), and radio stations ([D87](../decisions.md)).
 
 ## Conventions
 
@@ -80,11 +80,12 @@ The whole lineup of the box's account, in one answer: the groups, in the order o
 ```json
 {
   "version": "9f2c41d07ab3e815",
-  "groups": [{"id": 3, "name": "News"}, {"id": 4, "name": "Sports"}],
+  "groups": [{"id": 3, "name": "News"}, {"id": 4, "name": "Sports"}, {"id": 5, "name": "Radio"}],
   "channels": [
     {"id": 17, "number": 1, "name": "Example News", "group": 3, "logo": "/artwork/logo/17/5f0c2a9d81b4e6c3f7a1d208", "archive": 7},
     {"id": 18, "number": 2, "name": "Example Sports", "group": 4, "locked": true},
-    {"id": 19, "number": 3, "name": "Example Weather", "group": 0}
+    {"id": 19, "number": 3, "name": "Example Weather", "group": 0},
+    {"id": 20, "number": 4, "name": "Example FM", "group": 5, "radio": true}
   ],
   "favourites": [18],
   "recent": [17, 18]
@@ -93,7 +94,9 @@ The whole lineup of the box's account, in one answer: the groups, in the order o
 
 A channel's `id` belongs to its place in the lineup and stays the same when its source is read again. Its name, number and group are as the administrator has set them (D47). `group` is 0 for a channel in no group. `logo`, for a channel whose source gives one, is the path on Overscan of its logo, scaled to fit 240×96 ([D54](../decisions.md)); the path changes when the logo does, so the page may keep the image. When the logo cannot be served, the path answers 404 and the page shows the channel's name instead. `locked` is there, and true, when the channel needs the account's parental PIN to play: it, or its group, is locked, or its source marks it for adults and the administrator chose to lock such channels ([D86](../decisions.md)), and the account has a PIN ([D55](../decisions.md)). `archive`, for a channel whose source keeps an archive that Overscan plays, is how many days back its past programmes play from it ([D81](../decisions.md)). Groups are the lineup's, and the Stalker API's genres: a source's category goes to the group of its name, unless the administrator puts it in another, so channels from different sources whose categories have the same name share a group. A group's `id` stays the same when it is renamed. Hidden channels are left out, and so are those that their sources mark for adults when the administrator chose to hide such channels.
 
-`version` changes when the groups or channels do, logos included, and not when the favourites or the recent list do.
+`radio` is there, and true, for a radio station: a stream that its source lists as one, which has sound and no picture ([D87](../decisions.md)). It plays as any channel does. `radio_apart` is there, and true, when the lineup has a radio station and the administrator chose to show radio stations on the box's Radio screen alone: the page then leaves them out of its lists of channels, its guide and its favourite channels, and a typed number finds them only on the Radio screen.
+
+`version` changes when the groups or channels do, logos included, or `radio_apart`, and not when the favourites or the recent list do.
 
 ### `GET /api/device/v1/channels/version`
 

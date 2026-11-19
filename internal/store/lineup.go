@@ -353,6 +353,7 @@ type LineupEntry struct {
 	// AdultLocked or AdultHidden when the setting locks or hides such
 	// channels.
 	Adult, AdultLocked, AdultHidden bool
+	Radio                           bool // its source lists it as a radio station (D87)
 }
 
 // EntryQuery picks a lineup's entries.
@@ -430,14 +431,14 @@ const entrySelect = `
 			e.number IS NULL OR COALESCE(e.hidden, g.hidden, 0) = 1 OR c.missing_since IS NOT NULL,
 			c.missing_since IS NOT NULL, c.logo, e.locked, COALESCE(g.locked, 0),
 			COALESCE(c.repair, ` + repairDefaultSQL + `), c.repair, c.adult,
-			c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultLock + `', c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultHide + `'`
+			c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultLock + `', c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultHide + `', c.radio`
 
 func scanEntry(row rowScanner) (LineupEntry, error) {
 	var e LineupEntry
 	var own sql.NullBool
 	err := row.Scan(&e.ID, &e.ChannelID, &e.SourceID, &e.Source, &e.Number, &e.Pinned, &e.Name, &e.ChannelName,
 		&e.Renamed, &e.GroupID, &e.Group, &e.Moved, &e.Category, &e.Visibility, &e.Hidden, &e.Missing, &e.Logo,
-		&e.Locked, &e.GroupLocked, &e.Repair, &own, &e.Adult, &e.AdultLocked, &e.AdultHidden)
+		&e.Locked, &e.GroupLocked, &e.Repair, &own, &e.Adult, &e.AdultLocked, &e.AdultHidden, &e.Radio)
 	if own.Valid {
 		e.RepairOwn = &own.Bool
 	}
