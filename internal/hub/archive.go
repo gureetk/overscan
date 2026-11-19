@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +27,13 @@ import (
 // ends the one before, as a film's does (D64). Archives take times to the
 // minute, so a stream from a time starts at the whole minute at or before
 // it, which /archive/<token>/start says.
+//
+// A Stalker portal's channel plays a past programme at the link that the
+// portal gives for it (D84), which the Resolver asks for as the session
+// opens and again when it lapses. The link plays the programme from its
+// start, and is served as a portal's film is (D77): the player's ranges go
+// to the portal, so the player seeks in it itself. One that is HLS is
+// relayed as one stream instead, which plays from the programme's start.
 
 // ArchiveLink returns the path of a new link that plays a lineup entry's
 // past programme, which began at start and ended at stop, for a device,
@@ -42,6 +50,27 @@ func (h *Hub) ArchiveLink(deviceID int64, entry store.PlayableEntry, start, stop
 	}
 	token := h.sign(c)
 	return "/archive/" + token + ".ts", "/archive/" + token + "/start"
+}
+
+// ArchiveRef returns what the Resolver gets to play a past programme of a
+// channel of a source that resolves (D84): the source's own ID for the
+// channel, and when the programme began.
+func ArchiveRef(channel string, start time.Time) string {
+	return url.Values{"channel": {channel}, "start": {strconv.FormatInt(start.Unix(), 10)}}.Encode()
+}
+
+// ParseArchiveRef reads a reference that ArchiveRef made.
+func ParseArchiveRef(ref string) (channel string, start time.Time, ok bool) {
+	v, err := url.ParseQuery(ref)
+	if err != nil {
+		return "", time.Time{}, false
+	}
+	at, err := strconv.ParseInt(v.Get("start"), 10, 64)
+	channel = v.Get("channel")
+	if err != nil || at <= 0 || channel == "" || len(channel) > 256 {
+		return "", time.Time{}, false
+	}
+	return channel, time.Unix(at, 0).UTC(), true
 }
 
 // archiveFrom returns when a past programme's stream from at seconds into
@@ -66,6 +95,8 @@ func archiveOffset(r *http.Request, c claims) (float64, bool) {
 // programme from that far into it, which starts or goes on with its
 // session, and /archive/<token>/start?t=<seconds>, where that stream
 // starts, in seconds from the programme's start, which can be less than 0.
+// A portal's past programme plays from its start, whatever t says, and
+// seeks with ranges.
 func (h *Hub) serveArchive(w http.ResponseWriter, r *http.Request, rest string) {
 	first, sub, hasSub := strings.Cut(rest, "/")
 	token := strings.TrimSuffix(first, ".ts")
@@ -109,7 +140,27 @@ func (h *Hub) serveArchive(w http.ResponseWriter, r *http.Request, rest string) 
 		if p, err := h.store.ProgrammeAt(r.Context(), entry.LineupID, entry.EntryID, opening.aired); err == nil {
 			opening.programme = p.Title
 		}
+		if h.source(entry.SourceID).Resolves {
+			if !h.roomFor(entry.SourceID, c.deviceID) {
+				h.resolveFailed(w, r, "channel", entry.Name, entry.SourceID, c.deviceID, ErrLimit)
+				return
+			}
+			ref := ArchiveRef(entry.Portal, opening.aired)
+			res, err := h.resolve(r.Context(), entry.SourceID, PlaysArchive, ref)
+			if err != nil {
+				h.resolveFailed(w, r, "channel", entry.Name, entry.SourceID, c.deviceID, err)
+				return
+			}
+			opening.archive, opening.streamURL, opening.ref, opening.refKind = nil, res.Address, ref, PlaysArchive
+			if res.Hold != nil {
+				opening.release = res.Hold()
+			}
+		}
 		s, err = h.admit(c, opening)
+		if s != opening && opening.release != nil {
+			// Refused, or another request opened the session first.
+			opening.release()
+		}
 		if err != nil {
 			src := h.source(entry.SourceID)
 			h.log.Warn("stream refused: the source is at its connection limit",
@@ -122,6 +173,10 @@ func (h *Hub) serveArchive(w http.ResponseWriter, r *http.Request, rest string) 
 				"aired", s.aired.Format(time.RFC3339), "length", time.Duration(c.stop-c.start)*time.Second,
 				"source", h.source(s.sourceID).Name, "device", s.deviceID)
 		}
+	}
+	if s.archive == nil {
+		h.servePortalArchive(w, r, s)
+		return
 	}
 	ctx, release, ok := h.takeTurn(r.Context(), s, w)
 	if !ok {
@@ -139,4 +194,32 @@ func (h *Hub) serveArchive(w http.ResponseWriter, r *http.Request, rest string) 
 	h.log.Debug("a player asked for a past programme from a time", "channel", s.channel, "device", s.deviceID,
 		"from", from.Format(time.RFC3339), "length", length)
 	h.proxyIn(ctx, w, s, address, true)
+}
+
+// servePortalArchive serves a request for a portal's past programme, as part
+// of s (D84): a link that is HLS is relayed as one stream, from the
+// programme's start, and asked for again for each request after the first,
+// since it can lapse once played; any other is served as a portal's film
+// is, ranges and all.
+func (h *Hub) servePortalArchive(w http.ResponseWriter, r *http.Request, s *session) {
+	if !hlsAddress(s.address()) {
+		h.serveFile(w, r, s)
+		return
+	}
+	ctx, release, ok := h.takeTurn(r.Context(), s, w)
+	if !ok {
+		return
+	}
+	defer release()
+	target := s.address()
+	if s.bytes.Load() > 0 {
+		res, err := h.resolve(ctx, s.sourceID, s.refKind, s.ref)
+		if err != nil {
+			h.resolveFailed(w, r, "channel", s.channel, s.sourceID, s.deviceID, err)
+			return
+		}
+		s.readdress.Store(&res.Address)
+		target = res.Address
+	}
+	h.proxyIn(ctx, w, s, target, true)
 }

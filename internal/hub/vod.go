@@ -237,17 +237,17 @@ func (h *Hub) serveFile(w http.ResponseWriter, r *http.Request, s *session) {
 	if asked != "" && (len(asked) > 200 || !rangeHeader.MatchString(asked)) {
 		asked = "" // the whole file, rather than a range the source may take wrongly
 	}
-	h.log.Debug("a player asked for a file", "title", s.channel, "source", src, "device", s.deviceID, "range", asked)
+	h.log.Debug("a player asked for a file", s.what(), s.channel, "source", src, "device", s.deviceID, "range", asked)
 	resp, idled, err := h.openFile(ctx, s, asked, r.Header.Get("If-Range"))
 	if err != nil {
 		var refused *statusError
 		switch {
 		case ctx.Err() != nil:
 		case errors.As(err, &refused):
-			h.log.Warn("a title's source refused it", "title", s.channel, "source", src, "status", refused.status)
+			h.log.Warn("a title's source refused it", s.what(), s.channel, "source", src, "status", refused.status)
 			http.Error(w, "the source answered "+refused.status, http.StatusBadGateway)
 		default:
-			h.log.Warn("cannot reach a title", "title", s.channel, "source", src, "error", err)
+			h.log.Warn("cannot reach a title", s.what(), s.channel, "source", src, "error", err)
 			http.Error(w, "the source cannot be reached", http.StatusBadGateway)
 		}
 		return
@@ -282,10 +282,10 @@ func (h *Hub) serveFile(w http.ResponseWriter, r *http.Request, s *session) {
 			switch {
 			case idled():
 				h.log.Info("a title's source sent nothing for a while, so the hub ended the request; the player can ask again from where it got to",
-					"title", s.channel, "source", src, "after", h.now().Sub(started).Round(100*time.Millisecond), "bytes", sent,
+					s.what(), s.channel, "source", src, "after", h.now().Sub(started).Round(100*time.Millisecond), "bytes", sent,
 					"silent_for", fileIdleTimeout)
 			case ctx.Err() == nil:
-				h.log.Info("a title's source broke off; the player can ask again from where it got to", "title", s.channel,
+				h.log.Info("a title's source broke off; the player can ask again from where it got to", s.what(), s.channel,
 					"source", src, "after", h.now().Sub(started).Round(100*time.Millisecond), "bytes", sent,
 					"error", fetchError(rerr))
 			}
@@ -309,7 +309,7 @@ func (h *Hub) getFile(ctx context.Context, s *session, rangeAsked, ifRange strin
 		}
 		if i == 0 {
 			h.log.Info("a title's source refused it, as if it had no free connection; the hub asks again in a moment",
-				"title", s.channel, "source", h.source(s.sourceID).Name, "status", refused.status)
+				s.what(), s.channel, "source", h.source(s.sourceID).Name, "status", refused.status)
 		}
 		if sleepContext(ctx, wait) != nil {
 			return nil, err
@@ -322,12 +322,12 @@ func (h *Hub) getFile(ctx context.Context, s *session, rangeAsked, ifRange strin
 	res, rerr := h.resolve(ctx, s.sourceID, s.refKind, s.ref)
 	if rerr != nil {
 		if ctx.Err() == nil {
-			h.log.Warn("cannot ask a title's source for its address again", "title", s.channel,
+			h.log.Warn("cannot ask a title's source for its address again", s.what(), s.channel,
 				"source", h.source(s.sourceID).Name, "error", rerr)
 		}
 		return nil, err
 	}
-	h.log.Info("a title's source no longer took its address, and gave another", "title", s.channel,
+	h.log.Info("a title's source no longer took its address, and gave another", s.what(), s.channel,
 		"source", h.source(s.sourceID).Name, "status", refused.status)
 	s.readdress.Store(&res.Address)
 	return h.fetchFile(ctx, s, res.Address, rangeAsked, ifRange)
@@ -377,12 +377,12 @@ func (h *Hub) serveVideo(ctx context.Context, w http.ResponseWriter, r *http.Req
 	src := h.source(s.sourceID).Name
 	f, err := folder.OpenVideo(s.folder, s.file)
 	if errors.Is(err, folder.ErrNoTitle) {
-		h.log.Warn("a title's file is gone from its folder", "title", s.channel, "source", src)
+		h.log.Warn("a title's file is gone from its folder", s.what(), s.channel, "source", src)
 		http.Error(w, "the title's file is gone", http.StatusNotFound)
 		return
 	}
 	if err != nil {
-		h.log.Warn("cannot open a title's file", "title", s.channel, "source", src, "error", err)
+		h.log.Warn("cannot open a title's file", s.what(), s.channel, "source", src, "error", err)
 		http.Error(w, "the title's file cannot be read", http.StatusBadGateway)
 		return
 	}
@@ -392,7 +392,7 @@ func (h *Hub) serveVideo(ctx context.Context, w http.ResponseWriter, r *http.Req
 		http.Error(w, "the title's file cannot be read", http.StatusBadGateway)
 		return
 	}
-	h.log.Debug("a player asked for a file", "title", s.channel, "source", src, "device", s.deviceID,
+	h.log.Debug("a player asked for a file", s.what(), s.channel, "source", src, "device", s.deviceID,
 		"range", r.Header.Get("Range"))
 	w.Header().Set("Content-Type", fileType(s.file))
 	http.ServeContent(&videoWriter{ResponseWriter: w, ctx: ctx, s: s}, r, "", info.ModTime(), f)

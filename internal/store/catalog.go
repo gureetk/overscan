@@ -497,11 +497,11 @@ const lineupEntryJoins = `
 		LEFT JOIN lineup_groups g ON g.id = COALESCE(e.group_id, m.group_id)`
 
 // archiveDaysSQL is the days back that devices can play a channel's past
-// programmes from its source's archive (D81, D82): those its source keeps,
-// for a channel of an Xtream server, or of a playlist that says how to play
-// them; 0 otherwise.
-const archiveDaysSQL = `(CASE WHEN s.type = '` + source.TypeXtream + `' OR c.catchup_secret IS NOT NULL
-		THEN c.archive_days ELSE 0 END)`
+// programmes from its source's archive (D81, D82, D84): those its source
+// keeps, for a channel of an Xtream server or a Stalker portal, or of a
+// playlist that says how to play them; 0 otherwise.
+const archiveDaysSQL = `(CASE WHEN s.type IN ('` + source.TypeXtream + `', '` + source.TypeStalker + `')
+		OR c.catchup_secret IS NOT NULL THEN c.archive_days ELSE 0 END)`
 
 // lockedEntry is true of an entry that needs the parental PIN: it or its
 // group is locked (D55).

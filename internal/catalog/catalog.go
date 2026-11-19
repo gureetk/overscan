@@ -588,10 +588,6 @@ func (r *Refresher) readXtream(ctx context.Context, src source.Settings) (readRe
 	return res, nil
 }
 
-// stalkerKeyPrefix starts the identity key of a Stalker portal's channel,
-// before the portal's ID for it.
-const stalkerKeyPrefix = "stalker:"
-
 // readStalker reads a Stalker portal as the box that its provider
 // registered (D76): the account, then the genres and the live channels. A
 // channel's identity is the portal's ID for it, its AltKey the key that a
@@ -652,7 +648,7 @@ func (r *Refresher) readStalker(ctx context.Context, src source.Settings, id int
 	res.channels = make([]store.CatalogChannel, len(channels))
 	for i, ch := range channels {
 		out := store.CatalogChannel{
-			IdentityKey: stalkerKeyPrefix + ch.ID,
+			IdentityKey: source.StalkerKeyPrefix + ch.ID,
 			AltKey:      alt[i],
 			Name:        clean(ch.Name),
 			Category:    clean(names[ch.GenreID]),

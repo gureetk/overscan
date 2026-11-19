@@ -267,10 +267,6 @@ func (g *Reader) fill(ctx context.Context, src source.Settings, id int64, addres
 		Listed: m.listed, ByName: m.byNameCount}, err
 }
 
-// stalkerKeyPrefix starts the identity key of a Stalker portal's channel,
-// before the portal's ID for it, as the catalog stores it.
-const stalkerKeyPrefix = "stalker:"
-
 // fillStalker reads a Stalker portal's guide through its API (D76), in the
 // session that the source's streams share. The portal gives programmes by
 // its own channel IDs, so they go to the channels stored under them, with
@@ -284,7 +280,7 @@ func (g *Reader) fillStalker(ctx context.Context, src source.Settings, id int64,
 	defer cancel()
 	byID := map[string][]store.GuideChannel{}
 	for _, ch := range channels {
-		if portalID, ok := strings.CutPrefix(ch.IdentityKey, stalkerKeyPrefix); ok {
+		if portalID, ok := strings.CutPrefix(ch.IdentityKey, source.StalkerKeyPrefix); ok {
 			byID[portalID] = append(byID[portalID], ch)
 		}
 	}

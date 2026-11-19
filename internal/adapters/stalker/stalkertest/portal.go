@@ -2,8 +2,10 @@
 
 // Package stalkertest is a fake Stalker portal for tests, written from the
 // protocol notes (docs/protocol/stalker-protocol-notes.md): it answers as
-// the notes say a portal does, with fictional channels, a guide, films and
-// series in each of the notes' three shapes, and it serves their streams.
+// the notes say a portal does, with fictional channels, a guide and an
+// archive, films and series in each of the notes' three shapes, and it
+// serves their streams. Where the notes do not say, it answers as Overscan
+// assumes a portal does (section 12).
 // All names, addresses and MAC addresses are fictional.
 package stalkertest
 
@@ -71,11 +73,15 @@ type Portal struct {
 	// MoreFilms adds that many films to Drama after the twenty, for a list
 	// of more than one page; their IDs are from 3001.
 	MoreFilms int
-	// OneUseFileLinks makes a film's or an episode's link answer one
-	// request: a second is refused, as a link whose token has lapsed.
+	// OneUseFileLinks makes the link of a film, an episode or a past
+	// programme answer one request: a second is refused, as a link whose
+	// token has lapsed.
 	OneUseFileLinks bool
 	// Now is the portal's clock, for the guide: time.Now unless set.
 	Now func() time.Time
+	// DayZone, if set, is the zone in which the portal reads the dates of
+	// its day guides, whatever zone the box's cookie names.
+	DayZone *time.Location
 
 	mu      sync.Mutex
 	token   string
@@ -253,6 +259,10 @@ func (p *Portal) api(w http.ResponseWriter, r *http.Request) {
 		js(w, pageOf(all, max(page, 1)))
 	case "itv/create_link":
 		p.createLink(w, r, "live", strings.TrimPrefix(lastWord(q.Get("cmd")), "http://localhost/ch/"), "")
+	case "epg/get_simple_data_table":
+		p.dayTable(w, r)
+	case "tv_archive/create_link":
+		p.archiveLink(w, r)
 	case "itv/get_epg_info":
 		if p.GuideWait != nil {
 			select {
@@ -340,6 +350,99 @@ func (p *Portal) guide(w http.ResponseWriter, period string) {
 	}
 	data["103"] = nil
 	js(w, map[string]any{"data": data})
+}
+
+// schedules are the channels' programmes, as the guide gives them: hour-long
+// on Example News and two hours long on Example Sports, every one from the
+// hour before now and back, one after another; none on Example Weather.
+var schedules = map[string]struct {
+	title  string
+	length time.Duration
+}{"101": {"News", time.Hour}, "102": {"Sports", 2 * time.Hour}}
+
+// archiveHours is how far back the portal's archive of Example Sports
+// reaches, as its tv_archive_duration says; the other channels have none.
+const archiveHours = 24
+
+// anchor is when the programmes that the guide gives first begin: the hour
+// before now.
+func (p *Portal) anchor() time.Time {
+	return p.now().UTC().Truncate(time.Hour).Add(-time.Hour)
+}
+
+// ProgrammeID is the portal's ID for the programme of a channel that
+// begins at start, in its day guides and its archive.
+func ProgrammeID(channelID string, start time.Time) string {
+	return channelID + "-" + strconv.FormatInt(start.Unix()/60, 10)
+}
+
+// inArchive reports whether a programme of a channel that began at start is
+// in the portal's archive: Example Sports's that ended within its archive's
+// hours.
+func (p *Portal) inArchive(channelID string, start time.Time) bool {
+	ch, ok := schedules[channelID]
+	if !ok || channelID != "102" || start.Sub(p.anchor())%ch.length != 0 {
+		return false
+	}
+	now := p.now()
+	return !start.Add(ch.length).After(now) && start.After(now.Add(-archiveHours*time.Hour))
+}
+
+// dayTable answers epg/get_simple_data_table: the programmes of the channel
+// ch_id that start on date, in the zone that the box's cookie names, or
+// DayZone, ten to a page, with p from 1.
+func (p *Portal) dayTable(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	zone := p.DayZone
+	if zone == nil {
+		zone = time.UTC
+		if c, err := r.Cookie("timezone"); err == nil {
+			name, _ := url.QueryUnescape(c.Value)
+			if loc, err := time.LoadLocation(name); err == nil {
+				zone = loc
+			}
+		}
+	}
+	page, _ := strconv.Atoi(q.Get("p"))
+	page = max(page, 1)
+	items := []map[string]any{}
+	day, err := time.ParseInLocation(time.DateOnly, q.Get("date"), zone)
+	ch, ok := schedules[q.Get("ch_id")]
+	if err == nil && ok {
+		next := day.AddDate(0, 0, 1)
+		at := p.anchor().Add(day.Sub(p.anchor()) / ch.length * ch.length)
+		if at.Before(day) {
+			at = at.Add(ch.length)
+		}
+		for ; at.Before(next); at = at.Add(ch.length) {
+			archived := "0"
+			if p.inArchive(q.Get("ch_id"), at) {
+				archived = "1"
+			}
+			items = append(items, map[string]any{"id": ProgrammeID(q.Get("ch_id"), at), "ch_id": q.Get("ch_id"),
+				"name": ch.title + " at " + at.UTC().Format("15:04"), "descr": "A fictional programme.", "category": ch.title,
+				"start_timestamp": strconv.FormatInt(at.Unix(), 10), "stop_timestamp": strconv.FormatInt(at.Add(ch.length).Unix(), 10),
+				"mark_archive": archived})
+		}
+	}
+	start := min((page-1)*10, len(items))
+	end := min(start+10, len(items))
+	js(w, map[string]any{"total_items": len(items), "max_page_items": 10, "cur_page": page, "selected_item": 0,
+		"data": items[start:end]})
+}
+
+// archiveLink answers tv_archive/create_link for the cmd /media/<id>.mpg,
+// with the ID of a programme in the archive.
+func (p *Portal) archiveLink(w http.ResponseWriter, r *http.Request) {
+	name, ok := strings.CutPrefix(lastWord(r.URL.Query().Get("cmd")), "/media/")
+	name, ok2 := strings.CutSuffix(name, ".mpg")
+	channelID, minutes, ok3 := strings.Cut(name, "-")
+	m, err := strconv.ParseInt(minutes, 10, 64)
+	if !ok || !ok2 || !ok3 || err != nil || !p.inArchive(channelID, time.Unix(m*60, 0)) {
+		js(w, map[string]string{"cmd": "", "error": "nothing_to_play"})
+		return
+	}
+	p.createLink(w, r, "archive", name, "")
 }
 
 // Film is one of the portal's films.
@@ -525,15 +628,15 @@ func (p *Portal) createLink(w http.ResponseWriter, r *http.Request, kind, what, 
 	js(w, map[string]string{"cmd": "ffmpeg " + p.URL + path, "error": ""})
 }
 
-// Content returns what the portal plays for a film or an episode: the film's
-// ID, or its series' or season's cmd's name and the episode, such as
-// 2001_2e1 or 2001e4.
+// Content returns what the portal plays for a film, an episode or a past
+// programme: the film's ID, its series' or season's cmd's name and the
+// episode, such as 2001_2e1 or 2001e4, or the programme's ID.
 func Content(what string) []byte {
 	return bytes.Repeat([]byte("FILE "+what+" "), 2000)
 }
 
-// play serves what a link plays: a channel's endless MPEG-TS, or a film's
-// file with ranges.
+// play serves what a link plays: a channel's endless MPEG-TS, or the file
+// of a film or of a past programme, with ranges.
 func (p *Portal) play(w http.ResponseWriter, r *http.Request) {
 	p.mu.Lock()
 	token := r.URL.Query().Get("token")
@@ -541,7 +644,8 @@ func (p *Portal) play(w http.ResponseWriter, r *http.Request) {
 	if ok {
 		p.streams++
 		p.most = max(p.most, p.streams)
-		if p.OneUseLinks && strings.HasPrefix(what, "live:") || p.OneUseFileLinks && strings.HasPrefix(what, "vod:") {
+		if p.OneUseLinks && strings.HasPrefix(what, "live:") ||
+			p.OneUseFileLinks && (strings.HasPrefix(what, "vod:") || strings.HasPrefix(what, "archive:")) {
 			delete(p.links, token)
 		}
 	}
@@ -556,8 +660,13 @@ func (p *Portal) play(w http.ResponseWriter, r *http.Request) {
 		p.mu.Unlock()
 	}()
 	kind, name, _ := strings.Cut(what, ":")
-	if kind == "vod" {
+	switch kind {
+	case "vod":
 		w.Header().Set("Content-Type", "video/mp4")
+		http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(Content(name)))
+		return
+	case "archive":
+		w.Header().Set("Content-Type", "video/mp2t")
 		http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(Content(name)))
 		return
 	}

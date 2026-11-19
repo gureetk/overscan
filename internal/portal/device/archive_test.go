@@ -7,12 +7,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 
+	"overscan.gureet.ca/internal/adapters/stalker/stalkertest"
 	"overscan.gureet.ca/internal/admin"
+	"overscan.gureet.ca/internal/catalog"
 	"overscan.gureet.ca/internal/catchup"
 	"overscan.gureet.ca/internal/store"
 )
@@ -130,5 +133,81 @@ func TestPlayArchiveOfALockedChannel(t *testing.T) {
 	var a archiveResponse
 	if code := h.call("POST", path, token, fmt.Sprintf(`{"start":%d,"pin":"2468"}`, start), &a); code != http.StatusOK || a.URL == "" {
 		t.Errorf("the right PIN: %d %+v", code, a)
+	}
+}
+
+// A Stalker portal's past programme plays at the link that the portal gives
+// for it, which the box's player seeks in itself (D84).
+func TestPlayArchiveOfAPortal(t *testing.T) {
+	h := newHarness(t)
+	h.now = time.Date(2026, 12, 4, 10, 30, 0, 0, time.UTC)
+	p := stalkertest.New(t)
+	p.Now = func() time.Time { return h.now }
+	token, src, pool := h.withPortalSource(p)
+	ctx := context.Background()
+	r := catalog.NewRefresher(h.store, slog.New(slog.NewTextHandler(io.Discard, nil)), "test")
+	r.UseStalker(pool)
+	settings, err := h.store.SourceSettings(ctx, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Refresh(ctx, settings, src); err != nil {
+		t.Fatal(err)
+	}
+	// The guide has the portal's programme from 05:00 to 07:00 on Example
+	// Sports, which its archive holds.
+	aired := time.Date(2026, 12, 4, 5, 0, 0, 0, time.UTC)
+	gcs, err := h.store.GuideChannels(ctx, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := h.store.BeginGuide(ctx, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range gcs {
+		if c.Name == "Example Sports" {
+			if err := w.Add(ctx, store.GuideProgramme{ChannelID: c.ID, Start: aired, Stop: aired.Add(2 * time.Hour),
+				Title: "Sports at 05:00"}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := w.Commit(ctx, h.now, "hash"); err != nil {
+		t.Fatal(err)
+	}
+
+	var list channelsResponse
+	h.call("GET", Prefix+"channels", token, "", &list)
+	var sports int64
+	for _, c := range list.Channels {
+		if c.Name == "Example Sports" {
+			sports = c.ID
+			if c.Archive != 1 {
+				t.Errorf("Example Sports: archive %d, want 1", c.Archive)
+			}
+		}
+	}
+	var a archiveResponse
+	if code := h.call("POST", fmt.Sprintf("%schannels/%d/archive", Prefix, sports), token,
+		fmt.Sprintf(`{"start":%d}`, aired.Unix()), &a); code != http.StatusOK {
+		t.Fatalf("archive: %d", code)
+	}
+	if a.Solution != "ffmpeg" || a.Seek != "player" || a.Start != "" || a.Duration != 7200 ||
+		a.Programme.Title != "Sports at 05:00" || !strings.HasPrefix(a.URL, h.front.URL+"/archive/") {
+		t.Errorf("answer %+v", a)
+	}
+	// The link plays the portal's archive, ranges and all.
+	req, _ := http.NewRequest(http.MethodGet, a.URL, nil)
+	req.Header.Set("Range", "bytes=100-199")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	want := stalkertest.Content(stalkertest.ProgrammeID("102", aired))[100:200]
+	if resp.StatusCode != http.StatusPartialContent || string(got) != string(want) {
+		t.Errorf("played %s: %.40q", resp.Status, got)
 	}
 }
