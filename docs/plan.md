@@ -391,7 +391,7 @@ Until the admin exists (M2), sources are declared in the config file and devices
 ## 12. Tech stack (proposed)
 
 - **Language:** Go.
-- **Module path:** `overscan.gureet.ca`, a vanity import path. Before the repository goes public, the subdomain serves a `go-import` meta tag over HTTPS that points at the repository.
+- **Module path:** `overscan.gureet.ca`, a vanity import path. The subdomain serves a `go-import` meta tag over HTTPS that points at the repository, from its `gh-pages` branch (D80).
 - **HTTP:** standard library `net/http` with a small router.
 - **Storage:** SQLite in WAL mode through ncruces/go-sqlite3, a pure-Go driver (no cgo; D34), with versioned migrations embedded in the binary and queries written by hand.
 - **Media:** `ffmpeg` and `ffprobe` as subprocesses; VAAPI optional.
