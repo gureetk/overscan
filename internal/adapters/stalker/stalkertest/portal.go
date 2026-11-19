@@ -82,6 +82,9 @@ type Portal struct {
 	// DayZone, if set, is the zone in which the portal reads the dates of
 	// its day guides, whatever zone the box's cookie names.
 	DayZone *time.Location
+	// Censored lists the IDs of the channels, genres and films that the
+	// portal marks for adults.
+	Censored []string
 
 	mu      sync.Mutex
 	token   string
@@ -246,7 +249,8 @@ func (p *Portal) api(w http.ResponseWriter, r *http.Request) {
 	case "watchdog/get_events":
 		js(w, map[string]any{"data": map[string]any{"msgs": 0}})
 	case "itv/get_genres":
-		js(w, []map[string]string{{"id": "*", "title": "All"}, {"id": "10", "title": "News"}, {"id": "20", "title": "Sports"}})
+		js(w, []map[string]string{{"id": "*", "title": "All"}, {"id": "10", "title": "News", "censored": p.censored("10")},
+			{"id": "20", "title": "Sports", "censored": p.censored("20")}})
 	case "itv/get_all_channels":
 		if p.NoAllChannels {
 			http.NotFound(w, r)
@@ -293,6 +297,17 @@ func (p *Portal) api(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// censored returns the censored mark of a channel, a genre or a film: "1"
+// for one in Censored.
+func (p *Portal) censored(id string) string {
+	for _, c := range p.Censored {
+		if c == id {
+			return "1"
+		}
+	}
+	return "0"
+}
+
 func lastWord(s string) string {
 	f := strings.Fields(s)
 	if len(f) == 0 {
@@ -313,12 +328,13 @@ func pageOf[T any](items []T, n int) map[string]any {
 func (p *Portal) channels() []map[string]any {
 	return []map[string]any{
 		{"id": "101", "name": "Example News", "number": "1", "cmd": "ffrt http://localhost/ch/101_", "logo": "",
-			"tv_genre_id": "10", "xmltv_id": "news.example", "censored": "0", "tv_archive": "0", "tv_archive_duration": "0"},
+			"tv_genre_id": "10", "xmltv_id": "news.example", "censored": p.censored("101"), "tv_archive": "0",
+			"tv_archive_duration": "0"},
 		{"id": 102, "name": "Example Sports", "number": 2, "cmd": "ffrt http://localhost/ch/102_",
-			"logo": "http://img.example/102.png", "tv_genre_id": "20", "xmltv_id": "", "censored": 0,
+			"logo": "http://img.example/102.png", "tv_genre_id": "20", "xmltv_id": "", "censored": p.censored("102"),
 			"tv_archive": 1, "tv_archive_duration": 24},
 		{"id": "103", "name": "Example Weather", "number": "3", "cmd": "ffmpeg http://localhost/ch/103_",
-			"logo": "/stalker_portal/misc/logos/103.png", "tv_genre_id": "10", "censored": "0"},
+			"logo": "/stalker_portal/misc/logos/103.png", "tv_genre_id": "10", "censored": p.censored("103")},
 	}
 }
 
@@ -465,7 +481,7 @@ func (p *Portal) filmItem(f Film, i int) map[string]any {
 	item := map[string]any{"id": f.ID, "name": f.Name, "cmd": "/media/" + f.ID + ".mpg", "category_id": f.Category,
 		"screenshot_uri": "/stalker_portal/screenshots/" + f.ID + ".jpg", "description": "A fictional film.",
 		"actors": "A. Actor", "director": "D. Director", "genres_str": "Drama", "year": strconv.Itoa(2000 + i),
-		"time": "95", "rating_imdb": "7.4", "age": "12+", "censored": "0",
+		"time": "95", "rating_imdb": "7.4", "age": "12+", "censored": p.censored(f.ID),
 		"added": time.Date(2026, 12, 20-i, 0, 0, 0, 0, time.UTC).Format("2006-01-02 15:04:05")}
 	if f.ID == "1003" {
 		item["has_files"] = 1

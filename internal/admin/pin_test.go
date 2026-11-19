@@ -140,13 +140,13 @@ func TestLockAndPINForms(t *testing.T) {
 	}
 	mustContain(t, "every channel", ta.do("GET", "/admin/lineup", nil, c).Body.String(), `title="Its group is locked: it needs the parental PIN to play"`)
 	mustContain(t, "the settings", ta.do("GET", "/admin/settings", nil, c).Body.String(),
-		"Not set, so the lineup's 2 locks do nothing yet.")
+		"Not set, so the 2 locks do nothing yet.")
 
 	send("/admin/settings/pin", lineupForm(csrf, "", "pin", "12"), http.StatusBadRequest, "A PIN has 4 to 8 digits.")
 	send("/admin/settings/pin", lineupForm(csrf, "", "pin", "12 34"), http.StatusBadRequest, "A PIN has only digits")
 	send("/admin/settings/pin", lineupForm(csrf, ""), http.StatusBadRequest, "Type the new PIN.")
 	page = send("/admin/settings/pin", lineupForm(csrf, "", "pin", "1357"), http.StatusOK,
-		"Set the PIN.", `<span class="badge ok">Set</span>`, "The lineup has 2 locks.", "Remove the PIN")
+		"Set the PIN.", `<span class="badge ok">Set</span>`, "There are 2 locks.", "Remove the PIN")
 	if strings.Contains(page, "do nothing") {
 		t.Error("with a PIN, the settings still say that the locks do nothing")
 	}

@@ -86,7 +86,7 @@ type titlePage[T any] struct {
 // sources' lists that are due, and waits a while for a first one. A
 // library with nothing to browse yet has only "All"; one without sources of
 // films and series has nothing.
-func (a *API) getCategories(w http.ResponseWriter, r *http.Request, kind string) {
+func (a *API) getCategories(w http.ResponseWriter, r *http.Request, d store.Device, kind string) {
 	out := []genre{}
 	if a.library == nil {
 		writeJS(w, out)
@@ -108,11 +108,27 @@ func (a *API) getCategories(w http.ResponseWriter, r *http.Request, kind string)
 			a.internalError(w, "list the shelves", err)
 			return
 		}
+		locks, err := a.locksApply(r.Context(), d)
+		if err != nil {
+			a.internalError(w, "look up account", err)
+			return
+		}
 		for _, s := range shelves {
+			if s.Locked && locks {
+				continue
+			}
 			out = append(out, genre{ID: strconv.FormatInt(s.ID, 10), Title: s.Name, Censored: "0"})
 		}
 	}
 	writeJS(w, out)
+}
+
+// locksApply reports whether d's account has a parental PIN, so that what
+// is locked is left out, since Stalker clients have no way to ask for it
+// (D55, D85).
+func (a *API) locksApply(ctx context.Context, d store.Device) (bool, error) {
+	acct, err := a.store.Account(ctx, d.AccountID)
+	return acct.PINHash != "", err
 }
 
 // getTitles answers vod/get_ordered_list and series/get_ordered_list: a page
@@ -121,16 +137,21 @@ func (a *API) getCategories(w http.ResponseWriter, r *http.Request, kind string)
 // search if it is given. With movie_id, the series module lists a series'
 // seasons; films have no files listed apart, so vod lists nothing. The
 // library keeps no favourite films or series, so fav=1 lists nothing.
-func (a *API) getTitles(w http.ResponseWriter, r *http.Request, kind string) {
+func (a *API) getTitles(w http.ResponseWriter, r *http.Request, d store.Device, kind string) {
 	ctx := r.Context()
 	p, err := strconv.Atoi(r.Form.Get("p"))
 	if err != nil || p < 1 {
 		p = 1
 	}
+	locks, err := a.locksApply(ctx, d)
+	if err != nil {
+		a.internalError(w, "look up account", err)
+		return
+	}
 	empty := titlePage[vodItem]{MaxPageItems: pageSize, Data: []vodItem{}}
 	if id := r.Form.Get("movie_id"); id != "" && id != "0" {
 		if kind == store.KindSeries {
-			a.getSeasons(w, r, id, p)
+			a.getSeasons(w, r, id, p, locks)
 			return
 		}
 		writeJS(w, empty)
@@ -160,7 +181,7 @@ func (a *API) getTitles(w http.ResponseWriter, r *http.Request, kind string) {
 		cat, err := a.store.PortalCategory(ctx, kind, shelf)
 		switch {
 		case err == nil && search == "":
-			a.getPortalTitles(w, r, kind, cat, p)
+			a.getPortalTitles(w, r, kind, cat, p, locks)
 			return
 		case err == nil:
 			// A portal is not searched: what was read of it is, with all
@@ -171,7 +192,7 @@ func (a *API) getTitles(w http.ResponseWriter, r *http.Request, kind string) {
 			return
 		}
 	}
-	titles, total, err := a.store.TitlePage(ctx, kind, shelf, search, order, (p-1)*pageSize, pageSize)
+	titles, total, err := a.store.TitlePage(ctx, kind, shelf, search, order, (p-1)*pageSize, pageSize, locks)
 	if errors.Is(err, store.ErrNotFound) {
 		writeJS(w, empty)
 		return
@@ -196,8 +217,10 @@ func (a *API) getTitles(w http.ResponseWriter, r *http.Request, kind string) {
 // the library reads from the portal as clients ask for it (D77): its films,
 // or its series, in the portal's order, whatever order was asked for. A
 // portal without a series module lists its series among its films, and
-// they are left out of its film pages, which can then hold fewer than 14.
-func (a *API) getPortalTitles(w http.ResponseWriter, r *http.Request, kind string, cat store.PortalCategory, p int) {
+// they are left out of its film pages, which can then hold fewer than 14;
+// so are locked titles, with locks.
+func (a *API) getPortalTitles(w http.ResponseWriter, r *http.Request, kind string, cat store.PortalCategory, p int,
+	locks bool) {
 	ctx, cancel := context.WithTimeout(r.Context(), partWait)
 	defer cancel()
 	part, err := a.library.PortalPart(ctx, cat, (p-1)*pageSize, pageSize)
@@ -211,7 +234,7 @@ func (a *API) getPortalTitles(w http.ResponseWriter, r *http.Request, kind strin
 	id := strconv.FormatInt(cat.ID, 10)
 	out := titlePage[vodItem]{TotalItems: max(part.Total, 0), MaxPageItems: pageSize, Data: make([]vodItem, 0, len(part.Titles))}
 	for _, t := range part.Titles {
-		if t.Kind == kind {
+		if t.Kind == kind && !(t.Locked && locks) {
 			out.Data = append(out.Data, listedItem(r, t, id))
 		}
 	}
@@ -300,7 +323,7 @@ func listedItem(r *http.Request, t store.TitleListing, category string) vodItem 
 // the series' details and episodes from its source, if it has none or they
 // are old, as when a box opens it (D63); if the source is slow, it lists
 // what it has.
-func (a *API) getSeasons(w http.ResponseWriter, r *http.Request, movieID string, p int) {
+func (a *API) getSeasons(w http.ResponseWriter, r *http.Request, movieID string, p int, locks bool) {
 	empty := titlePage[seasonItem]{MaxPageItems: pageSize, Data: []seasonItem{}}
 	id, err := strconv.ParseInt(movieID, 10, 64)
 	if err != nil || id <= 0 || a.library == nil {
@@ -308,7 +331,7 @@ func (a *API) getSeasons(w http.ResponseWriter, r *http.Request, movieID string,
 		return
 	}
 	o, err := a.openSeries(r.Context(), id)
-	if errors.Is(err, store.ErrNotFound) {
+	if errors.Is(err, store.ErrNotFound) || err == nil && o.Locked && locks {
 		writeJS(w, empty)
 		return
 	}
@@ -430,9 +453,10 @@ func seasonName(number int, name string) string {
 // the hub, as it is (D75): a season's episode is the one that the series
 // parameter names, or its first. The answer is an address with no player
 // prefix, which clients that keep a cmd's last word read the same way. The
-// error is nothing_to_play for a title that devices do not see, a series
-// without a season, or an episode that the season lacks, and limit when the
-// title's source has no free connection.
+// error is nothing_to_play for a title that devices do not see, one that is
+// locked once the account has a PIN (D85), a series without a season, or an
+// episode that the season lacks, and limit when the title's source has no
+// free connection.
 func (a *API) createTitleLink(w http.ResponseWriter, r *http.Request, d store.Device) {
 	reply := func(cmd, errText string) {
 		writeJS(w, struct {
@@ -461,6 +485,17 @@ func (a *API) createTitleLink(w http.ResponseWriter, r *http.Request, d store.De
 	if err != nil {
 		a.libraryError(w, r, "look up a title to play", err)
 		return
+	}
+	if item.Locked {
+		locks, err := a.locksApply(ctx, d)
+		if err != nil {
+			a.internalError(w, "look up account", err)
+			return
+		}
+		if locks {
+			reply("", "nothing_to_play")
+			return
+		}
 	}
 	if !a.hub.Available(item.SourceID, d.ID) {
 		reply("", "limit")

@@ -3,11 +3,13 @@
 // A film or a series, opened: its picture, what its source says about it,
 // and what OK plays. A film goes on from where the account got to, or
 // plays from the start; a series plays the episode that comes next, or
-// opens its episodes (D65).
+// opens its episodes (D65). A locked one shows nothing of itself until the
+// parental PIN is typed (D85).
 
 import { describe, type EpisodeInfo, type Title, type TitleKind } from '../api';
 import { el, Logo, setClass, setText, show } from '../dom';
 import type { Press } from '../keys';
+import { keptPIN } from '../pin';
 import { duration, hms } from '../time';
 import { Clock, type Ctx, Footer, type Screen, type VideoArea } from './screen';
 
@@ -117,6 +119,21 @@ export class TitleScreen implements Screen {
           return;
         }
         setText(self.note, "Couldn't open " + a.name + '. ' + describe(err));
+        return;
+      }
+      if (t.locked && !keptPIN()) {
+        setText(self.plot, 'Locked.');
+        self.ctx.unlock(t.name, function (ok) {
+          if (seq !== self.seq) {
+            return;
+          }
+          if (!ok) {
+            self.ctx.back();
+            return;
+          }
+          self.title = t;
+          self.draw();
+        });
         return;
       }
       self.title = t;

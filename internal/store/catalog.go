@@ -47,6 +47,9 @@ type CatalogChannel struct {
 	// value for none, and for the channels of other sources, whose archive
 	// their kind of source says how to play.
 	Catchup catchup.Playlist
+	// Adult is set when the source marks the channel as one for adults
+	// (D86).
+	Adult bool
 }
 
 // CatalogChanges counts what ApplyCatalog changed.
@@ -134,8 +137,8 @@ func (s *Store) ApplyCatalog(ctx context.Context, sourceID int64, channels []Cat
 	// can hold the provider's login (D82).
 	upsert, err := tx.PrepareContext(ctx, `
 		INSERT INTO channels (source_id, identity_key, name, number, logo, category_id, xmltv_id,
-			stream_url, stream_secret, archive_days, catchup_secret, position, listed_at, missing_since)
-		VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, NULL)
+			stream_url, stream_secret, archive_days, catchup_secret, adult, position, listed_at, missing_since)
+		VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, NULL)
 		ON CONFLICT (source_id, identity_key) DO UPDATE SET
 			name = excluded.name,
 			number = excluded.number,
@@ -146,6 +149,7 @@ func (s *Store) ApplyCatalog(ctx context.Context, sourceID int64, channels []Cat
 			stream_secret = excluded.stream_secret,
 			archive_days = excluded.archive_days,
 			catchup_secret = excluded.catchup_secret,
+			adult = excluded.adult,
 			position = excluded.position,
 			listed_at = excluded.listed_at,
 			missing_since = NULL`)
@@ -173,7 +177,7 @@ func (s *Store) ApplyCatalog(ctx context.Context, sourceID int64, channels []Cat
 			}
 		}
 		if _, err := upsert.ExecContext(ctx, sourceID, c.IdentityKey, c.Name, c.Number, c.Logo, category,
-			c.XMLTVID, sealed, c.ArchiveDays, catchupSealed, i+1, when); err != nil {
+			c.XMLTVID, sealed, c.ArchiveDays, catchupSealed, c.Adult, i+1, when); err != nil {
 			return fail(err)
 		}
 		if known[c.IdentityKey] {
@@ -504,14 +508,17 @@ const archiveDaysSQL = `(CASE WHEN s.type IN ('` + source.TypeXtream + `', '` + 
 		OR c.catchup_secret IS NOT NULL THEN c.archive_days ELSE 0 END)`
 
 // lockedEntry is true of an entry that needs the parental PIN: it or its
-// group is locked (D55).
-const lockedEntry = `(e.locked = 1 OR COALESCE(g.locked, 0) = 1)`
+// group is locked (D55), or its source marks its channel for adults, which
+// the setting says to lock (D86).
+const lockedEntry = `(e.locked = 1 OR COALESCE(g.locked, 0) = 1 OR c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultLock + `')`
 
 // shownEntry is true of an entry that devices see: numbered, not hidden on
 // its own or by its group, for a channel that its source still lists, from
-// an enabled source.
+// an enabled source, and not one that its source marks for adults, which
+// the setting says to hide (D86).
 const shownEntry = `e.number IS NOT NULL AND COALESCE(e.hidden, g.hidden, 0) = 0
-		AND c.missing_since IS NULL AND s.enabled = 1`
+		AND c.missing_since IS NULL AND s.enabled = 1
+		AND NOT (c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultHide + `')`
 
 // LineupChannels returns what a lineup shows, by number.
 func (s *Store) LineupChannels(ctx context.Context, lineupID int64) ([]LineupChannel, error) {

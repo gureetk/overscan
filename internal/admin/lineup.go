@@ -323,13 +323,14 @@ type apiEntry struct {
 	GroupLocked bool    `json:"group_locked"`
 	Repair      bool    `json:"repair"`
 	RepairOwn   *bool   `json:"repair_own"`
+	Adult       bool    `json:"adult"` // its source marks it for adults (D86)
 }
 
 func entryBody(e store.LineupEntry) apiEntry {
 	out := apiEntry{ID: e.ID, ChannelID: e.ChannelID, SourceID: e.SourceID, Source: e.Source, Pinned: e.Pinned,
 		Name: e.Name, ChannelName: e.ChannelName, Renamed: e.Renamed, Moved: e.Moved,
 		Visibility: visibilityNames[e.Visibility], Hidden: e.Hidden, Missing: e.Missing, Locked: e.Locked,
-		GroupLocked: e.GroupLocked, Repair: e.Repair, RepairOwn: e.RepairOwn}
+		GroupLocked: e.GroupLocked, Repair: e.Repair, RepairOwn: e.RepairOwn, Adult: e.Adult}
 	if e.Number > 0 {
 		out.Number = &e.Number
 	}

@@ -14,8 +14,9 @@ import (
 )
 
 // What the administrator sets of the films and series that devices see
-// (D79): shelves hidden, renamed or put in a place of their own, and titles
-// hidden. The settings outlast the reads of the sources, as the lineup's do.
+// (D79): shelves hidden, renamed, locked (D85) or put in a place of their
+// own, and titles hidden or locked. The settings outlast the reads of the
+// sources, as the lineup's do.
 
 // MaxShelfName is the longest name, in characters, that a shelf can be
 // given.
@@ -43,6 +44,7 @@ type LibraryShelf struct {
 	Total        int // for a portal's, how many items the portal says it holds; -1 if not known or not a portal's
 	Portal       bool
 	Hidden       bool // the administrator hid it
+	Locked       bool // the administrator locked it, and every title on it (D85)
 	Placed       bool // the administrator put it in a place of its own
 }
 
@@ -60,10 +62,11 @@ func (s *Store) LibraryShelves(ctx context.Context, kind string) ([]LibraryShelf
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, own, COALESCE(given, own), srcs, n, hid, total, portal, off, place FROM (
+		SELECT id, own, COALESCE(given, own), srcs, n, hid, total, portal, off, lock, place FROM (
 			SELECT min(c.id) AS id, c.name AS own, max(ss.name) AS given, group_concat(DISTINCT c.source_id) AS srcs,
 				count(t.id) AS n, count(CASE WHEN t.hidden = 1 THEN 1 END) AS hid, -1 AS total, 0 AS portal,
-				COALESCE(max(ss.hidden), 0) AS off, max(ss.position) AS place, min(c.source_id) AS src, min(c.position) AS pos
+				COALESCE(max(ss.hidden), 0) AS off, COALESCE(max(ss.locked), 0) AS lock, max(ss.position) AS place,
+				min(c.source_id) AS src, min(c.position) AS pos
 			FROM library_categories c
 				JOIN titles t ON t.category_id = c.id
 				JOIN sources s ON s.id = t.source_id
@@ -74,7 +77,7 @@ func (s *Store) LibraryShelves(ctx context.Context, kind string) ([]LibraryShelf
 			SELECT c.id, c.name, ss.name, CAST(c.source_id AS TEXT),
 				(SELECT count(*) FROM titles t WHERE t.category_id = c.id AND t.missing_since IS NULL AND t.position > 0),
 				(SELECT count(*) FROM titles t WHERE t.category_id = c.id AND t.missing_since IS NULL AND t.position > 0 AND t.hidden = 1),
-				COALESCE(c.total, -1), 1, COALESCE(ss.hidden, 0), ss.position, c.source_id, c.position
+				COALESCE(c.total, -1), 1, COALESCE(ss.hidden, 0), COALESCE(ss.locked, 0), ss.position, c.source_id, c.position
 			FROM library_categories c JOIN sources s ON s.id = c.source_id
 				LEFT JOIN shelf_settings ss ON ss.kind = c.kind AND ss.shelf = 'category:' || c.id
 			WHERE c.kind = ? AND `+portalCategoryListed+` AND COALESCE(c.total, -1) <> 0)
@@ -89,7 +92,7 @@ func (s *Store) LibraryShelves(ctx context.Context, kind string) ([]LibraryShelf
 		var srcs string
 		var place sql.NullInt64
 		if err := rows.Scan(&sh.ID, &sh.Own, &sh.Name, &srcs, &sh.Titles, &sh.HiddenTitles, &sh.Total, &sh.Portal,
-			&sh.Hidden, &place); err != nil {
+			&sh.Hidden, &sh.Locked, &place); err != nil {
 			return nil, fmt.Errorf("store: %s shelves for the admin: %w", kind, err)
 		}
 		sh.Placed = place.Valid
@@ -166,7 +169,8 @@ func (s *Store) changeShelf(ctx context.Context, what, kind, key, set string, ar
 			return fmt.Errorf("store: %s: %w", what, err)
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM shelf_settings
-			WHERE kind = ? AND shelf = ? AND hidden = 0 AND name IS NULL AND position IS NULL`, kind, key); err != nil {
+			WHERE kind = ? AND shelf = ? AND hidden = 0 AND locked = 0 AND name IS NULL AND position IS NULL`,
+			kind, key); err != nil {
 			return fmt.Errorf("store: %s: %w", what, err)
 		}
 		return nil
@@ -177,6 +181,13 @@ func (s *Store) changeShelf(ctx context.Context, what, kind, key, set string, ar
 // every title on it, or shows it again. key is the shelf's LibraryShelf.Key.
 func (s *Store) SetShelfHidden(ctx context.Context, kind, key string, hidden bool) error {
 	return s.changeShelf(ctx, "hide a shelf", kind, key, "hidden = ?", hidden)
+}
+
+// SetShelfLocked locks a shelf of films or of series, with every title on
+// it, so that devices need the parental PIN to play them (D85), or unlocks
+// it. key is the shelf's LibraryShelf.Key.
+func (s *Store) SetShelfLocked(ctx context.Context, kind, key string, locked bool) error {
+	return s.changeShelf(ctx, "lock a shelf", kind, key, "locked = ?", locked)
 }
 
 // RenameShelf gives a shelf of films or of series the name that devices
@@ -215,20 +226,33 @@ func (s *Store) PlaceShelves(ctx context.Context, kind string, keys []string) er
 			}
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM shelf_settings
-			WHERE kind = ? AND hidden = 0 AND name IS NULL AND position IS NULL`, kind); err != nil {
+			WHERE kind = ? AND hidden = 0 AND locked = 0 AND name IS NULL AND position IS NULL`, kind); err != nil {
 			return fmt.Errorf("store: place shelves: %w", err)
 		}
 		return nil
 	})
 }
 
-// AdminTitle is a film or a series as the admin lists it.
+// AdminTitle is a film or a series as the admin lists it. Its Locked says
+// whether devices need the PIN for it, for whatever reason.
 type AdminTitle struct {
 	TitleRow
 	SourceID int64
 	Source   string // its source's name
 	Shelf    string // its category's name, as its source gives it; "" if none
 	Hidden   bool   // the administrator hid it
+	Own      bool   // the administrator locked it, rather than its shelf (D85)
+	Adult    bool   // its source marks it for adults (D86)
+}
+
+// adminTitleColumns are what the admin lists of a title beyond its row.
+const adminTitleColumns = `s.id, s.name, COALESCE(c.name, ''), t.hidden, t.locked, t.adult`
+
+func scanAdminTitle(row rowScanner) (AdminTitle, error) {
+	var a AdminTitle
+	r, err := scanTitleRow(row, &a.SourceID, &a.Source, &a.Shelf, &a.Hidden, &a.Own, &a.Adult)
+	a.TitleRow = r
+	return a, err
 }
 
 // AdminTitles returns a page of the films or of the series that the admin
@@ -261,7 +285,7 @@ func (s *Store) AdminTitles(ctx context.Context, kind string, shelf *LibraryShel
 	if err := s.db.QueryRowContext(ctx, "SELECT count(*)"+from+where, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("store: titles for the admin: %w", err)
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT `+titleRowColumns+`, s.id, s.name, COALESCE(c.name, ''), t.hidden`+
+	rows, err := s.db.QueryContext(ctx, `SELECT `+titleRowColumns+`, `+adminTitleColumns+
 		from+where+` ORDER BY t.name COLLATE NOCASE, t.id LIMIT ? OFFSET ?`, append(args, max(0, limit), max(0, offset))...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("store: titles for the admin: %w", err)
@@ -269,12 +293,10 @@ func (s *Store) AdminTitles(ctx context.Context, kind string, shelf *LibraryShel
 	defer rows.Close()
 	out := []AdminTitle{}
 	for rows.Next() {
-		var a AdminTitle
-		row, err := scanTitleRow(rows, &a.SourceID, &a.Source, &a.Shelf, &a.Hidden)
+		a, err := scanAdminTitle(rows)
 		if err != nil {
 			return nil, 0, fmt.Errorf("store: titles for the admin: %w", err)
 		}
-		a.TitleRow = row
 		out = append(out, a)
 	}
 	if err := rows.Err(); err != nil {
@@ -301,20 +323,48 @@ func (s *Store) SetTitlesHidden(ctx context.Context, ids []int64, hidden bool) (
 	return n, err
 }
 
+// SetTitlesLocked locks films or series, so that devices need the parental
+// PIN to play them (D85), or unlocks them, and returns how many of them
+// there were. A title on a locked shelf stays locked.
+func (s *Store) SetTitlesLocked(ctx context.Context, ids []int64, locked bool) (int, error) {
+	n := 0
+	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		for _, id := range ids {
+			res, err := tx.ExecContext(ctx, "UPDATE titles SET locked = ? WHERE id = ?", locked, id)
+			if err != nil {
+				return fmt.Errorf("store: lock a title: %w", err)
+			}
+			k, _ := res.RowsAffected()
+			n += int(k)
+		}
+		return nil
+	})
+	return n, err
+}
+
+// LibraryLocks counts the shelves of films and of series that the
+// administrator locked, and the titles locked one by one (D85).
+func (s *Store) LibraryLocks(ctx context.Context) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM shelf_settings WHERE locked = 1)
+		+ (SELECT count(*) FROM titles WHERE locked = 1 AND missing_since IS NULL)`).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("store: locks on films and series: %w", err)
+	}
+	return n, nil
+}
+
 // AdminTitleByID returns a film or a series that the admin lists, hidden or
 // not, and ErrNotFound if there is none.
 func (s *Store) AdminTitleByID(ctx context.Context, id int64) (AdminTitle, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT `+titleRowColumns+`, s.id, s.name, COALESCE(c.name, ''), t.hidden
+	a, err := scanAdminTitle(s.db.QueryRowContext(ctx, `SELECT `+titleRowColumns+`, `+adminTitleColumns+`
 		FROM titles t JOIN sources s ON s.id = t.source_id LEFT JOIN library_categories c ON c.id = t.category_id
-		WHERE t.id = ? AND `+libraryListed, id)
-	var a AdminTitle
-	r, err := scanTitleRow(row, &a.SourceID, &a.Source, &a.Shelf, &a.Hidden)
+		WHERE t.id = ? AND `+libraryListed, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return AdminTitle{}, ErrNotFound
 	}
 	if err != nil {
 		return AdminTitle{}, fmt.Errorf("store: title %d for the admin: %w", id, err)
 	}
-	a.TitleRow = r
 	return a, nil
 }

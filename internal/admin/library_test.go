@@ -189,7 +189,8 @@ func TestLibraryAPI(t *testing.T) {
 		{"GET", "library/films/shelves", "", http.StatusNotFound, "not_found"},
 		{"PATCH", "library/movies/shelves/99999", `{"hidden": true}`, http.StatusNotFound, "not_found"},
 		{"PATCH", fmt.Sprintf("library/movies/shelves/%d", ids["Drama"]), `{"hidden": "yes"}`, http.StatusBadRequest, "bad_json"},
-		{"PATCH", fmt.Sprintf("library/movies/shelves/%d", ids["Drama"]), `{"locked": true}`, http.StatusBadRequest, "bad_json"},
+		{"PATCH", fmt.Sprintf("library/movies/shelves/%d", ids["Drama"]), `{"locked": "yes"}`, http.StatusBadRequest, "bad_json"},
+		{"PATCH", fmt.Sprintf("library/movies/shelves/%d", ids["Drama"]), `{"pinned": true}`, http.StatusBadRequest, "bad_json"},
 		{"PATCH", fmt.Sprintf("library/movies/shelves/%d", ids["Drama"]), `{"name": "a\u0007"}`, http.StatusBadRequest, "bad_name"},
 		{"PUT", "library/movies/order", fmt.Sprintf(`{"shelves": [%d, %d]}`, ids["Drama"], ids["Drama"]), http.StatusBadRequest, "bad_shelves"},
 		{"PUT", "library/movies/order", `{"shelves": [99999]}`, http.StatusBadRequest, "bad_shelves"},
@@ -205,4 +206,74 @@ func TestLibraryAPI(t *testing.T) {
 		}
 		apiErrorOf(t, ta.apiDo(bad.method, bad.path, bad.body, c, header...), bad.status, bad.code)
 	}
+}
+
+// TestLibraryLocks locks shelves and titles from the Movies page and the API
+// (D85), and sets what marks for adults do (D86).
+func TestLibraryLocks(t *testing.T) {
+	ta := newTestAdmin(t)
+	c, h := ta.withLibrary()
+	csrf := h[1]
+	hx := []string{"HX-Request", "true"}
+	ctx := context.Background()
+	ids := ta.shelfIDs(store.KindMovie)
+	drama := ids["Drama"]
+	back := url.Values{"shelf": {fmt.Sprint(drama)}}.Encode()
+
+	rec := ta.do("POST", fmt.Sprintf("/admin/movies/shelves/%d/lock", drama), lineupForm(csrf, back), c, hx...)
+	mustContain(t, "a shelf locked", rec.Body.String(), "Locked Drama: devices need the parental PIN for anything on it.",
+		"Unlock the shelf", `<span class="badge locked">`,
+		"The lock on a shelf or a title does nothing until there is a parental PIN.")
+	if shelves, _ := ta.st.Shelves(ctx, store.KindMovie); !shelves[0].Locked {
+		t.Errorf("devices' shelves %+v", shelves)
+	}
+	byName := map[string]int64{}
+	titles, _, _ := ta.st.AdminTitles(ctx, store.KindMovie, nil, "", 0, 10)
+	for _, ti := range titles {
+		byName[ti.Name] = ti.ID
+	}
+	rec = ta.do("POST", "/admin/movies/titles", lineupForm(csrf, back, "action", "lock", "ids", fmt.Sprint(byName["Paper Lanterns"])), c, hx...)
+	mustContain(t, "a title locked", rec.Body.String(), "Locked 1 film: devices need the parental PIN to play them.",
+		"2 locks on shelves and titles do nothing until there is a parental PIN.")
+	rec = ta.do("POST", fmt.Sprintf("/admin/movies/shelves/%d/unlock", drama), lineupForm(csrf, back), c, hx...)
+	mustContain(t, "a shelf unlocked", rec.Body.String(), "Unlocked Drama.", "Lock the shelf")
+	page := ta.do("GET", "/admin/settings", nil, c).Body.String()
+	mustContain(t, "the settings", page, "Not set, so the 1 lock does nothing yet.", "Marked for adults",
+		`<option value="nothing" selected>`)
+
+	// The API.
+	var sh apiShelf
+	rec = ta.apiDo("PATCH", fmt.Sprintf("library/movies/shelves/%d", drama), `{"locked": true}`, c, h...)
+	if err := json.Unmarshal(rec.Body.Bytes(), &sh); err != nil || !sh.Locked {
+		t.Errorf("shelf locked: status %d, %s", rec.Code, rec.Body)
+	}
+	var ti apiTitle
+	rec = ta.apiDo("PATCH", fmt.Sprintf("library/titles/%d", byName["Paper Lanterns"]), `{"locked": false}`, c, h...)
+	if err := json.Unmarshal(rec.Body.Bytes(), &ti); err != nil || ti.Locked || ti.Adult || ti.PIN {
+		t.Errorf("title unlocked: status %d, %s", rec.Code, rec.Body)
+	}
+	var list struct{ Titles []apiTitle }
+	rec = ta.apiDo("GET", fmt.Sprintf("library/movies/titles?shelf=%d", drama), "", c)
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil || len(list.Titles) != 2 || list.Titles[0].Locked ||
+		!list.Titles[0].PIN {
+		t.Errorf("on a locked shelf: status %d, %s", rec.Code, rec.Body)
+	}
+
+	// What marks for adults do.
+	rec = ta.do("POST", "/admin/settings/adult", lineupForm(csrf, "", "adult", "hide"), c, hx...)
+	mustContain(t, "marks hide", rec.Body.String(),
+		"Channels, films and series that their sources mark for adults are hidden from devices.", `<option value="hide" selected>`)
+	if marks, _ := ta.st.AdultMarks(ctx); marks != store.AdultHide {
+		t.Errorf("marks %q", marks)
+	}
+	if rec = ta.do("POST", "/admin/settings/adult", lineupForm(csrf, "", "adult", "sometimes"), c, hx...); rec.Code != http.StatusBadRequest {
+		t.Errorf("an unknown choice: status %d", rec.Code)
+	}
+	var settings apiSettings
+	rec = ta.apiDo("PATCH", "settings", `{"adult_marks": "lock"}`, c, h...)
+	if err := json.Unmarshal(rec.Body.Bytes(), &settings); err != nil || settings.AdultMarks != store.AdultLock {
+		t.Errorf("marks lock: status %d, %s", rec.Code, rec.Body)
+	}
+	apiErrorOf(t, ta.apiDo("PATCH", "settings", `{"adult_marks": true}`, c, h...), http.StatusBadRequest, "bad_json")
+	apiErrorOf(t, ta.apiDo("PATCH", "settings", `{"adult_marks": "often"}`, c, h...), http.StatusBadRequest, "bad_adult_marks")
 }

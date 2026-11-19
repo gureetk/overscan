@@ -88,6 +88,9 @@ type titleRow struct {
 	Progress int    `json:"progress,omitempty"` // percent watched, of a film or episode part way through
 	Watched  bool   `json:"watched,omitempty"`  // a film that the account finished
 	Episode  string `json:"episode,omitempty"`  // on the continue shelf, the series' episode, such as S1 E3
+	// Locked is set when playing it needs the account's parental PIN
+	// (D85).
+	Locked bool `json:"locked,omitempty"`
 }
 
 // shelfResponse is a part of a shelf: titles from, at most count of them.
@@ -103,9 +106,18 @@ type shelfResponse struct {
 	Next int `json:"next"`
 }
 
-func row(t store.TitleRow) titleRow {
+// row is a title as a list shows it; locks says that the account has a
+// parental PIN, so that a locked title is marked.
+func row(t store.TitleRow, locks bool) titleRow {
 	return titleRow{ID: t.ID, Kind: t.Kind, Name: t.Name, Year: t.Year, Rating: t.Rating,
-		Poster: artwork.TitlePath(artwork.PosterKind, t.ID, t.Poster)}
+		Poster: artwork.TitlePath(artwork.PosterKind, t.ID, t.Poster), Locked: t.Locked && locks}
+}
+
+// locksApply reports whether d's account has a parental PIN, without which
+// locks do nothing (D55, D85).
+func (a *API) locksApply(ctx context.Context, d store.Device) (bool, error) {
+	acct, err := a.store.Account(ctx, d.AccountID)
+	return acct.PINHash != "", err
 }
 
 // percent returns how much of a duration a position is, 1 to 99, or 0.
@@ -214,6 +226,11 @@ func (a *API) listShelf(w http.ResponseWriter, r *http.Request, d store.Device, 
 		writeError(w, http.StatusBadRequest, errBadRequest)
 		return
 	}
+	locks, err := a.locksApply(ctx, d)
+	if err != nil {
+		a.internalError(w, "look up account", err)
+		return
+	}
 	id := r.PathValue("id")
 	resp := shelfResponse{ID: id, From: from, Titles: []titleRow{}}
 	var rows []titleRow
@@ -226,7 +243,7 @@ func (a *API) listShelf(w http.ResponseWriter, r *http.Request, d store.Device, 
 			return
 		}
 		for _, w := range watching {
-			t := row(w.Title)
+			t := row(w.Title, locks)
 			t.Progress = percent(w.Progress.Position, w.Progress.Duration)
 			if e := w.Episode; e != nil {
 				if w.Next != nil { // finished: the one after it plays next
@@ -249,7 +266,7 @@ func (a *API) listShelf(w http.ResponseWriter, r *http.Request, d store.Device, 
 				return
 			}
 			if cat, cerr := a.store.PortalCategory(ctx, kind, n); cerr == nil && a.library != nil {
-				a.listPortalShelf(w, r, d, kind, cat, from, count)
+				a.listPortalShelf(w, r, d, kind, cat, from, count, locks)
 				return
 			} else if cerr != nil && !errors.Is(cerr, store.ErrNotFound) {
 				a.internalError(w, "look up a shelf", cerr)
@@ -276,7 +293,7 @@ func (a *API) listShelf(w http.ResponseWriter, r *http.Request, d store.Device, 
 			}
 		}
 		for _, t := range titles {
-			r := row(t)
+			r := row(t, locks)
 			if p, ok := watched[t.ID]; ok {
 				r.Progress, r.Watched = percent(p.Position, p.Duration), p.Finished
 			}
@@ -303,7 +320,7 @@ func (a *API) listShelf(w http.ResponseWriter, r *http.Request, d store.Device, 
 // alike, in the portal's order whatever order was asked for, from the
 // place from in it, up to where the pages read for it end.
 func (a *API) listPortalShelf(w http.ResponseWriter, r *http.Request, d store.Device, kind string,
-	cat store.PortalCategory, from, count int) {
+	cat store.PortalCategory, from, count int, locks bool) {
 	ctx, cancel := context.WithTimeout(r.Context(), partWait)
 	defer cancel()
 	part, err := a.library.PortalPart(ctx, cat, from, count)
@@ -321,7 +338,7 @@ func (a *API) listPortalShelf(w http.ResponseWriter, r *http.Request, d store.De
 	resp := shelfResponse{ID: strconv.FormatInt(cat.ID, 10), Name: cat.Name, Total: max(part.Total, 0), From: from,
 		Titles: make([]titleRow, 0, len(part.Titles)), Next: part.Next}
 	for _, t := range part.Titles {
-		r := row(t.TitleRow)
+		r := row(t.TitleRow, locks)
 		if p, ok := watched[t.ID]; ok && t.Kind == store.KindMovie {
 			r.Progress, r.Watched = percent(p.Position, p.Duration), p.Finished
 		}
@@ -368,6 +385,9 @@ type titleResponse struct {
 	Progress     *progress `json:"progress,omitempty"` // a film's
 	Seasons      []season  `json:"seasons,omitempty"`  // a series'
 	Next         *next     `json:"next,omitempty"`     // a series' episode to play next
+	// Locked is set when playing it, or a series' episodes, needs the
+	// account's parental PIN (D85).
+	Locked bool `json:"locked,omitempty"`
 }
 
 // season is a season of a series, with its episodes.
@@ -429,9 +449,14 @@ func (a *API) open(w http.ResponseWriter, r *http.Request, d store.Device, kind 
 		a.internalError(w, "open a title", err)
 		return
 	}
+	locks, err := a.locksApply(r.Context(), d)
+	if err != nil {
+		a.internalError(w, "look up account", err)
+		return
+	}
 	resp := titleResponse{ID: o.ID, Kind: o.Kind, Name: o.Name, Year: o.Year, Rating: o.Rating, Shelf: o.Shelf,
 		Plot: o.Summary.Plot, Genre: o.Summary.Genre, Cast: o.Summary.Cast, Director: o.Summary.Director,
-		Runtime: o.Summary.Runtime, Details: o.Details != nil, DetailsError: o.ReadError}
+		Runtime: o.Summary.Runtime, Details: o.Details != nil, DetailsError: o.ReadError, Locked: o.Locked && locks}
 	poster, backdrop := o.Poster, o.Summary.Backdrop
 	if dt := o.Details; dt != nil {
 		resp.Plot = first(dt.Plot, resp.Plot)
@@ -554,6 +579,8 @@ type itemPlayRequest struct {
 	// Restart says that the page can play a stream that ffmpeg makes,
 	// seeking in it by asking for it from a time (D68).
 	Restart bool `json:"restart"`
+	// PIN is the parental PIN, for a locked film or series (D85).
+	PIN string `json:"pin"`
 }
 
 // itemPlayResponse is how the box plays a film or an episode.
@@ -620,6 +647,16 @@ func (a *API) playTitle(w http.ResponseWriter, r *http.Request, d store.Device, 
 	if err != nil {
 		a.internalError(w, "look up a title to play", err)
 		return
+	}
+	if item.Locked {
+		acct, err := a.store.Account(r.Context(), d.AccountID)
+		if err != nil {
+			a.internalError(w, "look up account", err)
+			return
+		}
+		if acct.PINHash != "" && !a.pinOK(w, r, d, acct, req.PIN) {
+			return
+		}
 	}
 	if !a.hub.Available(item.SourceID, d.ID) {
 		writeError(w, http.StatusServiceUnavailable, errLimit)
@@ -749,8 +786,8 @@ func nearEnd(position, duration int) bool {
 }
 
 // searchTitles returns the films and series whose names hold q, at most
-// maxSearchTitles of each.
-func (a *API) searchTitles(ctx context.Context, q string) ([]titleRow, []titleRow, error) {
+// maxSearchTitles of each, for d.
+func (a *API) searchTitles(ctx context.Context, d store.Device, q string) ([]titleRow, []titleRow, error) {
 	movies, series := []titleRow{}, []titleRow{}
 	if a.library == nil {
 		return movies, series, nil
@@ -759,11 +796,15 @@ func (a *API) searchTitles(ctx context.Context, q string) ([]titleRow, []titleRo
 	if err != nil {
 		return nil, nil, err
 	}
+	locks, err := a.locksApply(ctx, d)
+	if err != nil {
+		return nil, nil, err
+	}
 	for _, t := range found {
 		if t.Kind == store.KindMovie {
-			movies = append(movies, row(t))
+			movies = append(movies, row(t, locks))
 		} else {
-			series = append(series, row(t))
+			series = append(series, row(t, locks))
 		}
 	}
 	return movies, series, nil

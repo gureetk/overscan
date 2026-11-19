@@ -273,7 +273,7 @@ func TestTitlePage(t *testing.T) {
 	}
 	page := func(shelf int64, text, order string, offset, limit int) ([]TitleListing, int) {
 		t.Helper()
-		got, total, err := s.TitlePage(ctx, KindMovie, shelf, text, order, offset, limit)
+		got, total, err := s.TitlePage(ctx, KindMovie, shelf, text, order, offset, limit, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -316,13 +316,13 @@ func TestTitlePage(t *testing.T) {
 	if got, total = page(0, "_", ByName, 0, 10); total != 1 || listed(got)[0] != "Around 100% of_it" {
 		t.Errorf("an underscore: %d %q", total, listed(got))
 	}
-	if _, _, err := s.TitlePage(ctx, KindMovie, 999999, "", ByAdded, 0, 10); !errors.Is(err, ErrNotFound) {
+	if _, _, err := s.TitlePage(ctx, KindMovie, 999999, "", ByAdded, 0, 10, false); !errors.Is(err, ErrNotFound) {
 		t.Errorf("no such shelf: %v", err)
 	}
-	if _, _, err := s.TitlePage(ctx, KindSeries, shelves[0].ID, "", ByAdded, 0, 10); !errors.Is(err, ErrNotFound) {
+	if _, _, err := s.TitlePage(ctx, KindSeries, shelves[0].ID, "", ByAdded, 0, 10, false); !errors.Is(err, ErrNotFound) {
 		t.Errorf("a film shelf as series: %v", err)
 	}
-	if got, total, err := s.TitlePage(ctx, KindSeries, 0, "", ByAdded, 0, 10); err != nil || total != 0 || len(got) != 0 {
+	if got, total, err := s.TitlePage(ctx, KindSeries, 0, "", ByAdded, 0, 10, false); err != nil || total != 0 || len(got) != 0 {
 		t.Errorf("no series: %d %+v %v", total, got, err)
 	}
 	// A disabled source's titles are not listed.

@@ -52,6 +52,8 @@ type Movie struct {
 	Genre    string
 	Cast     string
 	Director string
+	// Adult is set when the server marks the film for adults (is_adult).
+	Adult bool
 }
 
 // Show is a series as the server lists it.
@@ -173,6 +175,7 @@ type movieEntry struct {
 	RunTime     number   `json:"episode_run_time"`
 	StreamType  text     `json:"stream_type"`
 	CategoryIDs textList `json:"category_ids"`
+	Adult       flag     `json:"is_adult"`
 }
 
 // Movies reads the server's whole list of films, in one request, and calls
@@ -216,6 +219,7 @@ func (e movieEntry) movie() (Movie, bool) {
 		Cast:       clean(string(e.Cast), maxShortLen),
 		Director:   clean(string(e.Director), maxShortLen),
 		Runtime:    minutes(int64(e.RunTime)),
+		Adult:      bool(e.Adult),
 	}
 	if m.CategoryID == "" && len(e.CategoryIDs) > 0 {
 		m.CategoryID = strings.TrimSpace(e.CategoryIDs[0])

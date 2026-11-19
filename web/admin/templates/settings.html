@@ -87,11 +87,11 @@
   <section class="panel" aria-labelledby="pin-title">
     <div class="panel-title"><span class="tile-icon warn">{{template "i-lock"}}</span><h2 id="pin-title">Parental PIN</h2>{{if .Data.PINSet}}<span class="badge ok">Set</span>{{else}}<span class="badge">Not set</span>{{end}}</div>
     {{- if .Data.PINSet}}
-    <p>Boxes ask for it before they play a locked channel.{{if .Data.Locks}} The lineup has {{.Data.Locks}} {{plural .Data.Locks "lock"}}.{{else}} Nothing is locked yet: lock groups or channels in the <a href="/admin/lineup">Lineup</a>.{{end}}</p>
-    {{- else if .Data.Locks}}
-    <p class="hint warn">Not set, so the lineup's {{.Data.Locks}} {{plural .Data.Locks "lock"}} {{if eq .Data.Locks 1}}does{{else}}do{{end}} nothing yet.</p>
+    <p>Boxes ask for it before they play a locked channel, film or series.{{if .Data.AllLocks}} There {{if eq .Data.AllLocks 1}}is 1 lock{{else}}are {{.Data.AllLocks}} locks{{end}}.{{else}} Nothing is locked yet: lock groups or channels on the <a href="/admin/lineup">Live TV</a> page, and shelves or titles on the <a href="/admin/movies">Movies</a> and <a href="/admin/series">Series</a> pages.{{end}}</p>
+    {{- else if .Data.AllLocks}}
+    <p class="hint warn">Not set, so the {{.Data.AllLocks}} {{plural .Data.AllLocks "lock"}} {{if eq .Data.AllLocks 1}}does{{else}}do{{end}} nothing yet.</p>
     {{- else}}
-    <p>Lock groups or channels on the <a href="/admin/lineup">Live TV</a> page, and set a PIN that boxes ask for before they play them.</p>
+    <p>Lock groups or channels on the <a href="/admin/lineup">Live TV</a> page, and shelves or titles on the <a href="/admin/movies">Movies</a> and <a href="/admin/series">Series</a> pages, and set a PIN that boxes ask for before they play them.</p>
     {{- end}}
     <div class="pin-forms">
       <form method="post" action="/admin/settings/pin" hx-post="/admin/settings/pin" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" class="row-form">
@@ -100,12 +100,25 @@
         <button type="submit">{{if .Data.PINSet}}Change{{else}}Set{{end}}</button>
       </form>
       {{- if .Data.PINSet}}
-      <form method="post" action="/admin/settings/pin" hx-post="/admin/settings/pin" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" hx-confirm="Remove the parental PIN? Locked channels then play without one.">
+      <form method="post" action="/admin/settings/pin" hx-post="/admin/settings/pin" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" hx-confirm="Remove the parental PIN? Locked channels, films and series then play without one.">
         <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
         <button type="submit" class="danger" name="remove" value="1">Remove the PIN</button>
       </form>
       {{- end}}
     </div>
+    <form method="post" action="/admin/settings/adult" hx-post="/admin/settings/adult" hx-trigger="change" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" class="switch-row with-select">
+      <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+      <div>
+        <label for="adult">Marked for adults</label>
+        <p id="adult-text">{{if eq .Data.Adult "lock"}}Channels, films and series that their sources mark for adults are locked{{if not .Data.PINSet}}, once there is a PIN{{end}}: boxes ask for the PIN, and Stalker clients do not see them.{{else if eq .Data.Adult "hide"}}Channels, films and series that their sources mark for adults are hidden from every device.{{else}}Off: channels, films and series that their sources mark for adults are like any other. Some Xtream servers and Stalker portals mark them.{{end}}</p>
+        <noscript><button class="small" type="submit">Save</button></noscript>
+      </div>
+      <select id="adult" name="adult" aria-describedby="adult-text">
+        <option value="nothing"{{if eq .Data.Adult "nothing"}} selected{{end}}>Like any other</option>
+        <option value="lock"{{if eq .Data.Adult "lock"}} selected{{end}}>Locked</option>
+        <option value="hide"{{if eq .Data.Adult "hide"}} selected{{end}}>Hidden</option>
+      </select>
+    </form>
   </section>
 
   <section class="panel" id="account" aria-labelledby="account-title">

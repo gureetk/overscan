@@ -28,6 +28,7 @@ import { SearchScreen } from './screens/search';
 import { SettingsScreen } from './screens/settings';
 import { findEpisode, TitleScreen } from './screens/title';
 import { WatchScreen } from './screens/watch';
+import { keepPIN, keptPIN } from './pin';
 import { readSecret, writeSecret } from './secret';
 import { SettingsModel } from './settings';
 
@@ -205,6 +206,9 @@ export class App {
       },
       pick: function (title: string, items: PickItem[], chosen: number, done: (index: number) => void) {
         self.picker.pick(title, items, chosen, done);
+      },
+      unlock: function (what: string, done: (ok: boolean) => void) {
+        self.unlock(what, '', done);
       },
       videoChanged: function () {
         self.applyVideo();
@@ -464,6 +468,41 @@ export class App {
     const leaving = this.stack.pop();
     const name = this.stack[this.stack.length - 1]!;
     this.switchTo(this.screens[name]!, leaving === 'watch' ? { channel: this.player.channel } : undefined);
+  }
+
+  /** unlock asks for the PIN for what, saying why, unless the page keeps it, and checks it with the server. */
+  private unlock(what: string, message: string, done: (ok: boolean) => void): void {
+    const self = this;
+    if (keptPIN()) {
+      done(true);
+      return;
+    }
+    this.pin.ask(what, message, function (pin) {
+      if (!pin) {
+        done(false);
+        return;
+      }
+      self.client.call<{ ok: boolean }>('POST', 'pin', { pin: pin }, function (err) {
+        if (!err) {
+          keepPIN(pin);
+          done(true);
+          return;
+        }
+        if (err.code === 'pin_wrong' || err.code === 'pin_required') {
+          self.unlock(what, 'That PIN is not right. Try again.', done);
+          return;
+        }
+        if (err.code === 'pin_locked') {
+          const wait = err.retryAfter ? Math.ceil(err.retryAfter / 60) : 5;
+          self.toast('Too many wrong PINs. Try again in ' + wait + (wait === 1 ? ' minute.' : ' minutes.'));
+        } else if (err.code === 'unauthorized' || err.code === 'blocked') {
+          self.lost(err);
+        } else {
+          self.toast("Can't check the PIN. " + describe(err));
+        }
+        done(false);
+      });
+    });
   }
 
   private toast(text: string): void {

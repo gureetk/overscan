@@ -3,12 +3,15 @@
 <div class="page-head">
   <div>
     <h1>{{.Data.Heading}}</h1>
-    <p class="lead">What devices see of the {{if eq .Data.Noun "film"}}films{{else}}series{{end}} of your sources: their shelves, in their order, and what is hidden. Changes here stay when sources are read again.</p>
+    <p class="lead">What devices see of the {{if eq .Data.Noun "film"}}films{{else}}series{{end}} of your sources: their shelves, in their order, and what is hidden or locked. Changes here stay when sources are read again.</p>
   </div>
   <p class="hint"><strong>{{count .Data.Shown}}</strong> of {{.Data.Count .Data.All}} shown</p>
 </div>
 <div id="library-main">
 {{template "alerts" .}}
+{{- if and .Data.Locks (not .Data.PINSet)}}
+<p class="alert error locks-notice">The {{if eq .Data.Locks 1}}lock on a shelf or a title does{{else}}{{.Data.Locks}} locks on shelves and titles do{{end}} nothing until there is a parental PIN. <a href="/admin/settings">Set one in Settings</a>.</p>
+{{- end}}
 <div class="lineup library">
   <aside class="card groups-panel" aria-labelledby="shelves-title">
     <div class="groups-head">
@@ -27,6 +30,7 @@
       {{- range .Data.Shelves}}
       <a href="{{$.Data.View.ShelfURL .ID}}"{{if $.Data.View.IsShelf .ID}} aria-current="page"{{end}}{{if .Hidden}} class="is-hidden"{{end}} data-name="{{.Name}}">
         <span class="g-name">{{.Name}}</span>
+        {{- if .Locked}}<span class="g-mark locked" title="Its titles need the parental PIN">{{template "i-lock"}}<span class="sr">locked</span></span>{{end}}
         {{- if .Hidden}}<span class="g-mark" title="Hidden from devices">{{template "i-eye-off"}}<span class="sr">hidden</span></span>{{else}}<span class="g-count" title="{{if .Portal}}Read so far from the portal{{else}}{{sub .Titles .HiddenTitles}} of {{.Titles}} shown{{end}}">{{if .Portal}}{{.Titles}}{{if ge .Total 0}}/{{.Total}}{{end}}{{else}}{{sub .Titles .HiddenTitles}}{{if .HiddenTitles}}/{{.Titles}}{{end}}{{end}}</span>{{end}}
       </a>
       {{- else}}
@@ -46,7 +50,7 @@
     </form>
     {{- with .Data.Selected}}{{template "shelf-head" (dict "S" . "D" $.Data "CSRF" $.Session.CSRFToken)}}{{else}}
     <div class="group-head"><h2 id="titles-title">All {{if eq .Data.Noun "film"}}films{{else}}series{{end}}</h2>
-    <p class="hint">Hide a whole shelf from its own page, on the left. A title hidden here stays hidden on every shelf, in search and in Recently Added.</p></div>
+    <p class="hint">Hide or lock a whole shelf from its own page, on the left. A title hidden here stays hidden on every shelf, in search and in Recently Added; a locked one needs the parental PIN to play.</p></div>
     {{- end}}
 
     {{- if or .Data.Total .Data.View.Query}}
@@ -76,7 +80,13 @@
         <td class="name">{{.Name}}{{if and (not $.Data.Selected) .Shelf}}<div class="note">{{.Shelf}}</div>{{end}}</td>
         <td class="year">{{if .Year}}{{.Year}}{{else}}<span class="muted">–</span>{{end}}</td>
         <td class="group">{{.Source}}</td>
-        <td class="state"><div class="chips">{{if .Hidden}}<span class="badge">{{template "i-eye-off"}}Hidden</span>{{end}}</div></td>
+        <td class="state"><div class="chips">
+          {{- if .Hidden}}<span class="badge">{{template "i-eye-off"}}Hidden</span>{{end}}
+          {{- $adultLock := and .Adult (eq $.Data.Adult "lock")}}
+          {{- if .Own}}<span class="badge locked" title="It needs the parental PIN to play">{{template "i-lock"}}Locked</span>
+          {{- else if and .Locked (not $.Data.Selected) (not $adultLock)}}<span class="badge locked" title="Its shelf is locked: it needs the parental PIN to play">{{template "i-lock"}}Locked</span>{{end}}
+          {{- if .Adult}}<span class="badge{{if $adultLock}} locked{{end}}" title="{{$.Data.AdultNote}}">{{if $adultLock}}{{template "i-lock"}}{{else if eq $.Data.Adult "hide"}}{{template "i-eye-off"}}{{end}}For adults</span>{{end}}
+        </div></td>
       </tr>
       {{- end}}
       </tbody>
@@ -86,14 +96,23 @@
       <span>{{.Data.First}}–{{.Data.Last}} of {{.Data.Total}}</span>
       {{- with .Data.Prev}}<a href="{{$.Data.View.URL .}}">Previous</a>{{end}}
       {{- with .Data.Next}}<a href="{{$.Data.View.URL .}}">Next</a>{{end}}
-      <span class="tick-hint">Tick titles to hide or show several at once.</span>
+      <span class="tick-hint">Tick titles to hide, show, lock or unlock several at once.</span>
     </nav>
     <form id="bulk" method="post" action="{{.Data.View.Path}}/titles" hx-post="{{.Data.View.Path}}/titles" hx-target="#library-main" hx-select="#library-main" hx-swap="outerHTML" class="bulk" role="toolbar" aria-label="Ticked titles">
       <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
       <input type="hidden" name="back" value="{{.Data.View.Back}}">
       <span class="bulk-count"></span>
       <button type="submit" name="action" value="hide">{{template "i-eye-off"}}Hide</button>
-      <button type="submit" name="action" value="show">{{template "i-eye"}}Show</button>
+      <button type="submit" name="action" value="show" class="phone-hide">{{template "i-eye"}}Show</button>
+      <button type="submit" name="action" value="lock" title="They need the parental PIN to play">Lock</button>
+      <button type="submit" name="action" value="unlock" class="phone-hide" title="Unless their shelf is locked">Unlock</button>
+      <details class="popover up phone-only">
+        <summary class="button">More{{template "i-chevron-up"}}</summary>
+        <div class="menu">
+          <button type="submit" name="action" value="show" class="phone-only">Show</button>
+          <button type="submit" name="action" value="unlock" class="phone-only" title="Unless their shelf is locked">Unlock</button>
+        </div>
+      </details>
       <button type="reset" class="icon untick" aria-label="Untick all" title="Untick all">{{template "i-close"}}</button>
     </form>
     {{- else}}
@@ -111,6 +130,7 @@
     <div class="group-name">
       <h2 id="titles-title">{{.S.Name}}</h2>
       {{- if .S.Hidden}}<span class="badge">{{template "i-eye-off"}}Hidden</span>{{end}}
+      {{- if .S.Locked}}<span class="badge locked">{{template "i-lock"}}Locked</span>{{end}}
       <details class="popover">
         <summary class="button quiet icon" aria-label="Rename the shelf" title="Rename the shelf">{{template "i-pencil"}}</summary>
         <div class="menu form-menu">
@@ -145,6 +165,11 @@
       <input type="hidden" name="csrf" value="{{.CSRF}}">
       <input type="hidden" name="back" value="{{.D.View.Back}}">
       <button type="submit" class="small{{if .S.Hidden}} primary{{end}}">{{if .S.Hidden}}{{template "i-eye"}}Show the shelf{{else}}{{template "i-eye-off"}}Hide the shelf{{end}}</button>
+    </form>
+    <form method="post" action="{{.D.View.Path}}/shelves/{{.S.ID}}/{{if .S.Locked}}unlock{{else}}lock{{end}}" hx-post="{{.D.View.Path}}/shelves/{{.S.ID}}/{{if .S.Locked}}unlock{{else}}lock{{end}}" hx-target="#library-main" hx-select="#library-main" hx-swap="outerHTML">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <input type="hidden" name="back" value="{{.D.View.Back}}">
+      <button type="submit" class="small"{{if not .S.Locked}} title="Its titles need the parental PIN to play"{{end}}>{{template "i-lock"}}{{if .S.Locked}}Unlock the shelf{{else}}Lock the shelf{{end}}</button>
     </form>
   </div>
 </div>

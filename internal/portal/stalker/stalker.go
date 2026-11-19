@@ -155,13 +155,13 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "tv_archive/create_link":
 		a.createArchiveLink(w, r, d)
 	case "vod/get_categories":
-		a.getCategories(w, r, store.KindMovie)
+		a.getCategories(w, r, d, store.KindMovie)
 	case "series/get_categories":
-		a.getCategories(w, r, store.KindSeries)
+		a.getCategories(w, r, d, store.KindSeries)
 	case "vod/get_ordered_list":
-		a.getTitles(w, r, store.KindMovie)
+		a.getTitles(w, r, d, store.KindMovie)
 	case "series/get_ordered_list":
-		a.getTitles(w, r, store.KindSeries)
+		a.getTitles(w, r, d, store.KindSeries)
 	case "vod/create_link", "series/create_link":
 		a.createTitleLink(w, r, d)
 	default:

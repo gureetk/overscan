@@ -188,8 +188,36 @@ func (a *API) play(w http.ResponseWriter, r *http.Request, d store.Device) {
 	writeJSON(w, http.StatusOK, playResponse{URL: "http://" + r.Host + link, Solution: solution(link)})
 }
 
-// pinOK checks the PIN that a box gives for a locked channel, and answers
-// the call itself when the box may not play the channel.
+// pinRequest is the body of a PIN call.
+type pinRequest struct {
+	PIN string `json:"pin"`
+}
+
+// checkPIN answers POST pin, which checks the account's parental PIN before
+// the box shows what is locked (D85): {"ok": true} when it is right, or when
+// the account has none; otherwise as a locked channel's play call does,
+// wrong PINs counting alike.
+func (a *API) checkPIN(w http.ResponseWriter, r *http.Request, d store.Device) {
+	var req pinRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, errBadRequest)
+		return
+	}
+	acct, err := a.store.Account(r.Context(), d.AccountID)
+	if err != nil {
+		a.internalError(w, "look up account", err)
+		return
+	}
+	if acct.PINHash != "" && !a.pinOK(w, r, d, acct, req.PIN) {
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		OK bool `json:"ok"`
+	}{true})
+}
+
+// pinOK checks the PIN that a box gives for something locked, and answers
+// the call itself when the box may not play it.
 func (a *API) pinOK(w http.ResponseWriter, r *http.Request, d store.Device, acct store.Account, pin string) bool {
 	if wait := a.pins.wait(d.ID, a.now()); wait > 0 {
 		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))

@@ -41,7 +41,7 @@ const panelStreams = `[
 	 "epg_channel_id":"news.example","category_id":"1","tv_archive":1,"tv_archive_duration":"3"},
 	{"num":2,"name":"Example Sports","stream_type":"live","stream_id":"102","epg_channel_id":null,"category_id":"2"},
 	{"num":3,"name":"Example Sports","stream_type":"live","stream_id":103,"epg_channel_id":"","category_id":"2"},
-	{"num":4,"name":"Lost","stream_type":"live","stream_id":104,"category_id":null},
+	{"num":4,"name":"Lost","stream_type":"live","stream_id":104,"category_id":null,"is_adult":"1"},
 	{"num":5,"name":"Example News","stream_type":"live","stream_id":101,"category_id":"1"}
 ]`
 
@@ -149,6 +149,16 @@ func TestXtreamRefresh(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "skipped=1") {
 		t.Errorf("the repeated stream is not counted as skipped: %s", logs)
+	}
+	// The server marks Lost for adults, which the setting can lock (D86).
+	if err := st.SetAdultMarks(ctx, store.AdultLock); err != nil {
+		t.Fatal(err)
+	}
+	if marked, err := st.LineupChannels(ctx, store.DefaultLineupID); err != nil || !marked[3].Locked || marked[0].Locked {
+		t.Errorf("marked for adults: %+v, %v", marked, err)
+	}
+	if err := st.SetAdultMarks(ctx, store.AdultNothing); err != nil {
+		t.Fatal(err)
 	}
 
 	// The stream's address is made at play time, with the login in it.

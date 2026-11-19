@@ -129,7 +129,7 @@ func TestPortalShelves(t *testing.T) {
 	if titles, _ := s.ShelfTitles(ctx, KindMovie, shelves[0].ID, ByName); len(titles) != 2 {
 		t.Errorf("the Xtream source's Drama has %d titles", len(titles))
 	}
-	if _, total, _ := s.TitlePage(ctx, KindMovie, 0, "", ByAdded, 0, 5); total != 4+19 {
+	if _, total, _ := s.TitlePage(ctx, KindMovie, 0, "", ByAdded, 0, 5, false); total != 4+19 {
 		t.Errorf("%d films in all", total)
 	}
 

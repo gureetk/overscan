@@ -183,6 +183,8 @@ export interface TitleRow {
   watched?: boolean;
   /** On Continue Watching, a series' episode, such as S1 E3. */
   episode?: string;
+  /** Playing it needs the parental PIN (D85). */
+  locked?: boolean;
 }
 
 /** A part of a shelf. */
@@ -249,6 +251,8 @@ export interface Title {
   seasons?: Season[];
   /** A series' episode to play next, and where. */
   next?: { episode: number; position: number };
+  /** Playing it, or a series' episodes, needs the parental PIN (D85). */
+  locked?: boolean;
 }
 
 export interface Settings {

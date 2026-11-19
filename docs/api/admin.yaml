@@ -944,6 +944,9 @@ paths:
                   type: boolean
                 server_transcodes:
                   type: boolean
+                adult_marks:
+                  type: string
+                  enum: [nothing, lock, hide]
       responses:
         "200":
           $ref: "#/components/responses/Settings"
@@ -982,7 +985,7 @@ paths:
     patch:
       tags: [library]
       operationId: changeShelf
-      summary: Hide, show or rename a shelf
+      summary: Hide, show, lock, unlock or rename a shelf
       security:
         - session: []
           csrf: []
@@ -996,6 +999,9 @@ paths:
               properties:
                 hidden:
                   type: boolean
+                locked:
+                  type: boolean
+                  description: Every title on it needs the parental PIN (D85).
                 name:
                   type: [string, "null"]
                   maxLength: 100
@@ -1134,7 +1140,7 @@ paths:
     patch:
       tags: [library]
       operationId: changeTitle
-      summary: Hide or show a film or a series
+      summary: Hide, show, lock or unlock a film or a series
       security:
         - session: []
           csrf: []
@@ -1145,10 +1151,13 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [hidden]
+              minProperties: 1
               properties:
                 hidden:
                   type: boolean
+                locked:
+                  type: boolean
+                  description: It needs the parental PIN (D85); one on a locked shelf stays locked.
       responses:
         "200":
           description: The title.
@@ -1554,7 +1563,7 @@ components:
           examples: [["DTS", "Dolby TrueHD"]]
     Shelf:
       type: object
-      required: [id, name, own, sources, titles, hidden_titles, portal, hidden, placed]
+      required: [id, name, own, sources, titles, hidden_titles, portal, hidden, locked, placed]
       properties:
         id:
           type: integer
@@ -1581,12 +1590,15 @@ components:
           description: A Stalker portal's category, read a page at a time (D77).
         hidden:
           type: boolean
+        locked:
+          type: boolean
+          description: Locked, with every title on it (D85).
         placed:
           type: boolean
           description: The administrator put it in an order of its own.
     LibraryTitle:
       type: object
-      required: [id, kind, name, source, hidden]
+      required: [id, kind, name, source, hidden, locked, adult, needs_pin]
       properties:
         id:
           type: integer
@@ -1605,6 +1617,18 @@ components:
           description: Its category's name, as its source gives it.
         hidden:
           type: boolean
+        locked:
+          type: boolean
+          description: The administrator locked it (D85).
+        adult:
+          type: boolean
+          description: Its source marks it for adults (D86).
+        needs_pin:
+          type: boolean
+          description: >-
+            Devices need the parental PIN for it once the account has one: it,
+            or its shelf, is locked, or the setting locks what is marked for
+            adults.
     Group:
       type: object
       required: [id, name, hidden, locked, edited, channels, shown, first_number, categories]
@@ -1648,7 +1672,7 @@ components:
                 type: string
     Channel:
       type: object
-      required: [id, channel_id, source_id, source, number, pinned, name, channel_name, renamed, group_id, group, moved, category, visibility, hidden, missing, locked, group_locked, repair, repair_own]
+      required: [id, channel_id, source_id, source, number, pinned, name, channel_name, renamed, group_id, group, moved, category, visibility, hidden, missing, locked, group_locked, repair, repair_own, adult]
       properties:
         id:
           type: integer
@@ -1709,6 +1733,9 @@ components:
             Its own repair switch, null when it follows the default. The switch
             belongs to the source's channel, so it holds in every lineup that
             has it.
+        adult:
+          type: boolean
+          description: Its source marks it for adults (D86).
     Visibility:
       type: string
       enum: [group, shown, hidden]
@@ -2127,7 +2154,7 @@ components:
         application/json:
           schema:
             type: object
-            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes]
+            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes, adult_marks]
             properties:
               repair_default:
                 type: boolean
@@ -2161,6 +2188,13 @@ components:
                   source whose server transcodes, such as Jellyfin, goes
                   through that server (D71, D78); off, it goes as it is. On at
                   first.
+              adult_marks:
+                type: string
+                enum: [nothing, lock, hide]
+                description: >-
+                  What the marks that sources put on channels, films and series
+                  for adults do (D86): nothing, at first; lock them, as if the
+                  administrator had; or hide them from every device.
     PIN:
       description: Whether the household has a parental PIN.
       content:

@@ -104,6 +104,23 @@ type libraryData struct {
 	Prev     int // the previous page, 0 if none
 	Next     int // the next page, 0 if none
 	Ordered  bool
+	// PINSet says that the household has a parental PIN, without which
+	// locks do nothing (D55); Locks counts the shelves and titles locked.
+	PINSet bool
+	Locks  int
+	// Adult is what sources' marks for adults do (D86).
+	Adult string
+}
+
+// AdultNote says what a title's mark for adults does, for its badge.
+func (d libraryData) AdultNote() string {
+	switch d.Adult {
+	case store.AdultLock:
+		return "Its source marks it for adults, which Settings locks"
+	case store.AdultHide:
+		return "Its source marks it for adults, which Settings hides from devices"
+	}
+	return "Its source marks it for adults; Settings can lock or hide such titles"
 }
 
 // Count says how many titles of the page's kind, such as "3 films".
@@ -154,7 +171,19 @@ func (a *Admin) showLibrary(w http.ResponseWriter, r *http.Request, s store.Admi
 		fail(err)
 		return
 	}
-	if _, d.Shown, err = a.store.TitlePage(ctx, lv.Kind, 0, "", store.ByName, 0, 0); err != nil {
+	if _, d.Shown, err = a.store.TitlePage(ctx, lv.Kind, 0, "", store.ByName, 0, 0, false); err != nil {
+		fail(err)
+		return
+	}
+	if d.PINSet, err = a.pinSet(ctx); err != nil {
+		fail(err)
+		return
+	}
+	if d.Locks, err = a.store.LibraryLocks(ctx); err != nil {
+		fail(err)
+		return
+	}
+	if d.Adult, err = a.store.AdultMarks(ctx); err != nil {
 		fail(err)
 		return
 	}
@@ -195,7 +224,7 @@ func (a *Admin) libraryDone(w http.ResponseWriter, r *http.Request, s store.Admi
 }
 
 // shelfAction answers a shelf's forms on the Movies or Series page: hide,
-// show, rename, up and down.
+// show, lock, unlock, rename, up and down.
 func (a *Admin) shelfAction(kind string) signedInFn {
 	return func(w http.ResponseWriter, r *http.Request, s store.AdminSession) {
 		ctx := r.Context()
@@ -216,6 +245,10 @@ func (a *Admin) shelfAction(kind string) signedInFn {
 			err, done = a.hideShelf(ctx, kind, sh, true), "Hid "+sh.Name+": devices no longer see it, nor anything on it."
 		case "show":
 			err, done = a.hideShelf(ctx, kind, sh, false), "Showed "+sh.Name+"."
+		case "lock":
+			err, done = a.lockShelf(ctx, kind, sh, true), "Locked "+sh.Name+": devices need the parental PIN for anything on it."
+		case "unlock":
+			err, done = a.lockShelf(ctx, kind, sh, false), "Unlocked "+sh.Name+"."
 		case "rename":
 			name := strings.TrimSpace(r.PostFormValue("name"))
 			if err = a.renameShelf(ctx, kind, sh, name); err == nil {
@@ -244,8 +277,8 @@ func (a *Admin) shelfOrderReset(kind string) signedInFn {
 	}
 }
 
-// titlesAction hides the ticked titles on the Movies or Series page, or
-// shows them again.
+// titlesAction hides, shows, locks or unlocks the ticked titles on the
+// Movies or Series page.
 func (a *Admin) titlesAction(kind string) signedInFn {
 	return func(w http.ResponseWriter, r *http.Request, s store.AdminSession) {
 		lv := parseLibraryView(kind, backValues(r))
@@ -258,28 +291,28 @@ func (a *Admin) titlesAction(kind string) signedInFn {
 			}
 			ids = append(ids, id)
 		}
-		var hidden bool
-		switch r.PostFormValue("action") {
-		case "hide":
-			hidden = true
-		case "show":
+		action := r.PostFormValue("action")
+		var n int
+		var err error
+		switch action {
+		case "hide", "show":
+			n, err = a.hideTitles(r.Context(), ids, action == "hide")
+		case "lock", "unlock":
+			n, err = a.lockTitles(r.Context(), ids, action == "lock")
 		default:
-			a.libraryDone(w, r, s, lv, badEdit(http.StatusBadRequest, "bad_form", "Choose Hide or Show."), "")
+			a.libraryDone(w, r, s, lv, badEdit(http.StatusBadRequest, "bad_form", "Choose Hide, Show, Lock or Unlock."), "")
 			return
 		}
-		n, err := a.hideTitles(r.Context(), ids, hidden)
-		noun := "film"
-		if kind == store.KindSeries {
-			noun = "series"
-		}
-		what := fmt.Sprintf("%d %s", n, noun)
-		if noun == "film" {
+		what := fmt.Sprintf("%d series", n)
+		if kind != store.KindSeries {
 			what = fmt.Sprintf("%d %s", n, plural(n, "film"))
 		}
-		done := "Showed " + what + "."
-		if hidden {
-			done = "Hid " + what + " from devices."
-		}
+		done := map[string]string{
+			"hide":   "Hid " + what + " from devices.",
+			"show":   "Showed " + what + ".",
+			"lock":   "Locked " + what + ": devices need the parental PIN to play them.",
+			"unlock": "Unlocked " + what + ". Those on a locked shelf stay locked.",
+		}[action]
 		a.libraryDone(w, r, s, lv, err, done)
 	}
 }

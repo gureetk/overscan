@@ -277,6 +277,7 @@
     {{- if and (eq .Visibility "shown") (not .E.Missing)}}<span class="badge" title="Shown even if its group is hidden">{{template "i-eye"}}Always shown</span>{{end}}
     {{- if .E.Locked}}<span class="badge locked" title="It needs the parental PIN to play">{{template "i-lock"}}Locked</span>
     {{- else if and .E.GroupLocked (not .InGroup)}}<span class="badge locked" title="Its group is locked: it needs the parental PIN to play">{{template "i-lock"}}Locked</span>{{end}}
+    {{- if .E.Adult}}<span class="badge{{if .E.AdultLocked}} locked{{end}}" title="Its source marks it for adults{{if .E.AdultLocked}}, which Settings locks{{else if .E.AdultHidden}}, which Settings hides from devices{{else}}; Settings can lock or hide such channels{{end}}">{{if .E.AdultLocked}}{{template "i-lock"}}{{else if .E.AdultHidden}}{{template "i-eye-off"}}{{end}}For adults</span>{{end}}
     {{- $repair := .RepairChoice}}
     {{- if eq $repair "on"}}<span class="badge accent" title="{{if .CanRepair}}Its stream goes through ffmpeg{{else}}Set to be repaired, but there is no ffmpeg to run{{end}}">{{template "i-repair"}}Repair</span>
     {{- else if eq $repair "off"}}<span class="badge" title="Its stream plays as the source sends it, whatever the default">{{template "i-repair"}}No repair</span>{{end}}

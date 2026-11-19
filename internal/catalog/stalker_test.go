@@ -151,3 +151,35 @@ func TestStalkerPortalRefusals(t *testing.T) {
 		t.Errorf("recorded error %q", src.RefreshError)
 	}
 }
+
+// A portal's mark for adults, on a channel or on its genre, marks the
+// channel, which the setting can then lock (D86).
+func TestStalkerPortalAdultMarks(t *testing.T) {
+	p := stalkertest.New(t)
+	p.Censored = []string{"101", "20"} // Example News, and the Sports genre
+	r, st, _ := newPortalRefresher(t)
+	r.UseStalker(stalker.NewPool(nil))
+	ctx := context.Background()
+	settings := portalSource(p)
+	id, err := st.AddSource(ctx, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Refresh(ctx, settings, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAdultMarks(ctx, store.AdultLock); err != nil {
+		t.Fatal(err)
+	}
+	channels, err := st.LineupChannels(ctx, store.DefaultLineupID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	locked := map[string]bool{}
+	for _, c := range channels {
+		locked[c.Name] = c.Locked
+	}
+	if want := map[string]bool{"Example News": true, "Example Sports": true, "Example Weather": false}; !reflect.DeepEqual(locked, want) {
+		t.Errorf("locked %v, want %v", locked, want)
+	}
+}

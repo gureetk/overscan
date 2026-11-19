@@ -29,7 +29,8 @@ const (
 		 "episode_run_time":96},
 		{"num":3,"name":"No ID","stream_id":0},
 		"not an object",
-		{"num":4,"name":"Odd","stream_id":5004,"rating":"6,5","added":"soon","container_extension":"../x","year":"twenty"},
+		{"num":4,"name":"Odd","stream_id":5004,"rating":"6,5","added":"soon","container_extension":"../x","year":"twenty",
+		 "is_adult":"1"},
 		{"num":5,"name":"   ","stream_id":5005}
 	]`
 
@@ -96,7 +97,7 @@ func TestMovies(t *testing.T) {
 			Added: time.Unix(1767225600, 0).UTC(), Container: "mkv"},
 		{ID: 5002, Name: "Quiet Harbour", CategoryID: "22", Rating: 80, Year: 2019, Added: time.Unix(1767312000, 0).UTC(),
 			Container: "mp4", Runtime: 96, Plot: "A harbour, quietly.", Genre: "Drama", Cast: "A. Actor", Director: "D. Rector"},
-		{ID: 5004, Name: "Odd", Rating: 65},
+		{ID: 5004, Name: "Odd", Rating: 65, Adult: true},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got  %+v\nwant %+v", got, want)

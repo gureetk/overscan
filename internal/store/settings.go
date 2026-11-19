@@ -36,7 +36,23 @@ const (
 	// source's server, which transcodes them (D71); on until it is set
 	// (D78).
 	settingServerTranscodes = "server_transcodes"
+
+	// settingAdultMarks is what the marks that sources put on channels and
+	// titles for adults do: AdultLock or AdultHide; nothing until it is set
+	// (D86).
+	settingAdultMarks = "adult_marks"
 )
+
+// What a source's mark for adults does (D86).
+const (
+	AdultNothing = "nothing" // nothing: channels and titles marked for adults are as any other
+	AdultLock    = "lock"    // they are locked, as if the administrator had locked them (D55, D85)
+	AdultHide    = "hide"    // devices do not see them
+)
+
+// adultMarksSQL is what marks for adults do, as SQL: AdultNothing, AdultLock
+// or AdultHide.
+const adultMarksSQL = `COALESCE((SELECT value FROM settings WHERE key = '` + settingAdultMarks + `'), '` + AdultNothing + `')`
 
 // MaxTranscodes is the most films and episodes whose video the server may
 // be set to transcode at once (D73).
@@ -149,6 +165,25 @@ func (s *Store) ServerTranscodes(ctx context.Context) (bool, error) {
 // cannot play go through their source's server where it transcodes.
 func (s *Store) SetServerTranscodes(ctx context.Context, on bool) error {
 	return s.setSetting(ctx, settingServerTranscodes, onOff(on))
+}
+
+// AdultMarks returns what the marks that sources put on channels and titles
+// for adults do: AdultNothing until it is set, AdultLock or AdultHide (D86).
+func (s *Store) AdultMarks(ctx context.Context) (string, error) {
+	v, _, err := s.setting(ctx, settingAdultMarks)
+	if v != AdultLock && v != AdultHide {
+		v = AdultNothing
+	}
+	return v, err
+}
+
+// SetAdultMarks sets what marks for adults do: AdultNothing, AdultLock or
+// AdultHide.
+func (s *Store) SetAdultMarks(ctx context.Context, v string) error {
+	if v != AdultNothing && v != AdultLock && v != AdultHide {
+		return fmt.Errorf("store: marks for adults: %q is not %s, %s or %s", v, AdultNothing, AdultLock, AdultHide)
+	}
+	return s.setSetting(ctx, settingAdultMarks, v)
 }
 
 // onOff writes a switch as a setting's value.
