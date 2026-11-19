@@ -63,6 +63,23 @@ func TestTMDB(t *testing.T) {
 	if f, m, err := s.TMDBCounts(ctx); err != nil || f != 1 || m != 1 {
 		t.Errorf("counts %d %d, %v", f, m, err)
 	}
+	// A new language makes every title due again, keeping what TMDB said;
+	// the same language again changes nothing.
+	if err := s.SetTMDBLanguage(ctx, "fr-FR"); err != nil {
+		t.Fatal(err)
+	}
+	if one, _, _ := s.TMDBTitleOf(ctx, ids["one"], KindMovie, "k"); one.ID != 7 || !one.CheckedAt.Equal(time.Unix(0, 0)) {
+		t.Errorf("after a new language %+v", one)
+	}
+	if err := s.SetTMDBTitle(ctx, ids["one"], KindMovie, "k", found); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetTMDBLanguage(ctx, "fr-FR"); err != nil {
+		t.Fatal(err)
+	}
+	if one, _, _ := s.TMDBTitleOf(ctx, ids["one"], KindMovie, "k"); !one.CheckedAt.Equal(at) {
+		t.Errorf("after the same language %+v", one)
+	}
 
 	if err := s.SetTMDBKey(ctx, ""); err != nil {
 		t.Fatal(err)

@@ -35,6 +35,24 @@ func (l *Library) ReadFolderAgain(ctx context.Context, dir string) {
 	}
 }
 
+// ReadFoldersAgain reads again the lists of films and of series of every
+// enabled folder source, so that a new key for TMDB, or a new language,
+// takes effect at once (D88). It does not wait for the reads.
+func (l *Library) ReadFoldersAgain(ctx context.Context) {
+	sources, err := l.store.Sources(ctx)
+	if err != nil {
+		l.log.Warn("cannot list the sources to read the folders again", "error", err)
+		return
+	}
+	for _, src := range sources {
+		if src.Enabled && src.Type == source.TypeFolder {
+			for _, kind := range []string{store.KindMovie, store.KindSeries} {
+				l.readAgain(src, kind)
+			}
+		}
+	}
+}
+
 // readAgain starts a new read of a source's list, after the one under way,
 // if any, which may have begun before the change.
 func (l *Library) readAgain(src store.Source, kind string) {

@@ -201,7 +201,7 @@
   <section class="panel" aria-labelledby="tmdb-title">
     <div class="panel-title"><span class="tile-icon">{{template "i-film"}}</span><h2 id="tmdb-title">Details from TMDB</h2>{{if .Data.TMDBKeySet}}<span class="badge ok">On</span>{{else}}<span class="badge">Off</span>{{end}}</div>
     {{- if .Data.TMDBKeySet}}
-    <p>Films and series in folders that lack a poster or a plot get them, with their cast and rating, from The Movie Database (TMDB). What a folder has comes first. {{if or .Data.TMDBFound .Data.TMDBMissed}}TMDB found {{.Data.TMDBFound}} {{plural .Data.TMDBFound "title"}}, and had no match for {{.Data.TMDBMissed}}.{{else}}None has been looked up yet: TMDB is asked as boxes open Movies and Series.{{end}}</p>
+    <p>Films and series in folders that lack a poster or a plot get them, with their cast and rating, from The Movie Database (TMDB). What a folder has comes first. {{if or .Data.TMDBFound .Data.TMDBMissed}}TMDB found {{.Data.TMDBFound}} {{plural .Data.TMDBFound "title"}}, and had no match for {{.Data.TMDBMissed}}.{{else}}None has been looked up yet: TMDB is asked in the background after each read of a folder, which saving the key starts.{{end}}</p>
     {{- else}}
     <p>Off: films and series in folders show what their names, .nfo files and pictures say. With a key of your own from The Movie Database (TMDB), those that lack a poster or a plot get them from it.</p>
     {{- end}}

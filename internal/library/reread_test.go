@@ -37,3 +37,24 @@ func TestReadFolderAgain(t *testing.T) {
 	}
 	t.Errorf("shelves %v", shelfTitles(t, st, store.KindMovie))
 }
+
+// A change to TMDB's settings reads every folder again (D88).
+func TestReadFoldersAgain(t *testing.T) {
+	l, st, dir := newFolderLibrary(t)
+	ctx := context.Background()
+	if _, err := l.Want(ctx, store.KindMovie, 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "Quiet Hills (2020).mkv"), []byte("video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	l.ReadFoldersAgain(ctx)
+	want := []string{"Calm Water", "Quiet Hills", "The Long Field"}
+	for range 200 {
+		if got := shelfTitles(t, st, store.KindMovie)["Home Films"]; reflect.DeepEqual(got, want) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Errorf("shelves %v", shelfTitles(t, st, store.KindMovie))
+}

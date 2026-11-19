@@ -86,8 +86,22 @@ func (s *Store) TMDBLanguage(ctx context.Context) (string, error) {
 }
 
 // SetTMDBLanguage sets the language that TMDB is asked in; "" for its own.
+// A new language makes every title due to be asked about again, keeping
+// what TMDB said until it answers.
 func (s *Store) SetTMDBLanguage(ctx context.Context, language string) error {
-	return s.setSetting(ctx, settingTMDBLanguage, language)
+	old, err := s.TMDBLanguage(ctx)
+	if err != nil {
+		return err
+	}
+	if err := s.setSetting(ctx, settingTMDBLanguage, language); err != nil {
+		return err
+	}
+	if old != language {
+		if _, err := s.db.ExecContext(ctx, `UPDATE tmdb_titles SET checked_at = 0`); err != nil {
+			return fmt.Errorf("store: TMDB's language: %w", err)
+		}
+	}
+	return nil
 }
 
 // TMDBEpisode is what TMDB says of an episode of a series.
