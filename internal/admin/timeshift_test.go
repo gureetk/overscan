@@ -50,6 +50,45 @@ func TestTimeshift(t *testing.T) {
 	}
 }
 
+// TestSharedTuner turns the shared tuner on and off from the Settings page
+// and the API (D93).
+func TestSharedTuner(t *testing.T) {
+	ta := newTestAdmin(t)
+	c, h := ta.withLineup()
+	csrf := h[1]
+	hx := []string{"HX-Request", "true"}
+	ctx := context.Background()
+
+	page := ta.do("GET", "/admin/settings", nil, c).Body.String()
+	mustContain(t, "off", page, "Shared tuner", "Off: each screen that plays a channel has a connection of its own",
+		"is between you and your provider")
+
+	answer := ta.do("POST", "/admin/settings/shared", lineupForm(csrf, "", "shared", "1"), c, hx...)
+	mustContain(t, "on", answer.Body.String(),
+		"Screens that play the same channel share one connection to its source, from the next channel they play.",
+		"Boxes, Stalker clients and recordings that play the same channel share one connection to its source",
+		`id="shared-tuner" name="shared" value="1" checked`)
+	if on, _ := ta.st.SharedTuner(ctx); !on {
+		t.Error("the shared tuner is off")
+	}
+
+	for _, on := range []bool{false, true} {
+		rec := ta.apiDo("PATCH", "settings", map[bool]string{true: `{"shared_tuner": true}`, false: `{"shared_tuner": false}`}[on], c, h...)
+		var v apiSettings
+		if err := json.Unmarshal(rec.Body.Bytes(), &v); err != nil || v.SharedTuner != on {
+			t.Errorf("shared_tuner %v: status %d, %s", on, rec.Code, rec.Body)
+		}
+	}
+	apiErrorOf(t, ta.apiDo("PATCH", "settings", `{"shared_tuner": "yes"}`, c, h...), http.StatusBadRequest, "bad_json")
+
+	answer = ta.do("POST", "/admin/settings/shared", lineupForm(csrf, "", "", ""), c, hx...)
+	mustContain(t, "off again", answer.Body.String(),
+		"Each screen that plays a channel has a connection of its own to the source, from the next channel it plays.")
+	if on, _ := ta.st.SharedTuner(ctx); on {
+		t.Error("the shared tuner is on after turning it off")
+	}
+}
+
 func TestMinutesText(t *testing.T) {
 	for minutes, want := range map[int]string{1: "a minute", 15: "15 minutes", 60: "an hour", 90: "90 minutes", 120: "2 hours"} {
 		if got := minutesText(minutes); got != want {

@@ -44,6 +44,26 @@ func (a *Admin) timeshiftForm(w http.ResponseWriter, r *http.Request, s store.Ad
 	a.settingsDone(w, r, s, a.setTimeshift(r.Context(), minutes), done)
 }
 
+// setSharedTuner sets whether one connection to a source serves every
+// screen that plays a channel (D93).
+func (a *Admin) setSharedTuner(ctx context.Context, on bool) error {
+	if err := a.store.SetSharedTuner(ctx, on); err != nil {
+		return err
+	}
+	a.log.Info("the shared tuner set in the admin", "shared_tuner", on)
+	return nil
+}
+
+// sharedForm sets the shared tuner from the Settings page.
+func (a *Admin) sharedForm(w http.ResponseWriter, r *http.Request, s store.AdminSession) {
+	on := r.PostFormValue("shared") != ""
+	done := "Each screen that plays a channel has a connection of its own to the source, from the next channel it plays."
+	if on {
+		done = "Screens that play the same channel share one connection to its source, from the next channel they play."
+	}
+	a.settingsDone(w, r, s, a.setSharedTuner(r.Context(), on), done)
+}
+
 // TimeshiftChoices returns the minutes that the Settings page offers to
 // keep, with the ones set if it is another.
 func (d settingsData) TimeshiftChoices() []int {

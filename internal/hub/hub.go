@@ -143,6 +143,7 @@ type Hub struct {
 	mu          sync.Mutex
 	sessions    map[uint64]*session // by token nonce
 	unrelayable map[int64]time.Time // channels whose HLS the relay could not follow, by ID, until when (D61)
+	shared      map[int64]*session  // the shared tuners that run, by channel ID (D93)
 }
 
 // New returns a hub for the given sources, keyed by store ID. Its signing
@@ -175,6 +176,7 @@ func New(st *store.Store, log *slog.Logger, version string, sources map[int64]So
 		encodes:    map[int64]int{},
 
 		unrelayable: map[int64]time.Time{},
+		shared:      map[int64]*session{},
 	}
 	h.SetSources(sources)
 	return h
@@ -284,7 +286,7 @@ func (h *Hub) Available(sourceID, deviceID int64) bool {
 	now := h.now()
 	others := 0
 	for _, s := range h.sessions {
-		if s.sourceID == sourceID && s.deviceID != deviceID && s.holds(now) {
+		if s.sourceID == sourceID && h.holding(s, now) && !h.owns(s, deviceID, now) {
 			others++
 		}
 	}
@@ -322,6 +324,10 @@ type Stream struct {
 	// Timeshift is a box's live channel that plays through a timeshift
 	// buffer (D92).
 	Timeshift bool
+	// Shared is a channel that plays from a shared tuner, whose one
+	// connection to the source serves every screen that plays the channel
+	// (D93).
+	Shared bool
 	// Programme is, for a past programme, its title, and Aired when it
 	// began.
 	Programme string
@@ -341,13 +347,20 @@ func (h *Hub) Streams() []Stream {
 	now := h.now()
 	out := make([]Stream, 0, len(h.sessions))
 	for _, s := range h.sessions {
-		if s.ended {
-			continue
+		if s.ended || s.shared {
+			continue // a shared tuner shows as its screens
+		}
+		// A screen on a shared tuner shows what the tuner takes from the
+		// source.
+		from := s
+		if s.tuner != nil {
+			from = s.tuner
 		}
 		st := Stream{
 			Kind: PlaysChannel, DeviceID: s.deviceID, EntryID: s.entryID, SourceID: s.sourceID, Source: h.source(s.sourceID).Name,
-			Channel: s.channel, Started: s.started, Bytes: s.bytes.Load(), HLS: s.hls, Repaired: s.repairing.Load() > 0,
-			Converted: s.converting.Load() > 0, Playing: s.active(now), Timeshift: s.shift != nil,
+			Channel: s.channel, Started: s.started, Bytes: from.bytes.Load(), HLS: from.hls, Repaired: from.repairing.Load() > 0,
+			Converted: s.converting.Load() > 0, Playing: s.active(now), Timeshift: s.shift != nil || s.canShift,
+			Shared: s.tuner != nil,
 		}
 		switch {
 		case s.transcoding.Load() > 0:
@@ -468,8 +481,19 @@ type session struct {
 	aired     time.Time
 
 	// shift is, for a box's live channel while timeshift is on, the
-	// buffer that it plays through (D92); nil otherwise.
+	// buffer that it plays through (D92), and for a shared tuner, the
+	// buffer that its screens play from (D93); nil otherwise.
 	shift *shift
+
+	// tuner is, for a screen that plays a channel from a shared tuner
+	// (D93), the tuner's own session, whose buffer it plays from; nil
+	// otherwise. canShift says that the screen may go back in that
+	// buffer, as a box's link may while timeshift is on (D92).
+	tuner    *session
+	canShift bool
+	// shared marks a shared tuner's own session (D93): it plays its
+	// channel from the source into its buffer for the screens in screens.
+	shared bool
 
 	started   time.Time
 	repair    bool // its channel is set to be repaired (D57)
@@ -487,7 +511,8 @@ type session struct {
 	resources  map[int]string // HLS segments, playlists and keys by index
 	indexes    map[string]int // and back
 	next       int
-	turn       *fileTurn // a film's or an episode's request to its source now, nil if none
+	turn       *fileTurn  // a film's or an episode's request to its source now, nil if none
+	screens    []*session // for a shared tuner, the screens that play from it (D93)
 }
 
 // fileTurn is a request of a film's or an episode's session to its source.
@@ -533,6 +558,15 @@ func (t *fileTurn) finish() {
 	close(t.done)
 }
 
+// buffer returns the buffer that s plays from: its own timeshift buffer
+// (D92), its shared tuner's (D93), or nil.
+func (s *session) buffer() *shift {
+	if s.tuner != nil {
+		return s.tuner.shift
+	}
+	return s.shift
+}
+
 // grace returns how long s keeps its token valid after it stops.
 func (s *session) grace() time.Duration {
 	if s.kind != kindEntry {
@@ -557,9 +591,10 @@ func (s *session) active(now time.Time) bool {
 		return false
 	}
 	// A box keeps its timeshift buffer while it is paused with its
-	// requests' holds (D92).
+	// requests' holds (D92), and so does a box that can go back in a
+	// shared tuner's (D93).
 	return s.streams > 0 || (s.hls && now.Sub(s.lastActive) < idleTimeout) ||
-		(s.shift != nil && now.Sub(s.lastActive) < reconnectGrace)
+		((s.shift != nil || s.canShift) && now.Sub(s.lastActive) < reconnectGrace)
 }
 
 // holds reports whether s holds one of its source's connections: a player
@@ -572,7 +607,13 @@ func (s *session) holds(now time.Time) bool {
 // needs h.mu.
 func (h *Hub) sweep(now time.Time) {
 	for _, s := range h.sessions {
-		if !s.active(now) && now.Sub(s.lastActive) > s.grace() {
+		switch {
+		case s.shared:
+			// A shared tuner ends with its last screen (D93).
+			if len(s.screens) == 0 {
+				h.end(s, "no screen plays it any more")
+			}
+		case !s.active(now) && now.Sub(s.lastActive) > s.grace():
 			h.end(s, "stopped")
 		}
 	}
@@ -592,8 +633,27 @@ func (h *Hub) end(s *session, reason string) {
 		s.shift.close()
 	}
 	delete(h.sessions, s.nonce)
+	if s.shared {
+		// A shared tuner's screens end with it (D93).
+		if h.shared[s.channelID] == s {
+			delete(h.shared, s.channelID)
+		}
+		for _, v := range slices.Clone(s.screens) {
+			h.end(v, reason)
+		}
+		h.log.Info("a shared channel's stream ended", "channel", s.channel, "source", h.source(s.sourceID).Name,
+			"reason", reason, "duration", h.now().Sub(s.started).Round(time.Second), "bytes", s.bytes.Load())
+		return
+	}
 	h.log.Info("stream ended", s.what(), s.channel, "source", h.source(s.sourceID).Name, "device", s.deviceID,
 		"reason", reason, "duration", h.now().Sub(s.started).Round(time.Second), "bytes", s.bytes.Load())
+	if t := s.tuner; t != nil {
+		// The tuner ends with its last screen.
+		t.screens = slices.DeleteFunc(t.screens, func(v *session) bool { return v == s })
+		if len(t.screens) == 0 && !t.ended {
+			h.end(t, "no screen plays it any more")
+		}
+	}
 }
 
 // admit returns the session that c starts, opening it as s says if it is
@@ -604,7 +664,7 @@ func (h *Hub) admit(c claims, s *session) (*session, error) {
 	defer h.mu.Unlock()
 	now := h.now()
 	h.sweep(now)
-	if open, ok := h.sessions[c.nonce]; ok {
+	if open, ok := h.sessions[c.nonce]; ok && !open.shared {
 		return open, nil
 	}
 	if !h.makeRoom(s.sourceID, c.deviceID, now) {
@@ -631,14 +691,17 @@ func (h *Hub) makeRoom(sourceID, deviceID int64, now time.Time) bool {
 	if limit == 0 {
 		return true
 	}
+	// A shared tuner that no screen plays from holds its connection for no
+	// one (D93).
+	h.endIdleTuners(sourceID, now)
 	count := 0
 	var own *session
 	for _, o := range h.sessions {
-		if o.sourceID != sourceID || !o.holds(now) {
+		if o.sourceID != sourceID || !h.holding(o, now) {
 			continue
 		}
 		count++
-		if o.deviceID == deviceID && (own == nil || o.started.Before(own.started)) {
+		if h.owns(o, deviceID, now) && (own == nil || o.started.Before(own.started)) {
 			own = o
 		}
 	}
@@ -647,7 +710,7 @@ func (h *Hub) makeRoom(sourceID, deviceID int64, now time.Time) bool {
 		count--
 		own = nil
 		for _, o := range h.sessions {
-			if o.sourceID == sourceID && o.holds(now) && o.deviceID == deviceID &&
+			if o.sourceID == sourceID && h.holding(o, now) && h.owns(o, deviceID, now) &&
 				(own == nil || o.started.Before(own.started)) {
 				own = o
 			}
@@ -760,7 +823,7 @@ func (h *Hub) lookup(nonce uint64) *session {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.sweep(h.now())
-	if s, ok := h.sessions[nonce]; ok && !s.ended {
+	if s, ok := h.sessions[nonce]; ok && !s.ended && !s.shared {
 		return s
 	}
 	return nil
@@ -818,7 +881,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.holdOrStop(w, s, q.Get("stop") != "")
 		return
 	}
-	if s != nil && s.shift != nil {
+	if s != nil && s.buffer() != nil {
 		h.serveShift(w, r, s)
 		return
 	}
@@ -860,6 +923,19 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.log.Error("cannot look up a channel to play", "entry", c.entryID, "error", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
+		}
+		// While the shared tuner is on, a continuous stream comes from
+		// the channel's tuner, which every screen on it shares (D93).
+		if continuous && h.sharable(entry) && h.sharing(r.Context()) {
+			s, err := h.openShared(r.Context(), c, token, entry)
+			switch {
+			case err == nil:
+				h.serveShift(w, r, s)
+				return
+			case !errors.Is(err, errNotShared):
+				h.resolveFailed(w, r, "channel", entry.Name, entry.SourceID, c.deviceID, err)
+				return
+			}
 		}
 		opening := &session{token: token, channelID: entry.ChannelID, sourceID: entry.SourceID,
 			channel: entry.Name, streamURL: entry.StreamURL, repair: entry.Repair, repairHLS: entry.RepairHLS}

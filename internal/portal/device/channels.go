@@ -193,7 +193,7 @@ func (a *API) play(w http.ResponseWriter, r *http.Request, d store.Device) {
 	if entry.Locked && acct.PINHash != "" && !a.pinOK(w, r, d, acct, req.PIN) {
 		return
 	}
-	if !a.hub.Available(entry.SourceID, d.ID) {
+	if !a.hub.AvailableChannel(r.Context(), entry, d.ID) {
 		writeError(w, http.StatusServiceUnavailable, errLimit)
 		return
 	}

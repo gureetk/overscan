@@ -154,6 +154,20 @@
     <p class="hint">What a box watches goes in the data directory while it watches, up to about 1 GB for each 15 minutes of an HD channel, and the server goes on reading the channel from its source while the box is paused.</p>
   </section>
 
+  <section class="panel" id="shared" aria-labelledby="shared-title">
+    <div class="panel-title"><span class="tile-icon">{{template "i-sources"}}</span><h2 id="shared-title">Shared tuner</h2>{{if .Data.SharedTuner}}<span class="badge ok">On</span>{{else}}<span class="badge">Off</span>{{end}}</div>
+    <form method="post" action="/admin/settings/shared" hx-post="/admin/settings/shared" hx-trigger="change" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" class="switch-row">
+      <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+      <input class="switch" type="checkbox" id="shared-tuner" name="shared" value="1"{{if .Data.SharedTuner}} checked{{end}} aria-describedby="shared-tuner-text">
+      <div>
+        <label for="shared-tuner">Share a channel between screens</label>
+        <p id="shared-tuner-text">{{if .Data.SharedTuner}}Boxes, Stalker clients and recordings that play the same channel share one connection to its source, which counts once against the source's limit. A box can record the channel it plays on a source that allows one stream.{{else}}Off: each screen that plays a channel has a connection of its own to the source, and counts against the source's limit.{{end}}</p>
+        <noscript><button class="small" type="submit">Save</button></noscript>
+      </div>
+    </form>
+    <p class="hint">Whether your provider lets several screens share one connection is between you and your provider: check its terms before you turn this on. A shared channel's last seconds go in the data directory while it plays. Channels whose address is HLS, and radio stations, keep a connection for each screen.</p>
+  </section>
+
   <section class="panel" id="recordings" aria-labelledby="recordings-title">
     <div class="panel-title"><span class="tile-icon">{{template "i-record"}}</span><h2 id="recordings-title">Recordings</h2>{{if and .Data.CanRecord .Data.RecordingsCap}}<span class="badge ok">On</span>{{else}}<span class="badge">Off</span>{{end}}</div>
     {{- if not .Data.CanRecord}}

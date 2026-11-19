@@ -242,7 +242,7 @@ Comes in M3, with movies and series (D48).
 - The hub resolves the real upstream address only when the URL is requested.
 - Sessions are counted per source against its connection limit (and, from M6, per account against the account's limit). They close when the client disconnects, on idle timeout, or on watchdog silence for redirected streams.
 - VOD supports HTTP range requests for seeking when proxied. Remuxed or transcoded VOD has no byte positions to seek in: restart ffmpeg at the new position first (simple), and add HLS VOD playlists cut at keyframes only if that proves too slow.
-- "Shared tuner" mode (off by default): several local viewers of the same live channel share one upstream connection.
+- "Shared tuner" mode (off by default): several local viewers of the same live channel share one upstream connection. **In place (D93):** a channel's tuner plays it once into a buffer on disk, which every box, Stalker client and recording on the channel reads.
 - A stretch that a source sends again, after a restart on its side, is left out of every continuous stream, so a player gets each moment once (D43).
 - Failover (M6): a merged lineup channel tries its next stream when one fails or its source is at its limit. A backup stream picked by hand for a channel can come earlier, for a household with a second provider.
 
@@ -492,7 +492,7 @@ Each phase ends with a pre-release of v0.3.0 (`v0.3.0-alpha.N`), as M3's phases 
 
 ### M5: Households (M)
 Each phase ends with a pre-release of v0.4.0 (`v0.4.0-alpha.N`), as M4's did with v0.3.0. In this order:
-- Shared-tuner mode (section 20, open question 1), off by default: one connection to a source serves every local viewer of a channel, whether boxes, Stalker clients or recordings, and counts once against the source's limit. Sharing a connection between screens is between the subscriber and their provider (section 2).
+- Shared-tuner mode (section 20, open question 1), off by default: one connection to a source serves every local viewer of a channel, whether boxes, Stalker clients or recordings, and counts once against the source's limit. Sharing a connection between screens is between the subscriber and their provider (section 2). **In place:** a setting on the *Settings* page that starts off; while it is on, a channel's tuner plays it from its source into a buffer on disk, as timeshift's does, and every screen on the channel reads the buffer, counting once against the source's limit, so that a box can record the channel it plays on a source that allows one stream (D93).
 - Several profiles per account, switchable on the box, each with its own favourites, resume points, language and time zone. A household that adds no profile sees no change.
 - Expiry: the administrator sets the account's end date; past it, boxes and Stalker clients play nothing.
 - Messages and events: the administrator sends a message to one box or to every box, which shows it once.
@@ -652,10 +652,11 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 - The Stalker API serves series in a `series` module of their own, a series' seasons read when a client opens it (D74), and Stalker clients play films and episodes as they are (D75).
 - An upstream Stalker portal is a source of live channels and guides, read as the box that the provider registered, in one session that its streams keep alive (D76).
 - A Stalker portal's films and series are read a page at a time as devices browse them, each of its categories a shelf of its own (D77).
+- Shared-tuner mode: one connection to a source serves every screen on a channel, behind a setting that starts off (D93).
 
 **Open**
 
-1. Shared-tuner mode: include at all, and off by default? The lean is yes, off by default, in M5; it also saves an upstream connection when two screens watch the same channel.
+1. Answered: shared-tuner mode is in, off by default, the subscriber's call (D93).
 2. A native Overscan source type in the reference client later, or is the Xtream output (M6) enough?
 3. GitHub organization: move the repository before it goes public? This no longer blocks code, since the module path does not depend on it.
 4. Answered: lineups and packages are one concept (D45).
