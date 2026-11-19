@@ -316,3 +316,82 @@ func TestFilmsThroughTheHub(t *testing.T) {
 		t.Errorf("the log shows the box or a link:\n%s", l)
 	}
 }
+
+// A portal's past programme plays through the hub: the hub asks the portal
+// for its link as it starts, after the channel's guide of the day finds it
+// in the archive, and again when the link lapses (D84).
+func TestArchiveThroughTheHub(t *testing.T) {
+	p := stalkertest.New(t)
+	now := time.Date(2026, 12, 4, 10, 30, 0, 0, time.UTC)
+	p.Now = func() time.Time { return now }
+	p.OneUseFileLinks = true
+	st, pool, id, logs := setup(t, p, 1)
+	ctx := context.Background()
+	log := slog.New(slog.NewTextHandler(logs, nil))
+	h := hub.New(st, log, "test", map[int64]hub.Source{id: {Name: "main", MaxConnections: 1, Resolves: true}})
+	h.UseResolver(New(st, pool, log))
+	front := httptest.NewServer(h)
+	t.Cleanup(front.Close)
+	lineup, err := st.LineupChannels(ctx, store.DefaultLineupID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sports store.ArchiveEntry
+	for _, c := range lineup {
+		if c.Name == "Example Sports" {
+			if sports, err = st.PlayableArchive(ctx, c.EntryID); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if sports.Portal != "102" || sports.Days != 1 {
+		t.Fatalf("Example Sports: %+v", sports)
+	}
+	aired := time.Date(2026, 12, 4, 5, 0, 0, 0, time.UTC)
+	path, _ := h.ArchiveLink(7, sports.PlayableEntry, aired, aired.Add(2*time.Hour))
+	want := stalkertest.Content(stalkertest.ProgrammeID("102", aired))
+	ranged := func(from, to int) []byte {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodGet, front.URL+path, nil)
+		req.Header.Set("Range", "bytes="+strconv.Itoa(from)+"-"+strconv.Itoa(to))
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusPartialContent {
+			t.Fatalf("status %s: %s", resp.Status, b)
+		}
+		return b
+	}
+	if got := ranged(0, 99); !bytes.Equal(got, want[:100]) {
+		t.Errorf("from the start: %q", got)
+	}
+	// The player seeks, and the first link has lapsed.
+	if got := ranged(9000, 9099); !bytes.Equal(got, want[9000:9100]) {
+		t.Errorf("further on: %q", got)
+	}
+	if n := p.Calls("tv_archive/create_link"); n != 2 {
+		t.Errorf("%d links, want 2", n)
+	}
+	streams := h.Streams()
+	if len(streams) != 1 || streams[0].Kind != hub.PlaysArchive || !streams[0].Aired.Equal(aired) {
+		t.Errorf("streams %+v", streams)
+	}
+
+	// A programme that the archive does not hold gives no link.
+	path, _ = h.ArchiveLink(7, sports.PlayableEntry, now.Add(-90*time.Minute), now.Add(30*time.Minute))
+	resp, err := http.Get(front.URL + path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Errorf("a programme on now: %s", resp.Status)
+	}
+	if l := logs.String(); strings.Contains(l, stalkertest.MAC) || strings.Contains(l, "token=") ||
+		!strings.Contains(l, "a past programme plays from its source's archive") {
+		t.Errorf("the log:\n%s", l)
+	}
+}

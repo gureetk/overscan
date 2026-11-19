@@ -23,6 +23,14 @@ import (
 // It returns a token of an approved box.
 func (h *harness) withPortal(p *stalkertest.Portal) string {
 	h.t.Helper()
+	token, _, _ := h.withPortalSource(p)
+	return token
+}
+
+// withPortalSource is withPortal, which also returns the portal's source
+// and the pool that holds its session.
+func (h *harness) withPortalSource(p *stalkertest.Portal) (string, int64, *stalker.Pool) {
+	h.t.Helper()
 	ctx := context.Background()
 	src, err := h.store.AddSource(ctx, source.Settings{Name: "portal", Type: source.TypeStalker,
 		URL: p.URL + "/stalker_portal/c/", Device: source.Device{MAC: stalkertest.MAC}})
@@ -50,9 +58,10 @@ func (h *harness) withPortal(p *stalkertest.Portal) string {
 	mux := http.NewServeMux()
 	mux.Handle(Prefix, h.api)
 	mux.Handle("GET /vod/", hb)
+	mux.Handle("GET /archive/", hb)
 	h.front.Config.Handler = mux
 	h.approve(macA)
-	return h.session(macA).Token
+	return h.session(macA).Token, src, pool
 }
 
 // A portal's shelf comes a part at a time, which says where the next one

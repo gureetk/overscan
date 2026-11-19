@@ -36,7 +36,10 @@ func New(st *store.Store, pool *stalker.Pool, log *slog.Logger) *Links {
 // Resolve asks a source's portal for the address that plays ref: for a
 // channel, its cmd, with itv/create_link; for a film or an episode, what
 // its page said plays it (stalker.Play, D77), with vod/create_link, after
-// the film's first file's cmd for a film whose file is asked for apart.
+// the film's first file's cmd for a film whose file is asked for apart;
+// for a past programme, the channel's ID and the programme's start
+// (hub.ArchiveRef, D84), with tv_archive/create_link, after the channel's
+// guide of the day finds the programme in the portal's archive.
 // While the stream plays, its Hold keeps the box's session going with the
 // portal's keep-alive (section 7 of the protocol notes). A portal that
 // gives no link because the box plays as many streams as it may gives an
@@ -69,6 +72,12 @@ func (l *Links) Resolve(ctx context.Context, sourceID int64, kind, ref string) (
 		if err == nil {
 			address, err = client.VODLink(ctx, cmd, p.Episode)
 		}
+	case hub.PlaysArchive:
+		channel, start, ok := hub.ParseArchiveRef(ref)
+		if !ok {
+			return hub.Resolved{}, errors.New("the past programme's reference cannot be read")
+		}
+		address, err = client.ArchiveLink(ctx, channel, start)
 	default:
 		return hub.Resolved{}, fmt.Errorf("a Stalker portal cannot play a %s", kind)
 	}

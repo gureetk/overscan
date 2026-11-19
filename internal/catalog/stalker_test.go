@@ -78,8 +78,9 @@ func TestStalkerPortal(t *testing.T) {
 	if err != nil || len(kept) != 3 {
 		t.Fatalf("guide channels: %+v, %v", kept, err)
 	}
-	if channels[1].Number != 2 || kept[1].ArchiveDays != 1 {
-		t.Errorf("Example Sports: number %d, archive %d days", channels[1].Number, kept[1].ArchiveDays)
+	if channels[1].Number != 2 || kept[1].ArchiveDays != 1 || channels[1].ArchiveDays != 1 {
+		t.Errorf("Example Sports: number %d, archive %d days, %d for devices", channels[1].Number, kept[1].ArchiveDays,
+			channels[1].ArchiveDays)
 	}
 	refs, err := st.StreamsByKey(ctx, id, "xtream:") // every key but those
 	if err != nil {

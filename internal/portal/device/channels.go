@@ -223,14 +223,16 @@ type archiveRequest struct {
 }
 
 // archiveResponse says how the box plays a past programme (D81): its
-// stream, which the page seeks in by asking for it from a time, t seconds
-// into the programme, after asking Start where the stream from that time
-// starts; the programme's length, in seconds; and the programme.
+// stream; how the page seeks in it, which Seek says as it does for a film:
+// "restart", by asking for it from a time, t seconds into the programme,
+// after asking Start where the stream from that time starts, or "player",
+// for a Stalker portal's past programme, which the player seeks in itself
+// (D84); the programme's length, in seconds; and the programme.
 type archiveResponse struct {
 	URL       string    `json:"url"`
 	Solution  string    `json:"solution"`
 	Seek      string    `json:"seek"`
-	Start     string    `json:"start"`
+	Start     string    `json:"start,omitempty"`
 	Duration  int64     `json:"duration"`
 	Programme programme `json:"programme"`
 }
@@ -289,8 +291,12 @@ func (a *API) playArchive(w http.ResponseWriter, r *http.Request, d store.Device
 		return
 	}
 	link, start := a.hub.ArchiveLink(d.ID, entry.PlayableEntry, p.Start, p.Stop)
-	writeJSON(w, http.StatusOK, archiveResponse{URL: "http://" + r.Host + link, Solution: "ffrt", Seek: "restart",
-		Start: "http://" + r.Host + start, Duration: int64(p.Stop.Sub(p.Start) / time.Second), Programme: fullProgramme(p)})
+	answer := archiveResponse{URL: "http://" + r.Host + link, Solution: "ffrt", Seek: "restart",
+		Start: "http://" + r.Host + start, Duration: int64(p.Stop.Sub(p.Start) / time.Second), Programme: fullProgramme(p)}
+	if entry.Portal != "" {
+		answer.Solution, answer.Seek, answer.Start = fileSolution, "player", ""
+	}
+	writeJSON(w, http.StatusOK, answer)
 }
 
 // solution returns the box player's solution for a hub link: ffrt, for

@@ -158,6 +158,34 @@ func TestPlayableArchive(t *testing.T) {
 	}
 }
 
+// A Stalker portal's channel with an archive plays it through the portal,
+// which gives the link of a past programme for the portal's own ID for the
+// channel (D84).
+func TestPlayableArchiveOfAPortal(t *testing.T) {
+	s := openTest(t, newPath(t))
+	ctx := context.Background()
+	ids := addSources(t, s, source.Settings{Name: "main", Type: source.TypeStalker, URL: "http://portal.example/c/",
+		Device: source.Device{MAC: "00:1A:79:00:00:01"}, Numbers: NumbersPlaylist})
+	if _, err := s.ApplyCatalog(ctx, ids["main"], []CatalogChannel{
+		{IdentityKey: source.StalkerKeyPrefix + "102", Name: "Charlie", StreamURL: "ffrt http://localhost/ch/102_", ArchiveDays: 7},
+		{IdentityKey: source.StalkerKeyPrefix + "103", Name: "Delta", StreamURL: "ffrt http://localhost/ch/103_"},
+	}, archiveDay); err != nil {
+		t.Fatal(err)
+	}
+	charlie := entryNamed(t, s, "Charlie")
+	if charlie.ArchiveDays != 7 {
+		t.Errorf("devices see %d days", charlie.ArchiveDays)
+	}
+	a, err := s.PlayableArchive(ctx, charlie.EntryID)
+	if err != nil || a.Portal != "102" || a.Days != 7 || a.Archive.Xtream != nil || a.Archive.Live != "" ||
+		a.StreamURL != "ffrt http://localhost/ch/102_" {
+		t.Errorf("Charlie: %+v, %v", a, err)
+	}
+	if _, err := s.PlayableArchive(ctx, entryNamed(t, s, "Delta").EntryID); !errors.Is(err, ErrNoArchive) {
+		t.Errorf("Delta: %v", err)
+	}
+}
+
 func containsBytes(b []byte, s string) bool {
 	for i := 0; i+len(s) <= len(b); i++ {
 		if string(b[i:i+len(s)]) == s {

@@ -8,16 +8,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"overscan.gureet.ca/internal/catchup"
 	"overscan.gureet.ca/internal/source"
 )
 
-// Catch-up (D81, D82): a channel whose source keeps an archive plays its
-// past programmes from it. An Xtream server's channel plays its archive at
-// the server's timeshift address, made from the source's login as its live
-// address is; a playlist's, as the playlist describes it.
+// Catch-up (D81, D82, D84): a channel whose source keeps an archive plays
+// its past programmes from it. An Xtream server's channel plays its archive
+// at the server's timeshift address, made from the source's login as its
+// live address is; a playlist's, as the playlist describes it; a Stalker
+// portal's, at the link that the portal gives for the programme.
 
 // ErrNoArchive is returned for a channel whose past programmes devices
 // cannot play: its source keeps no archive of it, or Overscan cannot play
@@ -30,8 +32,14 @@ var ErrNoArchive = errors.New("store: the channel has no archive that plays")
 type ArchiveEntry struct {
 	PlayableEntry
 	// Days is how many days back the archive reaches.
-	Days    int
+	Days int
+	// Archive makes the addresses of an Xtream server's or a playlist's
+	// archive.
 	Archive catchup.Archive
+	// Portal is, for a Stalker portal's channel, the portal's own ID for
+	// it, with which the portal gives the link of a past programme (D84);
+	// "" for other sources.
+	Portal string
 }
 
 // PlayableArchive returns the lineup entry with the given ID, if a device
@@ -40,17 +48,17 @@ type ArchiveEntry struct {
 // archive that plays.
 func (s *Store) PlayableArchive(ctx context.Context, entryID int64) (ArchiveEntry, error) {
 	var a ArchiveEntry
-	var ref string
+	var ref, identityKey string
 	var sealed, catchupSealed, sourceSealed []byte
 	var sourceType, setZone, serverZone string
 	err := s.db.QueryRowContext(ctx, `
-		SELECT e.id, e.lineup_id, c.id, c.source_id, COALESCE(e.name, c.name), c.stream_url, c.stream_secret,
+		SELECT e.id, e.lineup_id, c.id, c.source_id, COALESCE(e.name, c.name), c.identity_key, c.stream_url, c.stream_secret,
 			c.catchup_secret, s.type, s.catchup_zone, s.account_time_zone,
 			(SELECT secret FROM source_secrets WHERE source_id = s.id), `+lockedEntry+`,
 			COALESCE(c.repair, `+repairDefaultSQL+`), `+repairHLSSQL+`, `+archiveDaysSQL+
 		lineupEntryJoins+`
 		WHERE e.id = ? AND `+shownEntry,
-		entryID).Scan(&a.EntryID, &a.LineupID, &a.ChannelID, &a.SourceID, &a.Name, &ref, &sealed,
+		entryID).Scan(&a.EntryID, &a.LineupID, &a.ChannelID, &a.SourceID, &a.Name, &identityKey, &ref, &sealed,
 		&catchupSealed, &sourceType, &setZone, &serverZone, &sourceSealed, &a.Locked, &a.Repair, &a.RepairHLS, &a.Days)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ArchiveEntry{}, ErrNotFound
@@ -88,6 +96,12 @@ func (s *Store) PlayableArchive(ctx context.Context, entryID int64) (ArchiveEntr
 			return fail(err)
 		}
 		a.Archive.Zone = archiveZone(setZone, serverZone)
+	case sourceType == source.TypeStalker:
+		id, ok := strings.CutPrefix(identityKey, source.StalkerKeyPrefix)
+		if !ok || id == "" {
+			return ArchiveEntry{}, ErrNoArchive
+		}
+		a.Portal = id
 	case catchupSealed != nil:
 		plain, err := s.open(catchupContext(a.SourceID), catchupSealed)
 		if err != nil {

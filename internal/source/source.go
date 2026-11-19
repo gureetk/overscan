@@ -25,6 +25,10 @@ const (
 	TypeStalker  = "stalker"  // an upstream Stalker portal, read as the box that the provider registered (D76)
 )
 
+// StalkerKeyPrefix starts the identity key of a Stalker portal's channel,
+// before the portal's own ID for it (D76).
+const StalkerKeyPrefix = "stalker:"
+
 // How a source's channels are numbered (D40).
 const (
 	NumbersPlaylist = "playlist" // in the playlist's order

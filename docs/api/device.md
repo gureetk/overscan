@@ -2,7 +2,7 @@
 
 Overscan's own MAG page talks to the server through the device API, a JSON API under `/api/device/v1/` built for the box ([plan](../plan.md), section 9). The page and the server ship together, so the API changes with them. It is not meant for other clients: third-party players have the Stalker API.
 
-Version 0, in M1, covers what the first page needs: a session, the channel list, and playing a channel. M2 adds what the page's new interface needs ([D52](../decisions.md)): the guide, favourites, what the box watched, search, and the box's own settings. M3 adds films and series ([D63](../decisions.md) to [D65](../decisions.md)), plays through ffmpeg those whose sound the box cannot play ([D68](../decisions.md)), checks what each box plays ([D70](../decisions.md)), and has Jellyfin transcode the video it cannot play ([D71](../decisions.md)). M4 adds past programmes from their sources' archives ([D81](../decisions.md)).
+Version 0, in M1, covers what the first page needs: a session, the channel list, and playing a channel. M2 adds what the page's new interface needs ([D52](../decisions.md)): the guide, favourites, what the box watched, search, and the box's own settings. M3 adds films and series ([D63](../decisions.md) to [D65](../decisions.md)), plays through ffmpeg those whose sound the box cannot play ([D68](../decisions.md)), checks what each box plays ([D70](../decisions.md)), and has Jellyfin transcode the video it cannot play ([D71](../decisions.md)). M4 adds past programmes from their sources' archives ([D81](../decisions.md), [D84](../decisions.md)).
 
 ## Conventions
 
@@ -120,6 +120,8 @@ Answers how to play a past programme of a channel from its source's archive ([D8
 ```
 
 The link plays MPEG-TS without byte positions, and is played and sought in as a film's stream through ffmpeg: to play from a time, the page asks `start` with `?t=<seconds>` into the programme, which answers where the stream from that time starts, then plays `url` with `?t=` and that time, and counts the box's positions from it. An archive takes times to the minute, so a stream starts at the whole minute at or before the time asked for, which can be up to 59 seconds before the programme: `start` can answer less than 0. Each new request for the stream ends the one before, and the link's session goes on for six hours after the player stops, as a film's does. `duration` is the programme's length in seconds; the source's stream may run on past it. A source at its connection limit answers `limit`, as for channels.
+
+A Stalker portal's channel plays a past programme at the link that the portal gives for it ([D84](../decisions.md)), which plays the programme from its start. Its answer has `"seek": "player"` and `"solution": "ffmpeg"`, as a film's that plays as it is, and no `start`: the box's player seeks in it itself, with byte ranges that Overscan passes on to the portal.
 
 ### `PUT /api/device/v1/channels/{id}/favourite`, `DELETE` likewise
 
