@@ -947,6 +947,8 @@ paths:
                 adult_marks:
                   type: string
                   enum: [nothing, lock, hide]
+                radio_apart:
+                  type: boolean
       responses:
         "200":
           $ref: "#/components/responses/Settings"
@@ -1672,7 +1674,7 @@ components:
                 type: string
     Channel:
       type: object
-      required: [id, channel_id, source_id, source, number, pinned, name, channel_name, renamed, group_id, group, moved, category, visibility, hidden, missing, locked, group_locked, repair, repair_own, adult]
+      required: [id, channel_id, source_id, source, number, pinned, name, channel_name, renamed, group_id, group, moved, category, visibility, hidden, missing, locked, group_locked, repair, repair_own, adult, radio]
       properties:
         id:
           type: integer
@@ -1736,6 +1738,9 @@ components:
         adult:
           type: boolean
           description: Its source marks it for adults (D86).
+        radio:
+          type: boolean
+          description: Its source lists it as a radio station (D87).
     Visibility:
       type: string
       enum: [group, shown, hidden]
@@ -2154,7 +2159,7 @@ components:
         application/json:
           schema:
             type: object
-            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes, adult_marks]
+            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes, adult_marks, radio_apart]
             properties:
               repair_default:
                 type: boolean
@@ -2195,6 +2200,12 @@ components:
                   What the marks that sources put on channels, films and series
                   for adults do (D86): nothing, at first; lock them, as if the
                   administrator had; or hide them from every device.
+              radio_apart:
+                type: boolean
+                description: >-
+                  Boxes show radio stations on their Radio screen alone, and not
+                  among the channels of Live TV and the guide (D87). Off at
+                  first: they show in both.
     PIN:
       description: Whether the household has a parental PIN.
       content:

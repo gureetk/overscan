@@ -121,6 +121,21 @@
     </form>
   </section>
 
+  <section class="panel" aria-labelledby="radio-title">
+    <div class="panel-title"><span class="tile-icon">{{template "i-radio"}}</span><h2 id="radio-title">Radio</h2></div>
+    <p>{{if .Data.RadioStations}}Your sources list {{.Data.RadioStations}} radio {{plural .Data.RadioStations "station"}}. Boxes play them on their Radio screen.{{else}}None of your sources lists radio stations. Boxes show a Radio screen once one does: an Xtream server lists them among its channels, and a playlist marks them <code>radio="true"</code>.{{end}}</p>
+    <form method="post" action="/admin/settings/radio" hx-post="/admin/settings/radio" hx-trigger="change" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" class="switch-row">
+      <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+      <input class="switch" type="checkbox" id="radio-apart" name="apart" value="1"{{if .Data.RadioApart}} checked{{end}} aria-describedby="radio-apart-text">
+      <div>
+        <label for="radio-apart">Radio apart from TV</label>
+        <p id="radio-apart-text">{{if .Data.RadioApart}}Boxes show radio stations on their Radio screen alone, and not among the channels of Live TV and the TV Guide.{{else}}Off: boxes show radio stations on their Radio screen, and among the channels of Live TV and the TV Guide too.{{end}}</p>
+        <noscript><button class="small" type="submit">Save</button></noscript>
+      </div>
+    </form>
+    <p class="hint">Stalker clients see radio stations among their channels. Radio stations are numbered, grouped, hidden and locked on the <a href="/admin/lineup">Live TV</a> page, as channels are.</p>
+  </section>
+
   <section class="panel" id="account" aria-labelledby="account-title">
     <div class="panel-title"><span class="tile-icon">{{template "i-user"}}</span><h2 id="account-title">Your account</h2></div>
     <p>Signed in as <strong>{{.Session.Username}}</strong> since {{.Session.CreatedAt.Format "2 January 2006, 15:04 UTC"}}.</p>

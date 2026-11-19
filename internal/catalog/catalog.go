@@ -576,6 +576,9 @@ func (r *Refresher) readXtream(ctx context.Context, src source.Settings) (readRe
 			ArchiveDays: min(st.ArchiveDays, maxArchiveDays),
 			Logo:        logo(st.Icon),
 			Adult:       st.Adult,
+			// The Xtream notes take streams of this type for radio
+			// stations (section 3, D87).
+			Radio: st.Type == "radio_streams",
 		}
 		if ch.Name == "" {
 			ch.Name = "Channel " + strconv.Itoa(i+1)
@@ -850,6 +853,8 @@ func channel(e m3u.Entry, header map[string]string, key string, i int) store.Cat
 		Category:    clean(e.Group),
 		XMLTVID:     clean(e.Attrs["tvg-id"]),
 		StreamURL:   e.URL,
+		// radio="true" marks a radio station (playlist notes, D87).
+		Radio: strings.EqualFold(strings.TrimSpace(e.Attrs["radio"]), "true"),
 	}
 	if n, err := strconv.Atoi(e.Attrs["tvg-chno"]); err == nil && n > 0 && n < 100_000 {
 		c.Number = n

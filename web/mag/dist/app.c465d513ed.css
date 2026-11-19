@@ -454,8 +454,13 @@ html.video #app {
           justify-content: space-between;
 }
 
-.big-tile:nth-child(3n) {
+.big-tile.row-end {
   margin-right: 0;
+}
+
+/* Seven buttons, with Radio, go four to a row. */
+.big-tiles.four .big-tile {
+  width: 16.875rem;
 }
 
 .big-tile .tile-name {
@@ -623,6 +628,11 @@ html.video #app {
           align-items: center;
   -webkit-justify-content: center;
           justify-content: center;
+}
+
+.small-tiles.seven .small-tile,
+.small-tiles.seven .small-tile .tile-face {
+  width: 9.25rem;
 }
 
 .small-tile .tile-name {
@@ -909,8 +919,29 @@ html.video #app {
 }
 
 .channel .fav,
-.channel .badge {
+.channel .badge,
+.channel .sound {
   margin-left: 0.625rem;
+}
+
+.accent-teal .channel .sound {
+  color: #3dd9c1;
+}
+
+.accent-white .channel .sound {
+  color: #ffffff;
+}
+
+.accent-blue .channel .sound {
+  color: #4c8dff;
+}
+
+.accent-orange .channel .sound {
+  color: #ff9f45;
+}
+
+.channel.focus .sound {
+  color: #0b0b0d;
 }
 
 .channel.selected {

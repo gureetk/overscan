@@ -44,12 +44,16 @@ export interface Channel {
   locked?: boolean;
   /** How many days back its past programmes play from its source's archive (D81); 0 or missing for none. */
   archive?: number;
+  /** It is a radio station (D87). */
+  radio?: boolean;
 }
 
 export interface Lineup {
   version: string;
   groups: Group[];
   channels: Channel[];
+  /** Radio stations show on the Radio screen alone, and not among the channels (D87). */
+  radio_apart?: boolean;
   favourites: number[];
   recent: number[];
 }

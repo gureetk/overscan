@@ -2,7 +2,8 @@
 
 // The box's lineup as the page shows it: the account's favourites, the
 // channels this box watched, all channels, then the lineup's groups
-// (D52, D53).
+// (D52, D53); and the radio stations among them, for the Radio screen
+// (D87).
 
 import type { Channel, Lineup } from './api';
 
@@ -19,9 +20,18 @@ export interface GroupView {
 
 export class LineupModel {
   version = '';
-  /** By number. */
+  /**
+   * The channels that the lists of channels show, by number: every one, or
+   * with radio apart, those that are not radio stations.
+   */
   channels: Channel[] = [];
   groups: GroupView[] = [];
+  /** The radio stations, by number (D87). */
+  stations: Channel[] = [];
+  /** The Radio screen's lists: the favourite stations, all of them, then the groups that hold any. */
+  radioGroups: GroupView[] = [];
+  /** Radio stations show on the Radio screen alone, and not among the channels. */
+  radioApart = false;
   /** How many digits the highest channel number has. */
   maxDigits = 1;
   /** Lists are by name rather than by number; the recent list stays as it is. */
@@ -33,6 +43,9 @@ export class LineupModel {
 
   private byId: { [id: string]: Channel } = {};
   private byNumber: { [n: string]: Channel } = {};
+  private stationByNumber: { [n: string]: Channel } = {};
+  /** The IDs of the channels that the lists of channels show. */
+  private listed: { [id: string]: boolean } = {};
   private favourites: number[] = [];
   private favouriteSet: { [id: string]: boolean } = {};
   private recent: number[] = [];
@@ -40,13 +53,26 @@ export class LineupModel {
 
   set(l: Lineup): void {
     this.version = l.version;
-    this.channels = l.channels;
+    this.radioApart = !!l.radio_apart;
+    this.channels = [];
+    this.stations = [];
     this.byId = {};
     this.byNumber = {};
+    this.stationByNumber = {};
+    this.listed = {};
     let highest = 0;
     for (let i = 0; i < l.channels.length; i++) {
       const c = l.channels[i]!;
       this.byId[c.id] = c;
+      if (c.radio) {
+        this.stations.push(c);
+        this.stationByNumber[c.number] = c;
+        if (this.radioApart) {
+          continue;
+        }
+      }
+      this.channels.push(c);
+      this.listed[c.id] = true;
       this.byNumber[c.number] = c;
       highest = Math.max(highest, c.number);
     }
@@ -61,25 +87,18 @@ export class LineupModel {
     const groups: GroupView[] = [
       { key: 'fav', name: 'Favourites', channels: [] },
       { key: 'recent', name: 'Recently Watched', channels: [] },
-      { key: 'all', name: 'All Channels', channels: l.channels },
+      { key: 'all', name: 'All Channels', channels: this.channels },
     ];
-    const byGroup: { [id: string]: GroupView } = {};
-    for (let i = 0; i < l.groups.length; i++) {
-      const g = l.groups[i]!;
-      const view: GroupView = { key: 'g' + g.id, name: g.name, channels: [] };
-      byGroup[g.id] = view;
-      groups.push(view);
-    }
-    for (let i = 0; i < l.channels.length; i++) {
-      const c = l.channels[i]!;
-      const view = byGroup[c.group];
-      if (view) {
-        view.channels.push(c);
-      }
-    }
     // Groups that devices see none of the channels of have nothing to show.
-    this.groups = groups.filter(function (g, i) {
+    this.groups = groups.concat(byGroups(l, this.channels)).filter(function (g, i) {
       return i < 3 || g.channels.length > 0;
+    });
+    const radio: GroupView[] = [
+      { key: 'fav', name: 'Favourites', channels: [] },
+      { key: 'all', name: 'All Stations', channels: this.stations },
+    ];
+    this.radioGroups = radio.concat(byGroups(l, this.stations)).filter(function (g, i) {
+      return i < 2 || g.channels.length > 0;
     });
     this.rebuild();
   }
@@ -125,9 +144,9 @@ export class LineupModel {
     this.rebuild();
   }
 
-  /** lastWatched returns the channel this box played last, if any. */
+  /** lastWatched returns the channel of the lists that this box played last, if any. */
   lastWatched(): Channel | null {
-    return this.recent.length ? this.channel(this.recent[0]!) : null;
+    return (this.groups.length >= 2 && this.groups[1]!.channels[0]) || null;
   }
 
   favouriteChannels(): Channel[] {
@@ -178,8 +197,11 @@ export class LineupModel {
     return this.fromOne(key) ? i + 1 : c.number;
   }
 
-  /** find returns the channel with number n in the list of group key, or null. */
+  /** find returns the channel with number n in the list of group key, or null; key radio finds a radio station. */
   find(key: string, n: number): Channel | null {
+    if (key === 'radio') {
+      return this.stationByNumber[n] || null;
+    }
     if (!this.fromOne(key)) {
       return this.numbered(n);
     }
@@ -189,6 +211,10 @@ export class LineupModel {
 
   /** digitsIn returns how many digits the highest number in the list of group key has. */
   digitsIn(key: string): number {
+    if (key === 'radio') {
+      const last = this.stations[this.stations.length - 1];
+      return last ? String(last.number).length : 1;
+    }
     const g = this.fromOne(key) ? this.group(key) : null;
     return g ? String(Math.max(1, g.channels.length)).length : this.maxDigits;
   }
@@ -207,22 +233,46 @@ export class LineupModel {
 
   private rebuild(): void {
     const self = this;
-    const pick = function (ids: number[]): Channel[] {
+    // pick returns the channels of ids that the lists show, or the radio stations.
+    const pick = function (ids: number[], radio: boolean): Channel[] {
       const out: Channel[] = [];
       for (let i = 0; i < ids.length; i++) {
         const c = self.byId[ids[i]!];
-        if (c) {
+        if (c && (radio ? !!c.radio : self.listed[c.id])) {
           out.push(c);
         }
       }
       return out;
     };
     if (this.groups.length >= 2) {
-      this.groups[0]!.channels = pick(this.favourites);
-      this.groups[1]!.channels = pick(this.recent);
+      this.groups[0]!.channels = pick(this.favourites, false);
+      this.groups[1]!.channels = pick(this.recent, false);
+    }
+    if (this.radioGroups.length >= 1) {
+      this.radioGroups[0]!.channels = pick(this.favourites, true);
     }
     this.sortedCache = {};
   }
+}
+
+/** byGroups returns a list for each of the lineup's groups, with the channels of list that are in it. */
+function byGroups(l: Lineup, list: Channel[]): GroupView[] {
+  const out: GroupView[] = [];
+  const byId: { [id: string]: GroupView } = {};
+  for (let i = 0; i < l.groups.length; i++) {
+    const g = l.groups[i]!;
+    const view: GroupView = { key: 'g' + g.id, name: g.name, channels: [] };
+    byId[g.id] = view;
+    out.push(view);
+  }
+  for (let i = 0; i < list.length; i++) {
+    const c = list[i]!;
+    const view = byId[c.group];
+    if (view) {
+      view.channels.push(c);
+    }
+  }
+  return out;
 }
 
 /** indexOf returns where channel id is in list, or -1. */

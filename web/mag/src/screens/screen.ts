@@ -30,10 +30,14 @@ export type ScreenName =
   | 'episodes'
   | 'film'
   | 'check'
+  | 'radio'
   | 'message';
 
-/** Where a screen wants the video: in a window, full screen, or nowhere. */
-export type VideoArea = Rect | 'full' | 'none';
+/**
+ * Where a screen wants the video: in a window, full screen, or nowhere; or
+ * for a radio station, which has no picture, nowhere while it plays (D87).
+ */
+export type VideoArea = Rect | 'full' | 'none' | 'audio';
 
 export interface Ctx {
   platform: Platform;

@@ -31,7 +31,8 @@ type group struct {
 // group. Logo is the path on Overscan of its logo, if it has one (D54).
 // Locked is set when playing it needs the account's parental PIN (D55).
 // Archive is how many days back its past programmes play from its source's
-// archive (D81), 0 or left out for none.
+// archive (D81), 0 or left out for none. Radio is set for a radio station
+// (D87).
 type channel struct {
 	ID      int64  `json:"id"`
 	Number  int    `json:"number"`
@@ -40,15 +41,19 @@ type channel struct {
 	Logo    string `json:"logo,omitempty"`
 	Locked  bool   `json:"locked,omitempty"`
 	Archive int    `json:"archive,omitempty"`
+	Radio   bool   `json:"radio,omitempty"`
 }
 
 // channelsResponse is the device's whole lineup, in one answer, with the
 // account's favourites and what the device watched last (D53). Version
 // changes when the lineup does, so the page can tell whether to load it again.
+// RadioApart is set when the box shows radio stations on its Radio screen
+// alone, and not among the channels of Live TV and the guide (D87).
 type channelsResponse struct {
 	Version    string    `json:"version"`
 	Groups     []group   `json:"groups"`
 	Channels   []channel `json:"channels"`
+	RadioApart bool      `json:"radio_apart,omitempty"`
 	Favourites []int64   `json:"favourites"`
 	Recent     []int64   `json:"recent"`
 }
@@ -63,6 +68,10 @@ func (a *API) lineupOf(ctx context.Context, d store.Device) (channelsResponse, s
 	if err != nil {
 		return channelsResponse{}, store.Account{}, err
 	}
+	apart, err := a.store.RadioApart(ctx)
+	if err != nil {
+		return channelsResponse{}, store.Account{}, err
+	}
 	groups := lineup.Groups(entries)
 	resp := channelsResponse{Groups: make([]group, len(groups)), Channels: make([]channel, len(entries))}
 	for i, g := range groups {
@@ -70,10 +79,14 @@ func (a *API) lineupOf(ctx context.Context, d store.Device) (channelsResponse, s
 	}
 	for i, c := range entries {
 		resp.Channels[i] = channel{ID: c.EntryID, Number: c.Number, Name: c.Name, Group: c.GroupID,
-			Logo: artwork.LogoPath(c.EntryID, c.Logo), Locked: c.Locked && acct.PINHash != "", Archive: c.ArchiveDays}
+			Logo: artwork.LogoPath(c.EntryID, c.Logo), Locked: c.Locked && acct.PINHash != "", Archive: c.ArchiveDays,
+			Radio: c.Radio}
+		if c.Radio {
+			resp.RadioApart = apart
+		}
 	}
 	sum := sha256.New()
-	_ = json.NewEncoder(sum).Encode([]any{resp.Groups, resp.Channels})
+	_ = json.NewEncoder(sum).Encode([]any{resp.Groups, resp.Channels, resp.RadioApart})
 	resp.Version = hex.EncodeToString(sum.Sum(nil)[:8])
 	return resp, acct, nil
 }
