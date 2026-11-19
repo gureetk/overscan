@@ -33,6 +33,7 @@ import (
 	"overscan.gureet.ca/internal/adapters/plex"
 	"overscan.gureet.ca/internal/adapters/stalker"
 	"overscan.gureet.ca/internal/adapters/xtream"
+	"overscan.gureet.ca/internal/catchup"
 	"overscan.gureet.ca/internal/guide"
 	"overscan.gureet.ca/internal/source"
 	"overscan.gureet.ca/internal/store"
@@ -503,7 +504,7 @@ func (r *Refresher) read(ctx context.Context, src source.Settings, id int64) (re
 	keys := identityKeys(fields)
 	channels := make([]store.CatalogChannel, len(entries))
 	for i, e := range entries {
-		channels[i] = channel(e, keys[i], i)
+		channels[i] = channel(e, header.Attrs, keys[i], i)
 		// A playlist from an Xtream server that this source was before
 		// finds its channels under their stream IDs.
 		if sid, ok := xtreamStreamID(e.URL, "", ""); ok {
@@ -832,9 +833,10 @@ func isMovieOrSeries(s string) bool {
 	return strings.Contains(p, "/movie/") || strings.Contains(p, "/series/")
 }
 
-// channel turns an entry into a catalog channel. i is its place in the
-// playlist, for a fallback name.
-func channel(e m3u.Entry, key string, i int) store.CatalogChannel {
+// channel turns an entry into a catalog channel, with the playlist's
+// header attributes as defaults for its catch-up (D82). i is its place in
+// the playlist, for a fallback name.
+func channel(e m3u.Entry, header map[string]string, key string, i int) store.CatalogChannel {
 	name := clean(e.Title)
 	if name == "" {
 		name = clean(e.Attrs["tvg-name"])
@@ -853,7 +855,10 @@ func channel(e m3u.Entry, key string, i int) store.CatalogChannel {
 		c.Number = n
 	}
 	c.Logo = logo(e.Attrs["tvg-logo"])
-	if days, err := strconv.Atoi(e.Attrs["catchup-days"]); err == nil && days > 0 {
+	if days, archive, ok := catchup.FromPlaylist(e.Attrs, header, e.URL); ok {
+		c.ArchiveDays, c.Catchup = min(days, maxArchiveDays), archive
+	} else if days, err := strconv.Atoi(e.Attrs["catchup-days"]); err == nil && days > 0 {
+		// An archive that Overscan cannot play: its guide is kept as long.
 		c.ArchiveDays = min(days, maxArchiveDays)
 	}
 	return c

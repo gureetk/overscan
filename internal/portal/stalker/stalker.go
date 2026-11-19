@@ -152,6 +152,8 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.getEPGInfo(w, r, d)
 	case "epg/get_simple_data_table":
 		a.getSimpleDataTable(w, r, d)
+	case "tv_archive/create_link":
+		a.createArchiveLink(w, r, d)
 	case "vod/get_categories":
 		a.getCategories(w, r, store.KindMovie)
 	case "series/get_categories":

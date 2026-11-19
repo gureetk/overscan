@@ -4,10 +4,10 @@
 // the screens and moving between them, the remote's keys, and where the
 // video shows (D52).
 
-import { type ApiError, type Channel, Client, describe, type Lineup, type Session } from './api';
+import { type ApiError, type Channel, Client, describe, type Lineup, type Programme, type Session } from './api';
 import { PlaybackCheck } from './check';
 import { el, show } from './dom';
-import { FilmPlayer, type Playing, playingName } from './film';
+import { FilmPlayer, pastProgramme, type Playing, playingName } from './film';
 import { GuideCache } from './guide';
 import { keyOf, type Press } from './keys';
 import { LibraryModel } from './library';
@@ -121,6 +121,9 @@ export class App {
     const movies = new LibraryModel(this.client, 'movie');
     const series = new LibraryModel(this.client, 'series');
     this.film = new FilmPlayer(platform, this.client, {
+      askPIN: function (what, message, done) {
+        self.pin.ask(what, message, done);
+      },
       notice: function (text) {
         self.toast(text);
       },
@@ -196,6 +199,9 @@ export class App {
       },
       playFilm: function (p, from) {
         self.playFilm(p, from);
+      },
+      playProgramme: function (c: Channel, p: Programme) {
+        self.playFilm(pastProgramme(c, p), 0);
       },
       pick: function (title: string, items: PickItem[], chosen: number, done: (index: number) => void) {
         self.picker.pick(title, items, chosen, done);
@@ -486,7 +492,7 @@ export class App {
     this.go('film');
   }
 
-  /** filmEnded goes on to a series' next episode, or back to what opened the film. */
+  /** filmEnded goes on to a series' next episode, or back to what opened the film or the programme. */
   private filmEnded(p: Playing): void {
     const next = p.episode ? this.nextEpisode(p) : null;
     if (next) {

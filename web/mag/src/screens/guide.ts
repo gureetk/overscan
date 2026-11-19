@@ -2,7 +2,9 @@
 
 // The guide: a grid of the programmes on a group's channels, two hours
 // across, with the programme in focus above it and the channel that plays
-// in a small window beside that.
+// in a small window beside that. A channel whose source keeps an archive
+// plays its past programmes from it (D81): the grid marks them, and goes
+// back as far as the archive does.
 
 import type { Channel, Programme } from '../api';
 import { el, Logo, setClass, setHTML, setText, show, toggle } from '../dom';
@@ -18,8 +20,10 @@ const widthRem = 59;
 const step = 1800;
 /** The most programme cells a row draws. */
 const cellsPerRow = 10;
-/** How far ahead the guide goes, in days. */
+/** How far ahead the guide goes, in days, and how many days its strip shows. */
 const daysAhead = 7;
+/** How far back the guide goes, in days, for a channel with an archive at most; a day for one without. */
+const maxDaysBack = 14;
 
 interface Row {
   box: HTMLElement;
@@ -35,6 +39,8 @@ export class GuideScreen implements Screen {
   private ctx: Ctx;
   private groupKey = 'all';
   private channels: Channel[] = [];
+  /** How many days back the strip of days reaches. */
+  private back = 1;
   /** The first row shown, and the row in focus. */
   private top = 0;
   private row = 0;
@@ -150,6 +156,12 @@ export class GuideScreen implements Screen {
     }
     this.groupKey = g.key;
     this.channels = this.ctx.lineup.list(g);
+    // How far back the strip of days reaches: as far as any of the group's
+    // channels' archive.
+    this.back = 1;
+    for (let i = 0; i < this.channels.length; i++) {
+      this.back = Math.max(this.back, daysBack(this.channels[i]!));
+    }
     const at = id ? indexOf(this.channels, id) : 0;
     this.row = Math.max(0, at);
     this.top = Math.max(0, Math.min(this.row - 2, this.channels.length - rows));
@@ -214,10 +226,15 @@ export class GuideScreen implements Screen {
       this.nowChip.style.left = this.x(t) + 'rem';
       this.nowLine.style.left = this.x(t) + 'rem';
     }
-    // The days.
+    // The days: from today on, or, while the focus is on a day before
+    // today, from as far back as needed to show it.
     const today = startOfDay(t);
+    let first = today;
+    if (startOfDay(this.at) < today) {
+      first = Math.max(today - this.back * 86400, startOfDay(this.at) - 5 * 86400);
+    }
     for (let i = 0; i < this.days.length; i++) {
-      const d = today + i * 86400 + 3600 * 3; // a time well inside the day, whatever the clock change
+      const d = first + i * 86400 + 3600 * 3; // a time well inside the day, whatever the clock change
       setText(this.days[i]!, day(d));
       setClass(this.days[i]!, 'day' + (startOfDay(d) === startOfDay(this.at) ? ' on' : ''));
     }
@@ -251,7 +268,7 @@ export class GuideScreen implements Screen {
         const to = Math.min(q.stop, end);
         let cls = 'cell';
         if (q.stop <= t) {
-          cls += ' past';
+          cls += inArchive(c, q, t) ? ' past archived' : ' past';
         } else if (q.start <= t) {
           cls += ' airing';
         }
@@ -306,7 +323,8 @@ export class GuideScreen implements Screen {
       return;
     }
     setText(this.title, p.title);
-    setHTML(this.meta, escape(day(p.start) + ', ' + span(p.start, p.stop) + (p.category ? ' · ' + p.category : '')));
+    const archived = inArchive(c, p, t);
+    setHTML(this.meta, escape(day(p.start) + ', ' + span(p.start, p.stop) + (p.category ? ' · ' + p.category : '') + (archived ? ' · Catch-up' : '')));
     setText(this.description, p.description || p.subtitle || '');
     const self = this;
     if (!details) {
@@ -321,13 +339,14 @@ export class GuideScreen implements Screen {
   private drawFooter(): void {
     const c = this.focusedChannel();
     const favourite = !!c && this.ctx.lineup.isFavourite(c.id);
+    const p = this.focused();
     this.footer.set(
       [
         { key: 'red', text: favourite ? 'Remove Favourite' : 'Favourite' },
         { key: 'blue', text: 'Search' },
       ],
       [
-        { key: 'OK', text: 'Watch' },
+        { key: 'OK', text: c && p && inArchive(c, p, now()) ? 'Play from the start' : 'Watch' },
         { key: 'lr', text: 'Earlier, later' },
         { key: 'CH +/−', text: 'Page' },
         { key: '0–9', text: 'Go to channel' },
@@ -434,8 +453,9 @@ export class GuideScreen implements Screen {
         target = Math.ceil(this.at / step) * step - step;
       }
     }
-    // The guide reaches back a day and forward a week.
-    const earliest = startOfDay(t) - 86400;
+    // The guide reaches back a day, or as far as the channel's archive,
+    // and forward a week.
+    const earliest = startOfDay(t) - daysBack(c) * 86400;
     const latest = startOfDay(t) + daysAhead * 86400;
     target = Math.max(earliest, Math.min(latest, target));
     this.at = target;
@@ -457,10 +477,15 @@ export class GuideScreen implements Screen {
       this.ctx.watch(c, this.channels, true, this.groupKey);
     } else if (p.start > t) {
       this.ctx.toast(p.title + ' starts at ' + clock(p.start) + ', ' + day(p.start).toLowerCase() + '.');
+    } else if (inArchive(c, p, t)) {
+      this.ctx.playProgramme(c, p);
+    } else if (c.archive) {
+      this.ctx.toast(p.title + " is older than this channel's archive.");
     } else {
-      this.ctx.toast('Watching programmes that have ended comes with catch-up, in a later version.');
+      this.ctx.toast("This channel's past programmes can't be played: its source keeps no archive of them.");
     }
   }
+
 
   private chooseGroup(): void {
     const self = this;
@@ -535,4 +560,14 @@ export class GuideScreen implements Screen {
     const unit = parseFloat(document.documentElement.style.fontSize) || 16;
     return { x: 56 * unit, y: 2.25 * unit, w: 20 * unit, h: 11.25 * unit };
   }
+}
+
+/** inArchive says whether a programme has ended and plays from its channel's archive at t (D81). */
+export function inArchive(c: Channel, p: Programme, t: number): boolean {
+  return !!c.archive && p.stop <= t && p.start > t - c.archive * 86400;
+}
+
+/** daysBack returns how many days back the guide reaches on a channel: a day, or as far as its archive. */
+function daysBack(c: Channel | null): number {
+  return Math.max(1, Math.min(maxDaysBack, c && c.archive ? c.archive : 0));
 }

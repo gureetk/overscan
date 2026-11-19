@@ -138,7 +138,7 @@
     <tbody>
     {{- range .Data.Streams}}
       <tr>
-        <td><div class="channel-cell"><span class="num-chip">{{if eq .Kind "movie"}}Film{{else if eq .Kind "episode"}}Ep.{{else if .Number}}{{.Number}}{{else}}–{{end}}</span><div><span class="strong">{{.Channel}}</span>{{if not .Playing}}<div class="note warn">Waiting for the player to come back</div>{{end}}</div></div></td>
+        <td><div class="channel-cell"><span class="num-chip">{{if eq .Kind "movie"}}Film{{else if eq .Kind "episode"}}Ep.{{else if .Number}}{{.Number}}{{else}}–{{end}}</span><div><span class="strong">{{.Channel}}</span>{{if eq .Kind "archive"}}<div class="note">{{if .Programme}}{{.Programme}}, {{end}}from {{.Aired.Format "2 Jan 15:04"}} UTC</div>{{end}}{{if not .Playing}}<div class="note warn">Waiting for the player to come back</div>{{end}}</div></div></td>
         <td>{{.Device}}{{with .Model}}<div class="note">{{.}}</div>{{end}}</td>
         <td><div class="chips">{{.Source}}{{if .HLS}}<span class="badge" title="The source sends HLS">HLS</span>{{end}}{{if .Repaired}}<span class="badge accent" title="It goes through ffmpeg, which rebuilds its timestamps">Repaired</span>{{end}}{{if and .Converted (not .Transcoded)}}<span class="badge accent" title="It goes through ffmpeg, which converts what the box cannot play">Converted</span>{{end}}{{if .Transcoded}}<span class="badge accent" title="{{if eq .TranscodedBy "overscan"}}This server's ffmpeg transcodes{{else}}Its source's server transcodes{{end}} the picture, which the box cannot play">Transcoded</span>{{end}}</div></td>
         <td>{{.Since}}</td>

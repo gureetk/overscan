@@ -37,6 +37,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"overscan.gureet.ca/internal/catchup"
 	"overscan.gureet.ca/internal/media"
 	"overscan.gureet.ca/internal/store"
 	"overscan.gureet.ca/internal/subtitles"
@@ -276,13 +277,14 @@ const (
 	PlaysChannel = "live"    // a lineup entry
 	PlaysMovie   = "movie"   // a film
 	PlaysEpisode = "episode" // an episode of a series
+	PlaysArchive = "archive" // a past programme of a lineup entry, from its source's archive (D81)
 )
 
 // Stream is a session as the admin shows it.
 type Stream struct {
-	Kind      string // PlaysChannel, PlaysMovie or PlaysEpisode
+	Kind      string // PlaysChannel, PlaysMovie, PlaysEpisode or PlaysArchive
 	DeviceID  int64
-	EntryID   int64 // the lineup entry that plays, 0 for a film or an episode
+	EntryID   int64 // the lineup entry that plays, or whose past programme plays; 0 for a film or an episode
 	ItemID    int64 // the film's title ID or the episode's ID, 0 for a channel
 	SourceID  int64
 	Source    string // the source's name
@@ -298,6 +300,10 @@ type Stream struct {
 	Transcoded   bool
 	TranscodedBy string // TranscodedBySource or TranscodedByOverscan; "" if not transcoded
 	Playing      bool   // a player is fetching it now; otherwise it waits for one to come back
+	// Programme is, for a past programme, its title, and Aired when it
+	// began.
+	Programme string
+	Aired     time.Time
 }
 
 // Who transcodes a stream's video (Stream.TranscodedBy).
@@ -327,7 +333,11 @@ func (h *Hub) Streams() []Stream {
 		case s.encoding.Load() > 0:
 			st.Transcoded, st.TranscodedBy = true, TranscodedByOverscan
 		}
-		if s.kind != kindEntry {
+		switch s.kind {
+		case kindEntry:
+		case kindArchive:
+			st.Kind, st.Programme, st.Aired = PlaysArchive, s.programme, s.aired
+		default:
 			st.Kind, st.EntryID, st.ItemID = playsKind(s.kind), 0, s.entryID
 		}
 		out = append(out, st)
@@ -375,7 +385,7 @@ func playsKind(kind byte) string {
 type session struct {
 	nonce     uint64
 	token     string
-	kind      byte // kindEntry, kindMovie or kindEpisode
+	kind      byte // kindEntry, kindMovie, kindEpisode or kindArchive
 	deviceID  int64
 	entryID   int64 // the lineup entry, or the film's title ID or the episode's ID
 	channelID int64
@@ -418,6 +428,13 @@ type session struct {
 	refKind   string
 	release   func()
 	readdress atomic.Pointer[string]
+
+	// archive is, for a past programme (D81), what makes the addresses at
+	// which its source's archive plays it; programme is its title, and
+	// aired when it began.
+	archive   *catchup.Archive
+	programme string
+	aired     time.Time
 
 	started   time.Time
 	repair    bool // its channel is set to be repaired (D57)
@@ -489,12 +506,13 @@ func (s *session) grace() time.Duration {
 	return reconnectGrace
 }
 
-// what returns the log's name for what s plays: channel, or title.
+// what returns the log's name for what s plays: channel, for a channel or
+// one of its past programmes, or title.
 func (s *session) what() string {
-	if s.kind != kindEntry {
-		return "title"
+	if s.kind == kindEntry || s.kind == kindArchive {
+		return "channel"
 	}
-	return "channel"
+	return "title"
 }
 
 // active reports whether s holds one of its source's connections: it is
@@ -701,11 +719,16 @@ func (h *Hub) lookup(nonce uint64) *session {
 // ServeHTTP serves /live/<token>.ts or .m3u8, which starts or resumes a
 // session, and /live/<token>/r/<n>, an HLS resource of a session. A .ts
 // link asks for a continuous stream, which the relay makes of an HLS one.
-// It serves /vod/<token>.<ext>, a film or an episode, too.
+// It serves /vod/<token>.<ext>, a film or an episode, and
+// /archive/<token>.ts, a past programme, too.
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if rest, ok := strings.CutPrefix(r.URL.Path, "/vod/"); ok {
 		h.serveItem(w, r, rest)
+		return
+	}
+	if rest, ok := strings.CutPrefix(r.URL.Path, "/archive/"); ok {
+		h.serveArchive(w, r, rest)
 		return
 	}
 	rest, ok := strings.CutPrefix(r.URL.Path, "/live/")

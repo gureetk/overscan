@@ -84,7 +84,8 @@ What a client sees when it reads a provider through the Xtream API: the account 
 
 - A channel with `tv_archive` set keeps `tv_archive_duration` days. **Documented** [6].
 - The address is `/timeshift/U/P/<minutes>/<YYYY-MM-DD:HH-MM>/<stream_id>.ts`, or `.m3u8`. **Documented** [1, 6]. tuliprox also passes a query form, `/streaming/timeshift.php`. **Documented** [4].
-- The start time's zone is unsettled: [6] says it is the panel's own time zone, while [1] writes UTC. Check against a real panel before relying on either (M4).
+- The start time's zone is unsettled: [6] says it is the panel's own time zone, while [1] writes UTC. Overscan uses the panel's own, `server_info.timezone`, or UTC where it gives none, and a source's setting can name another (D81). **Assumed** until a real panel shows which.
+- `<minutes>` is how long to play from the start. **Documented** [1, 6]. Overscan asks for the minutes that are left of the programme, rounded up, from the whole minute at or before the time a player asks for. [catchup-notes.md](catchup-notes.md) describes the archives of playlists.
 
 ## 7. Movies, series and the playlist
 

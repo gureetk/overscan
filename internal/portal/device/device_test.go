@@ -106,6 +106,7 @@ func newHarness(t *testing.T) *harness {
 	mux := http.NewServeMux()
 	mux.Handle(Prefix, h.api)
 	mux.Handle("GET /live/", hb)
+	mux.Handle("GET /archive/", hb)
 	h.front = httptest.NewServer(mux)
 	t.Cleanup(h.front.Close)
 	return h

@@ -62,6 +62,7 @@ const (
 	errPINRequired  = "pin_required" // the channel is locked (D55)
 	errPINWrong     = "pin_wrong"
 	errPINLocked    = "pin_locked" // too many wrong PINs; wait
+	errNoArchive    = "no_archive" // the programme does not play from its source's archive (D81)
 )
 
 // API is the device API, an http.Handler for the paths under Prefix.
@@ -95,6 +96,7 @@ func New(st *store.Store, reg *devices.Registry, h *hub.Hub, log *slog.Logger, v
 	mux.HandleFunc("GET "+Prefix+"channels", a.authorized(a.channels))
 	mux.HandleFunc("GET "+Prefix+"channels/version", a.authorized(a.channelsVersion))
 	mux.HandleFunc("POST "+Prefix+"channels/{id}/play", a.authorized(a.play))
+	mux.HandleFunc("POST "+Prefix+"channels/{id}/archive", a.authorized(a.playArchive))
 	mux.HandleFunc("PUT "+Prefix+"channels/{id}/favourite", a.authorized(a.favourite(true)))
 	mux.HandleFunc("DELETE "+Prefix+"channels/{id}/favourite", a.authorized(a.favourite(false)))
 	mux.HandleFunc("GET "+Prefix+"guide", a.authorized(a.guide))

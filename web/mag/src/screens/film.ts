@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Watching a film or an episode full screen, with a panel over the video
-// when it is paused, when the remote seeks, while it starts or waits for its
-// source, or when asked: what plays, how far it is, and how long it lasts.
+// Watching a film, an episode or a past programme full screen, with a
+// panel over the video when it is paused, when the remote seeks, while it
+// starts or waits for its source, or when asked: what plays, how far it
+// is, and how long it lasts.
 // OK pauses and goes on; Left and Right seek ten seconds back and thirty
 // on, Page Up and Down (and the channel keys) five minutes; the page seeks
 // once the keys stop for a moment.
@@ -11,7 +12,8 @@ import { el, setHTML, setText, setWidth, show } from '../dom';
 import type { FilmPhase, Playing, Subtitles } from '../film';
 import { icon } from '../icons';
 import type { Press } from '../keys';
-import { hms } from '../time';
+import { label } from '../player';
+import { day, hms, span } from '../time';
 import { chooseAudio, language, trackItems } from './watch';
 import { Clock, type Ctx, Footer, type Screen, type VideoArea } from './screen';
 
@@ -128,9 +130,9 @@ export class FilmScreen implements Screen {
     const pos = f.position();
     const len = f.duration();
     setHTML(this.stateIcon, f.paused ? icon('pause', 18, 2.2) : icon('play', 18, 2.2));
-    setText(this.name, p.title.name);
+    setText(this.name, p.programme ? p.programme.programme.title : p.title.name);
     setText(this.status, f.paused ? '' : phaseText(f.phase, f.phaseSeconds()));
-    setText(this.sub, p.episode ? 'S' + p.season + ' E' + p.episode.number + (p.episode.name ? ' · ' + p.episode.name : '') : f.paused ? 'Paused' : '');
+    setText(this.sub, subLine(p, f.paused));
     setText(this.at, hms(pos));
     setText(this.left, len > 0 ? '−' + hms(Math.max(0, len - pos)) : '');
     show(this.barBox, len > 0);
@@ -200,12 +202,7 @@ export class FilmScreen implements Screen {
           this.chooseTrack();
           return true;
         }
-        chooseAudio(
-          this.ctx,
-          this.ctx.film.item && this.ctx.film.item.episode ? 'This episode' : 'This film',
-          this.changed.bind(this),
-          this.ctx.film.streamAudio(),
-        );
+        chooseAudio(this.ctx, thisOne(this.ctx.film.item), this.changed.bind(this), this.ctx.film.streamAudio());
         return true;
       case 'blue':
         this.hidePanel();
@@ -229,7 +226,7 @@ export class FilmScreen implements Screen {
     const f = this.ctx.film;
     const named = f.streamAudio() || [];
     if (named.length < 2) {
-      this.ctx.toast((f.item && f.item.episode ? 'This episode' : 'This film') + ' has one sound track.');
+      this.ctx.toast(thisOne(f.item) + ' has one sound track.');
       return;
     }
     this.ctx.pick('Sound', trackItems(named), f.currentTrack(), function (i) {
@@ -246,7 +243,7 @@ export class FilmScreen implements Screen {
     const f = this.ctx.film;
     const list = f.subtitles();
     if (!list.length) {
-      this.ctx.toast(f.item && f.item.episode ? 'This episode has no subtitles.' : 'This film has no subtitles.');
+      this.ctx.toast(thisOne(f.item) + ' has no subtitles.');
       return;
     }
     const shown = f.shownSubtitles();
@@ -285,6 +282,26 @@ export class FilmScreen implements Screen {
   video(): VideoArea {
     return 'full';
   }
+}
+
+/** thisOne names what plays, to start a sentence: This film, This episode or This programme. */
+function thisOne(p: Playing | null): string {
+  if (p && p.programme) {
+    return 'This programme';
+  }
+  return p && p.episode ? 'This episode' : 'This film';
+}
+
+/** subLine says more of what plays: an episode's season and name, a programme's channel and when it was on, or that it is paused. */
+function subLine(p: Playing, paused: boolean): string {
+  if (p.programme) {
+    const q = p.programme.programme;
+    return label(p.programme.channel) + ' · ' + day(q.start) + ', ' + span(q.start, q.stop) + (paused ? ' · Paused' : '');
+  }
+  if (p.episode) {
+    return 'S' + p.season + ' E' + p.episode.number + (p.episode.name ? ' · ' + p.episode.name : '');
+  }
+  return paused ? 'Paused' : '';
 }
 
 /**

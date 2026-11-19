@@ -440,6 +440,10 @@ type apiStream struct {
 	Transcoded   bool   `json:"transcoded"`
 	TranscodedBy string `json:"transcoded_by,omitempty"`
 	Playing      bool   `json:"playing"`
+	// Programme and AiredAt are, for a past programme of the channel that
+	// plays from its source's archive (D81), its title and when it began.
+	Programme string     `json:"programme,omitempty"`
+	AiredAt   *time.Time `json:"aired_at,omitempty"`
 }
 
 func (a *Admin) apiStreams(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
@@ -452,7 +456,11 @@ func (a *Admin) apiStreams(w http.ResponseWriter, r *http.Request, _ store.Admin
 		out[i] = apiStream{Kind: s.Kind, DeviceID: s.DeviceID, Device: s.Device, EntryID: s.EntryID, ItemID: s.ItemID,
 			Channel: s.Channel, SourceID: s.SourceID, Source: s.Source, StartedAt: s.Started.UTC().Truncate(time.Second),
 			Bytes: s.Bytes, HLS: s.HLS, Repaired: s.Repaired, Converted: s.Converted, Transcoded: s.Transcoded,
-			TranscodedBy: s.TranscodedBy, Playing: s.Playing}
+			TranscodedBy: s.TranscodedBy, Playing: s.Playing, Programme: s.Programme}
+		if !s.Aired.IsZero() {
+			aired := s.Aired.UTC()
+			out[i].AiredAt = &aired
+		}
 	}
 	writeJSON(w, http.StatusOK, struct {
 		Streams []apiStream `json:"streams"`

@@ -2,7 +2,7 @@
 
 // What every screen is, and what the app gives the screens.
 
-import type { Channel, Client } from '../api';
+import type { Channel, Client, Programme } from '../api';
 import type { PlaybackCheck } from '../check';
 import type { FilmPlayer, Playing } from '../film';
 import { el, setHTML, setText } from '../dom';
@@ -62,6 +62,8 @@ export interface Ctx {
   toggleFavourite(c: Channel): void;
   /** playFilm plays a film or an episode full screen, from a time in seconds. */
   playFilm(p: Playing, from: number): void;
+  /** playProgramme plays a past programme of a channel full screen, from its source's archive (D81). */
+  playProgramme(c: Channel, p: Programme): void;
   pick(title: string, items: PickItem[], chosen: number, done: (index: number) => void): void;
   /** videoChanged says that the screen wants the video somewhere else, or overlays changed. */
   videoChanged(): void;

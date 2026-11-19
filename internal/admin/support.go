@@ -212,6 +212,9 @@ func (a *Admin) bundleSources(ctx context.Context, now time.Time) (string, error
 		if src.Account.TimeZone != "" {
 			fmt.Fprintf(tw, "  Server's time zone\t%s\n", src.Account.TimeZone)
 		}
+		if src.CatchupZone != "" {
+			fmt.Fprintf(tw, "  Catch-up time zone\t%s\n", src.CatchupZone)
+		}
 		if g := src.Guide; !row.LibraryOnly() {
 			fmt.Fprintf(tw, "  Guide\t%s\n", row.GuideLine())
 			if !g.ReadAt.IsZero() {

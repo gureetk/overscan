@@ -42,6 +42,8 @@ export interface Channel {
   logo?: string;
   /** Playing it needs the account's parental PIN. */
   locked?: boolean;
+  /** How many days back its past programmes play from its source's archive (D81); 0 or missing for none. */
+  archive?: number;
 }
 
 export interface Lineup {
@@ -87,6 +89,11 @@ export interface ItemLink extends PlayLink {
   audio_switch?: 'restart';
   /** Subtitle tracks the page may load (D69). */
   subtitles?: SubtitleInfo[];
+}
+
+/** How a past programme plays from its channel's archive (D81): always by asking for its stream from a time. */
+export interface ArchiveLink extends ItemLink {
+  programme: Programme;
 }
 
 /** A subtitle track that the page may load: SRT at url, with ?t= for a stream from a time. */
@@ -307,8 +314,8 @@ export interface CheckResult {
  * box, or did not, for its log (POST playback).
  */
 export interface PlaybackReport {
-  kind: 'movie' | 'episode';
-  /** The film's title ID, or the episode's ID. */
+  kind: 'movie' | 'episode' | 'programme';
+  /** The film's title ID, the episode's ID, or the ID of the channel whose past programme it is. */
   id: number;
   /** began: it started; not_started: it never did; waited: it stopped for a while and went on; stalled: it stopped and did not go on. */
   outcome: 'began' | 'not_started' | 'waited' | 'stalled';
@@ -469,6 +476,8 @@ export function describe(err: ApiError | null): string {
       return "All connections to this source are in use.";
     case 'busy':
       return 'The server is transcoding as many films as it may at once.';
+    case 'no_archive':
+      return "It isn't in the channel's archive.";
     case 'internal':
       return "The server failed. Its log says why.";
   }

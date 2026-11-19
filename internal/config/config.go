@@ -102,6 +102,11 @@ type Source struct {
 	// the default, numbers them in playlist order; provider uses the
 	// numbers the playlist gives them (tvg-chno) where it gives any.
 	Numbers string `yaml:"numbers"`
+	// CatchupZone is, for an Xtream server or a playlist, the time zone of
+	// the dates and times in its catch-up addresses (D81): an IANA name such
+	// as UTC or Europe/London; if not set, the one that an Xtream server
+	// gives, or else UTC.
+	CatchupZone string `yaml:"catchup_zone"`
 }
 
 // Ways of numbering a source's channels.
@@ -159,6 +164,7 @@ func (s Source) Settings() source.Settings {
 		MaxConnections: max,
 		Refresh:        s.Refresh,
 		Numbers:        s.Numbers,
+		CatchupZone:    s.CatchupZone,
 		Device: source.Device{MAC: s.MAC, Serial: s.Serial, DeviceID: s.DeviceID, DeviceID2: s.DeviceID2,
 			Signature: s.Signature, Model: s.Model},
 	}

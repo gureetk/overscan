@@ -42,6 +42,8 @@ The notes in [protocol/jellyfin-api-notes.md](protocol/jellyfin-api-notes.md) ar
 
 The notes in [protocol/plex-api-notes.md](protocol/plex-api-notes.md) are **Documented** from Plex's own API documentation and from an OpenAPI description of that API published under the MIT licence. Plex Media Server is not open source, and none of its code is read.
 
+The notes in [protocol/catchup-notes.md](protocol/catchup-notes.md) are **Documented** from the public documentation of two players that read catch-up from playlists, one of them open source, whose code was not read, and from a streaming server's own documentation; Overscan's choices where they leave room are marked as such.
+
 ## Contributor rules
 
 - Do not paste proprietary code, or text from it, into issues, pull requests, comments or commit messages, even to ask a question.

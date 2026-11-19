@@ -1002,7 +1002,8 @@ button.link:hover { background: none; color: var(--accent-hover); text-decoratio
 .source-form:has(input[name="type"][value="stalker"]:checked) .for-library,
 .source-form:has(input[name="type"][value="jellyfin"]:checked) .for-channels,
 .source-form:has(input[name="type"][value="plex"]:checked) .for-channels,
-.source-form:has(input[name="type"][value="folder"]:checked) .for-channels { display: none; }
+.source-form:has(input[name="type"][value="folder"]:checked) .for-channels,
+.source-form:has(input[name="type"][value="stalker"]:checked) .for-catchup { display: none; }
 .source-form .alert { margin: 1.25rem 0 0; }
 @media (max-width: 47.5rem) {
   .source-actions { margin-left: 0; flex-basis: 100%; }

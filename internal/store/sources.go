@@ -55,6 +55,9 @@ type Source struct {
 	MaxConnections int // 0 for no limit
 	Refresh        time.Duration
 	Numbers        string // NumbersPlaylist or NumbersProvider
+	// CatchupZone is the time zone of its catch-up addresses (D81): "" for
+	// the server's own.
+	CatchupZone string
 	// NewCategoriesHidden makes the categories that the source adds later
 	// start hidden in the lineup (D47).
 	NewCategoriesHidden bool
@@ -97,12 +100,13 @@ func (src Source) Settings() source.Settings {
 		MaxConnections: src.MaxConnections,
 		Refresh:        src.Refresh,
 		Numbers:        src.Numbers,
+		CatchupZone:    src.CatchupZone,
 	}
 }
 
 const sourceSelect = `
 	SELECT s.id, s.name, s.type, s.host, s.user_agent, s.enabled, s.max_connections, s.refresh_seconds,
-		s.numbers, s.new_categories_hidden, s.refreshed_at, s.refresh_error, ss.secret,
+		s.numbers, s.catchup_zone, s.new_categories_hidden, s.refreshed_at, s.refresh_error, ss.secret,
 		(SELECT count(*) FROM channels c WHERE c.source_id = s.id AND c.missing_since IS NULL),
 		s.account_status, s.account_expires, s.account_connections, s.account_time_zone,
 		g.read_at, COALESCE(g.read_from, ''), COALESCE(g.read_error, ''), COALESCE(g.channels, 0),
@@ -118,7 +122,7 @@ func (s *Store) scanSource(row rowScanner) (Source, []byte, error) {
 	var refreshed, expires, guideRead sql.NullString
 	var sealed []byte
 	if err := row.Scan(&src.ID, &src.Name, &src.Type, &src.Host, &src.UserAgent, &src.Enabled, &src.MaxConnections,
-		&seconds, &src.Numbers, &src.NewCategoriesHidden, &refreshed, &src.RefreshError, &sealed, &src.Channels,
+		&seconds, &src.Numbers, &src.CatchupZone, &src.NewCategoriesHidden, &refreshed, &src.RefreshError, &sealed, &src.Channels,
 		&src.Account.Status, &expires, &src.Account.MaxConnections, &src.Account.TimeZone,
 		&guideRead, &src.Guide.ReadFrom, &src.Guide.Error, &src.Guide.Channels, &src.Guide.Programmes,
 		&src.Guide.Listed); err != nil {
@@ -275,6 +279,9 @@ func insertSource(ctx context.Context, tx *sql.Tx, settings source.Settings) (in
 	if errors.Is(err, sqlite3.CONSTRAINT_UNIQUE) {
 		return 0, ErrSourceExists
 	}
+	if err == nil && settings.CatchupZone != "" {
+		_, err = tx.ExecContext(ctx, "UPDATE sources SET catchup_zone = ? WHERE id = ?", settings.CatchupZone, id)
+	}
 	return id, err
 }
 
@@ -345,10 +352,11 @@ func (s *Store) UpdateSource(ctx context.Context, id int64, settings source.Sett
 		return err
 	}
 	_, err = tx.ExecContext(ctx, `
-		UPDATE sources SET name = ?, type = ?, user_agent = ?, max_connections = ?, refresh_seconds = ?, numbers = ?
+		UPDATE sources SET name = ?, type = ?, user_agent = ?, max_connections = ?, refresh_seconds = ?, numbers = ?,
+			catchup_zone = ?
 		WHERE id = ?`,
 		settings.Name, settings.Type, settings.UserAgent, settings.MaxConnections, int64(settings.Refresh/time.Second),
-		settings.Numbers, id)
+		settings.Numbers, settings.CatchupZone, id)
 	if errors.Is(err, sqlite3.CONSTRAINT_UNIQUE) {
 		return fail(ErrSourceExists)
 	}
@@ -575,9 +583,11 @@ func (s *Store) ImportSources(ctx context.Context, specs []source.Settings) ([]I
 			imp.ID, imp.Outcome = 0, NameTaken
 		case exists:
 			if _, err := tx.ExecContext(ctx, `
-				UPDATE sources SET type = ?, user_agent = ?, max_connections = ?, refresh_seconds = ?, numbers = ?, enabled = 1
+				UPDATE sources SET type = ?, user_agent = ?, max_connections = ?, refresh_seconds = ?, numbers = ?,
+					catchup_zone = ?, enabled = 1
 				WHERE id = ?`,
-				spec.Type, spec.UserAgent, spec.MaxConnections, int64(spec.Refresh/time.Second), spec.Numbers, imp.ID); err != nil {
+				spec.Type, spec.UserAgent, spec.MaxConnections, int64(spec.Refresh/time.Second), spec.Numbers,
+				spec.CatchupZone, imp.ID); err != nil {
 				return fail(err)
 			}
 			if numbers != spec.Numbers {

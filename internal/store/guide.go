@@ -148,9 +148,11 @@ type GuideWriter struct {
 	s          *Store
 	sourceID   int64
 	generation int64
+	old        int64 // the generation that devices see until Commit
 	batch      []GuideProgramme
 	channels   map[int64]bool
 	count      int
+	keep       time.Duration // how long past programmes are carried over, at least; 0 for none
 }
 
 // BeginGuide starts a new generation of a source's programmes, and clears
@@ -164,7 +166,7 @@ func (s *Store) BeginGuide(ctx context.Context, sourceID int64) (*GuideWriter, e
 	if err != nil {
 		return nil, fmt.Errorf("store: guide of source %d: %w", sourceID, err)
 	}
-	w := &GuideWriter{s: s, sourceID: sourceID, generation: current + 1, channels: map[int64]bool{}}
+	w := &GuideWriter{s: s, sourceID: sourceID, generation: current + 1, old: current, channels: map[int64]bool{}}
 	if err := s.deleteProgrammes(ctx, sourceID, current, false); err != nil {
 		return nil, err
 	}
@@ -211,6 +213,14 @@ func (w *GuideWriter) flush(ctx context.Context) error {
 	return nil
 }
 
+// KeepPast makes Commit carry over, from the generation that devices see
+// now, the programmes that have ended that the new one lacks (D83): those
+// that ended within behind of the commit, or within their channel's days of
+// archive where it keeps more, and before the new generation's first
+// programme on their channel. A guide that lists only what is to come then
+// still shows what was on, and its archive can be played.
+func (w *GuideWriter) KeepPast(behind time.Duration) { w.keep = behind }
+
 // Commit makes the new generation the one devices see, records the read
 // as done at the given time from the address with the given hash, and
 // deletes the old generation.
@@ -218,13 +228,43 @@ func (w *GuideWriter) Commit(ctx context.Context, at time.Time, from string) err
 	if err := w.flush(ctx); err != nil {
 		return err
 	}
+	channels, count := len(w.channels), w.count
+	if w.keep > 0 && w.old > 0 {
+		var err error
+		if channels, count, err = w.carryPast(ctx, at); err != nil {
+			return fmt.Errorf("store: guide of source %d: %w", w.sourceID, err)
+		}
+	}
 	_, err := w.s.db.ExecContext(ctx, `
 		UPDATE source_guides SET generation = ?, read_at = ?, read_from = ?, read_error = '', channels = ?, programmes = ?
-		WHERE source_id = ?`, w.generation, formatTime(at), from, len(w.channels), w.count, w.sourceID)
+		WHERE source_id = ?`, w.generation, formatTime(at), from, channels, count, w.sourceID)
 	if err != nil {
 		return fmt.Errorf("store: guide of source %d: %w", w.sourceID, err)
 	}
 	return w.s.deleteProgrammes(ctx, w.sourceID, w.generation, false)
+}
+
+// carryPast copies the old generation's past programmes that the new one
+// lacks into it, as KeepPast says, and returns how many channels and
+// programmes the new generation then has.
+func (w *GuideWriter) carryPast(ctx context.Context, now time.Time) (int, int, error) {
+	_, err := w.s.db.ExecContext(ctx, `
+		INSERT INTO programmes (source_id, generation, channel_id, start, stop, title, subtitle, description, category)
+		SELECT o.source_id, ?, o.channel_id, o.start, o.stop, o.title, o.subtitle, o.description, o.category
+		FROM programmes o JOIN channels c ON c.id = o.channel_id
+		WHERE o.source_id = ? AND o.generation = ? AND o.stop <= ?
+			AND o.stop > ? - max(?, c.archive_days * 86400)
+			AND o.stop <= COALESCE((SELECT min(n.start) FROM programmes n
+				WHERE n.channel_id = o.channel_id AND n.generation = ?), ?)`,
+		w.generation, w.sourceID, w.old, now.Unix(), now.Unix(), int64(w.keep/time.Second), w.generation, now.Unix())
+	if err != nil {
+		return 0, 0, err
+	}
+	var channels, count int
+	err = w.s.db.QueryRowContext(ctx, `
+		SELECT count(DISTINCT channel_id), count(*) FROM programmes WHERE source_id = ? AND generation = ?`,
+		w.sourceID, w.generation).Scan(&channels, &count)
+	return channels, count, err
 }
 
 // Abort deletes the new generation, keeps the old one, and records why the

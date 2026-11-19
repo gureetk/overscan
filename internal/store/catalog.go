@@ -5,11 +5,13 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
 	"time"
 
+	"overscan.gureet.ca/internal/catchup"
 	"overscan.gureet.ca/internal/source"
 )
 
@@ -41,6 +43,10 @@ type CatalogChannel struct {
 	// turns into one.
 	StreamURL   string
 	ArchiveDays int
+	// Catchup is how a playlist's channel plays its archive; its zero
+	// value for none, and for the channels of other sources, whose archive
+	// their kind of source says how to play.
+	Catchup catchup.Playlist
 }
 
 // CatalogChanges counts what ApplyCatalog changed.
@@ -124,11 +130,12 @@ func (s *Store) ApplyCatalog(ctx context.Context, sourceID int64, channels []Cat
 	}
 
 	// Stream addresses are sealed (D46); stream_url is for those that older
-	// versions left unsealed.
+	// versions left unsealed. So is how a channel plays its archive, which
+	// can hold the provider's login (D82).
 	upsert, err := tx.PrepareContext(ctx, `
 		INSERT INTO channels (source_id, identity_key, name, number, logo, category_id, xmltv_id,
-			stream_url, stream_secret, archive_days, position, listed_at, missing_since)
-		VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, NULL)
+			stream_url, stream_secret, archive_days, catchup_secret, position, listed_at, missing_since)
+		VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, NULL)
 		ON CONFLICT (source_id, identity_key) DO UPDATE SET
 			name = excluded.name,
 			number = excluded.number,
@@ -138,6 +145,7 @@ func (s *Store) ApplyCatalog(ctx context.Context, sourceID int64, channels []Cat
 			stream_url = '',
 			stream_secret = excluded.stream_secret,
 			archive_days = excluded.archive_days,
+			catchup_secret = excluded.catchup_secret,
 			position = excluded.position,
 			listed_at = excluded.listed_at,
 			missing_since = NULL`)
@@ -154,8 +162,18 @@ func (s *Store) ApplyCatalog(ctx context.Context, sourceID int64, channels []Cat
 		if err != nil {
 			return fail(err)
 		}
+		var catchupSealed any
+		if c.Catchup.Mode != "" {
+			plain, err := json.Marshal(c.Catchup)
+			if err != nil {
+				return fail(err)
+			}
+			if catchupSealed, err = s.seal(catchupContext(sourceID), string(plain)); err != nil {
+				return fail(err)
+			}
+		}
 		if _, err := upsert.ExecContext(ctx, sourceID, c.IdentityKey, c.Name, c.Number, c.Logo, category,
-			c.XMLTVID, sealed, c.ArchiveDays, i+1, when); err != nil {
+			c.XMLTVID, sealed, c.ArchiveDays, catchupSealed, i+1, when); err != nil {
 			return fail(err)
 		}
 		if known[c.IdentityKey] {
@@ -452,14 +470,17 @@ func rowsAffected(res sql.Result) (int, error) {
 // edits (D47). It carries no stream address: devices never get one from the
 // catalog.
 type LineupChannel struct {
-	EntryID     int64
-	ChannelID   int64
-	Number      int
-	Name        string
-	Logo        string // the source's logo address, "" if none
-	GroupID     int64  // 0 if none
-	Group       string // "" if none
-	XMLTVID     string
+	EntryID   int64
+	ChannelID int64
+	Number    int
+	Name      string
+	Logo      string // the source's logo address, "" if none
+	GroupID   int64  // 0 if none
+	Group     string // "" if none
+	XMLTVID   string
+	// ArchiveDays is how many days back devices can play the channel's
+	// past programmes from its source's archive (D81): 0 for a channel
+	// without one, or whose archive Overscan cannot play.
 	ArchiveDays int
 	Locked      bool // it, or its group, needs the parental PIN (D55)
 }
@@ -475,6 +496,13 @@ const lineupEntryJoins = `
 		LEFT JOIN lineup_categories m ON m.lineup_id = e.lineup_id AND m.source_id = c.source_id AND m.category = k.name
 		LEFT JOIN lineup_groups g ON g.id = COALESCE(e.group_id, m.group_id)`
 
+// archiveDaysSQL is the days back that devices can play a channel's past
+// programmes from its source's archive (D81, D82): those its source keeps,
+// for a channel of an Xtream server, or of a playlist that says how to play
+// them; 0 otherwise.
+const archiveDaysSQL = `(CASE WHEN s.type = '` + source.TypeXtream + `' OR c.catchup_secret IS NOT NULL
+		THEN c.archive_days ELSE 0 END)`
+
 // lockedEntry is true of an entry that needs the parental PIN: it or its
 // group is locked (D55).
 const lockedEntry = `(e.locked = 1 OR COALESCE(g.locked, 0) = 1)`
@@ -489,7 +517,7 @@ const shownEntry = `e.number IS NOT NULL AND COALESCE(e.hidden, g.hidden, 0) = 0
 func (s *Store) LineupChannels(ctx context.Context, lineupID int64) ([]LineupChannel, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT e.id, c.id, e.number, COALESCE(e.name, c.name), c.logo, COALESCE(g.id, 0), COALESCE(g.name, ''),
-			c.xmltv_id, c.archive_days, `+lockedEntry+lineupEntryJoins+`
+			c.xmltv_id, `+archiveDaysSQL+`, `+lockedEntry+lineupEntryJoins+`
 		WHERE e.lineup_id = ? AND `+shownEntry+`
 		ORDER BY e.number`,
 		lineupID)
@@ -602,6 +630,12 @@ func (s *Store) StreamsByKey(ctx context.Context, sourceID int64, except string)
 // for: its source.
 func streamContext(sourceID int64) string {
 	return "stream-url/" + strconv.FormatInt(sourceID, 10)
+}
+
+// catchupContext is the context that how a playlist's channel plays its
+// archive is sealed for: its source.
+func catchupContext(sourceID int64) string {
+	return "catchup/" + strconv.FormatInt(sourceID, 10)
 }
 
 // SealStreamURLs seals the stream addresses that older versions stored as

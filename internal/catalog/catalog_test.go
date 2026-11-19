@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"overscan.gureet.ca/internal/adapters/m3u"
+	"overscan.gureet.ca/internal/catchup"
 	"overscan.gureet.ca/internal/secrets"
 	"overscan.gureet.ca/internal/source"
 	"overscan.gureet.ca/internal/store"
@@ -395,7 +396,7 @@ func TestChannel(t *testing.T) {
 			"tvg-id":       "id.example",
 		},
 	}
-	got := channel(e, "key", 0)
+	got := channel(e, nil, "key", 0)
 	want := store.CatalogChannel{
 		IdentityKey: "key", Name: "Name with control", Number: 12, Category: "Group",
 		XMLTVID: "id.example", StreamURL: e.URL, ArchiveDays: maxArchiveDays,
@@ -403,8 +404,30 @@ func TestChannel(t *testing.T) {
 	if got != want {
 		t.Errorf("channel\n%+v\nwant\n%+v", got, want)
 	}
-	if got := channel(m3u.Entry{URL: e.URL, Attrs: map[string]string{}}, "k", 4); got.Name != "Channel 5" {
+	if got := channel(m3u.Entry{URL: e.URL, Attrs: map[string]string{}}, nil, "k", 4); got.Name != "Channel 5" {
 		t.Errorf("fallback name %q", got.Name)
+	}
+}
+
+// TestChannelCatchup checks that a playlist's channel gets the catch-up
+// that its entry describes, with the header's attributes as defaults
+// (D82).
+func TestChannelCatchup(t *testing.T) {
+	header := map[string]string{"catchup": "append", "catchup-source": "?utc={utc}&lutc={lutc}", "catchup-days": "3"}
+	e := m3u.Entry{Title: "One", URL: "http://streams.example/1.m3u8", Attrs: map[string]string{}}
+	got := channel(e, header, "k", 0)
+	if got.ArchiveDays != 3 || got.Catchup != (catchup.Playlist{Mode: catchup.ModeAppend, Source: "?utc={utc}&lutc={lutc}"}) {
+		t.Errorf("from the header: %d days, %+v", got.ArchiveDays, got.Catchup)
+	}
+	e.Attrs = map[string]string{"catchup": "shift", "catchup-days": "7"}
+	got = channel(e, header, "k", 0)
+	if got.ArchiveDays != 7 || got.Catchup != (catchup.Playlist{Mode: catchup.ModeShift}) {
+		t.Errorf("its own: %d days, %+v", got.ArchiveDays, got.Catchup)
+	}
+	e.Attrs = map[string]string{"catchup": "vod", "catchup-days": "2"}
+	got = channel(e, nil, "k", 0)
+	if got.ArchiveDays != 2 || got.Catchup.Mode != "" {
+		t.Errorf("a mode Overscan does not play keeps its days for the guide alone: %d days, %+v", got.ArchiveDays, got.Catchup)
 	}
 }
 
