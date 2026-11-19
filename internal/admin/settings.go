@@ -23,8 +23,8 @@ import (
 // whether films go through ffmpeg to convert their sound, and through
 // their source's server to transcode their video (D78), what sources'
 // marks for adults do (D86), whether boxes show radio stations on their
-// Radio screen alone (D87), and TMDB's key and language (D88), whose key
-// the API never gives back.
+// Radio screen alone (D87), TMDB's key and language (D88), whose key the
+// API never gives back, and the room that recordings may take (D89).
 
 type apiSettings struct {
 	RepairDefault    bool   `json:"repair_default"`
@@ -36,6 +36,7 @@ type apiSettings struct {
 	RadioApart       bool   `json:"radio_apart"`
 	TMDBKeySet       bool   `json:"tmdb_key_set"`
 	TMDBLanguage     string `json:"tmdb_language"`
+	RecordingsCap    int    `json:"recordings_cap"`
 }
 
 func (a *Admin) apiSettings(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
@@ -52,7 +53,9 @@ func (a *Admin) apiSettings(w http.ResponseWriter, r *http.Request, _ store.Admi
 								var key string
 								if key, err = a.store.TMDBKey(ctx); err == nil {
 									v.TMDBKeySet = key != ""
-									v.TMDBLanguage, err = a.store.TMDBLanguage(ctx)
+									if v.TMDBLanguage, err = a.store.TMDBLanguage(ctx); err == nil {
+										v.RecordingsCap, err = a.store.RecordingsCap(ctx)
+									}
 								}
 							}
 						}
@@ -153,6 +156,15 @@ func (a *Admin) apiChangeSettings(w http.ResponseWriter, r *http.Request, _ stor
 				return
 			}
 			if _, err := a.setTMDBKey(r.Context(), key); a.editAnswer(w, err) {
+				return
+			}
+		case "recordings_cap":
+			var gb int
+			if json.Unmarshal(v, &gb) != nil {
+				apiError(w, http.StatusBadRequest, "bad_json", fmt.Sprintf("recordings_cap is a whole number of gigabytes from 0 to %d.", store.MaxRecordingsCap))
+				return
+			}
+			if a.editAnswer(w, a.setRecordingsCap(r.Context(), gb)) {
 				return
 			}
 		default:

@@ -29,6 +29,7 @@ import (
 	"overscan.gureet.ca/internal/library"
 	"overscan.gureet.ca/internal/logging"
 	"overscan.gureet.ca/internal/playcheck"
+	"overscan.gureet.ca/internal/recorder"
 	"overscan.gureet.ca/internal/secrets"
 	"overscan.gureet.ca/internal/server"
 	"overscan.gureet.ca/internal/source"
@@ -181,6 +182,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger, recent *log
 	ffprobePath, ffprobeVersion := useFFprobe(ctx, streams, ffmpegPath, log)
 	useEncoder(ctx, streams, ffmpegPath, ffprobePath, log)
 	refresher := catalog.NewRefresher(st, log, version)
+	refresher.AllowEmpty(cfg.RecordingsPath())
 	lib := library.New(st, log, version)
 	// Stalker portals are read, and their streams played, in one session
 	// for each source (D76).
@@ -207,6 +209,11 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger, recent *log
 	background.Go(func() { refresher.Run(bgCtx) })
 	background.Go(func() { streams.Run(bgCtx) })
 	background.Go(func() { lib.Run(bgCtx) })
+	// Programmes that boxes schedule are recorded through the hub, into the
+	// recordings folder, once the admin turns recording on (D89).
+	rec := recorder.New(st, streams, log, cfg.RecordingsPath())
+	rec.OnChange(func() { lib.ReadFolderAgain(bgCtx, cfg.RecordingsPath()) })
+	background.Go(func() { rec.Run(bgCtx) })
 
 	// The playback check's clips are made with ffmpeg when a box first
 	// asks for them (D70).
@@ -218,7 +225,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger, recent *log
 	code := 0
 	support := admin.Support{Log: recent.Lines, Facts: serverFacts(cfg, ffmpegPath, ffmpegVersion, ffprobePath, ffprobeVersion), Listen: cfg.Listen}
 	svc := server.Services{Store: st, Hub: streams, AdminToken: adminToken, Sources: refresher, Support: support, Library: lib,
-		Checks: checks}
+		Checks: checks, Recorder: rec}
 	if err := server.New(cfg, log, version, svc).Run(ctx); err != nil {
 		log.Error("server failed", "error", err)
 		code = 1

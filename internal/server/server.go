@@ -22,6 +22,7 @@ import (
 	"overscan.gureet.ca/internal/playcheck"
 	"overscan.gureet.ca/internal/portal/device"
 	"overscan.gureet.ca/internal/portal/stalker"
+	"overscan.gureet.ca/internal/recorder"
 	"overscan.gureet.ca/internal/store"
 )
 
@@ -60,6 +61,8 @@ type Services struct {
 	// Checks makes the clips of the playback check (D70); without it,
 	// boxes cannot be checked.
 	Checks *playcheck.Clips
+	// Recorder records programmes (D89); without it, boxes cannot record.
+	Recorder *recorder.Recorder
 }
 
 // stalkerPaths are where Stalker clients look for the portal API (protocol
@@ -88,6 +91,9 @@ func New(cfg config.Config, log *slog.Logger, version string, svc Services) *Ser
 	if svc.Checks != nil {
 		dev.UseChecks(svc.Checks)
 	}
+	if svc.Recorder != nil {
+		dev.UseRecorder(svc.Recorder)
+	}
 	mux.Handle(device.Prefix, dev)
 	mux.Handle("GET /artwork/", artwork.Handler(svc.Store, artwork.New(filepath.Join(cfg.DataDir, "artwork"), log, version), log))
 	for _, path := range magPaths {
@@ -109,6 +115,9 @@ func New(cfg config.Config, log *slog.Logger, version string, svc Services) *Ser
 	}
 	if svc.Hub != nil {
 		a.UseStreams(svc.Hub)
+	}
+	if svc.Recorder != nil {
+		a.UseRecorder(svc.Recorder)
 	}
 	a.UseSupport(svc.Support)
 	adm := a.Handler()

@@ -41,6 +41,7 @@ type Admin struct {
 	support Support           // what the support bundle needs from outside the admin
 	// tmdbBase is TMDB's address, which a test changes (D88).
 	tmdbBase string
+	recorder Recorder // records programmes; nil if this server cannot (D89)
 }
 
 // New returns the admin, which keeps its administrator and sessions in st.
@@ -126,6 +127,8 @@ func (a *Admin) Handler() http.Handler {
 	mux.Handle("POST /admin/settings/adult", a.page(a.adultForm))
 	mux.Handle("POST /admin/settings/radio", a.page(a.radioForm))
 	mux.Handle("POST /admin/settings/tmdb", a.page(a.tmdbForm))
+	mux.Handle("POST /admin/settings/recordings", a.page(a.recordingsForm))
+	mux.Handle("POST /admin/recordings/{id}/{action}", a.page(a.recordingAction))
 	mux.Handle("GET /admin/support-bundle", a.page(a.supportBundle))
 	mux.Handle("GET /admin/{$}", a.page(a.home))
 	mux.HandleFunc("/admin/", a.notFound)
@@ -166,7 +169,7 @@ type view struct {
 var pageNames = []string{"sign-in", "home", "password", "message", "devices", "lineup", "library", "sources", "capture", "settings"}
 
 func (a *Admin) parsePages() map[string]*template.Template {
-	funcs := template.FuncMap{"asset": a.assetPath, "csrfHeaders": csrfHeaders, "ago": ago, "dict": dict, "count": count, "plural": plural, "initial": initial,
+	funcs := template.FuncMap{"asset": a.assetPath, "csrfHeaders": csrfHeaders, "ago": ago, "dict": dict, "count": count, "plural": plural, "initial": initial, "size": sizeText,
 		"sub": func(a, b int) int { return a - b }}
 	pages := map[string]*template.Template{}
 	for _, name := range pageNames {

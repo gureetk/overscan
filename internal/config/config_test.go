@@ -163,6 +163,25 @@ func TestKeyFile(t *testing.T) {
 	}
 }
 
+func TestRecordingsDir(t *testing.T) {
+	cfg, _, err := Load(writeFile(t, "data_dir: /srv/overscan\n"), true, env(nil))
+	if err != nil || cfg.RecordingsPath() != "/srv/overscan/Recordings" {
+		t.Fatalf("default: %q, %v", cfg.RecordingsPath(), err)
+	}
+	cfg, _, err = Load(writeFile(t, "recordings_dir: /srv/recordings\n"), true, env(nil))
+	if err != nil || cfg.RecordingsPath() != "/srv/recordings" {
+		t.Fatalf("from the file: %q, %v", cfg.RecordingsPath(), err)
+	}
+	cfg, _, err = Load(filepath.Join(t.TempDir(), "absent.yaml"), false, env(map[string]string{"OVERSCAN_RECORDINGS_DIR": "/mnt/tv"}))
+	if err != nil || cfg.RecordingsPath() != "/mnt/tv" {
+		t.Fatalf("from the environment: %q, %v", cfg.RecordingsPath(), err)
+	}
+	_, _, err = Load(writeFile(t, "recordings_dir: tv\n"), true, env(nil))
+	if err == nil || !strings.Contains(err.Error(), "recordings_dir") {
+		t.Errorf("a relative path: %v", err)
+	}
+}
+
 func TestFFmpeg(t *testing.T) {
 	absent := filepath.Join(t.TempDir(), "absent.yaml")
 	if cfg, _, err := Load(absent, false, env(nil)); err != nil || cfg.FFmpeg != "ffmpeg" {

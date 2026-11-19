@@ -4,12 +4,17 @@
 // across, with the programme in focus above it and the channel that plays
 // in a small window beside that. A channel whose source keeps an archive
 // plays its past programmes from it (D81): the grid marks them, and goes
-// back as far as the archive does.
+// back as far as the archive does. Once the server records (D89), the
+// green key records a programme that has not ended, or calls its
+// recording off, and the grid marks those to be recorded.
 
-import type { Channel, Programme } from '../api';
+import { type Channel, describe, type Programme } from '../api';
 import { el, Logo, setClass, setHTML, setText, show, toggle } from '../dom';
 import type { Press } from '../keys';
 import { indexOf } from '../lineup';
+import { keptPIN } from '../pin';
+import { label } from '../player';
+import { recordingNow } from '../recordings';
 import { clock, date, day, now, span, startOfDay } from '../time';
 import { Clock, type Ctx, escape, Footer, type Screen, type VideoArea } from './screen';
 
@@ -143,6 +148,15 @@ export class GuideScreen implements Screen {
     this.at = t;
     this.render();
     this.askGuide();
+    this.askRecordings(true);
+  }
+
+  /** askRecordings reads the household's recordings again, unless they are fresh. */
+  private askRecordings(force: boolean): void {
+    const self = this;
+    this.ctx.recordings.load(function () {
+      self.render();
+    }, force);
   }
 
   leave(): void {
@@ -275,6 +289,10 @@ export class GuideScreen implements Screen {
         if (i === this.row && q.start <= this.at && this.at < q.stop) {
           cls += ' focus';
         }
+        const rec = q.stop > t ? this.ctx.recordings.find(c.id, q.start) : null;
+        if (rec) {
+          cls += recordingNow(rec, t) ? ' rec now' : ' rec';
+        }
         this.drawCell(gr.cells[k]!, this.x(from), this.x(to) - this.x(from), (q.start < this.start ? '‹ ' : '') + q.title, span(q.start, q.stop), cls);
       }
       for (; k < cellsPerRow; k++) {
@@ -324,7 +342,9 @@ export class GuideScreen implements Screen {
     }
     setText(this.title, p.title);
     const archived = inArchive(c, p, t);
-    setHTML(this.meta, escape(day(p.start) + ', ' + span(p.start, p.stop) + (p.category ? ' · ' + p.category : '') + (archived ? ' · Catch-up' : '')));
+    const rec = p.stop > t ? this.ctx.recordings.find(c.id, p.start) : null;
+    const recText = rec ? (recordingNow(rec, t) ? ' · Recording' : ' · To be recorded') : '';
+    setHTML(this.meta, escape(day(p.start) + ', ' + span(p.start, p.stop) + (p.category ? ' · ' + p.category : '') + (archived ? ' · Catch-up' : '') + recText));
     setText(this.description, p.description || p.subtitle || '');
     const self = this;
     if (!details) {
@@ -340,11 +360,13 @@ export class GuideScreen implements Screen {
     const c = this.focusedChannel();
     const favourite = !!c && this.ctx.lineup.isFavourite(c.id);
     const p = this.focused();
+    const left = [{ key: 'red', text: favourite ? 'Remove Favourite' : 'Favourite' }];
+    if (c && p && this.ctx.recordings.on && p.stop > now()) {
+      left.push({ key: 'green', text: this.ctx.recordings.find(c.id, p.start) ? 'Cancel Recording' : 'Record' });
+    }
+    left.push({ key: 'blue', text: 'Search' });
     this.footer.set(
-      [
-        { key: 'red', text: favourite ? 'Remove Favourite' : 'Favourite' },
-        { key: 'blue', text: 'Search' },
-      ],
+      left,
       [
         { key: 'OK', text: c && p && inArchive(c, p, now()) ? 'Play from the start' : 'Watch' },
         { key: 'lr', text: 'Earlier, later' },
@@ -386,6 +408,9 @@ export class GuideScreen implements Screen {
         }
         return true;
       }
+      case 'green':
+        this.record();
+        return true;
       case 'yellow':
         this.chooseGroup();
         return true;
@@ -476,7 +501,7 @@ export class GuideScreen implements Screen {
     if (!p || (p.start <= t && t < p.stop)) {
       this.ctx.watch(c, this.channels, true, this.groupKey);
     } else if (p.start > t) {
-      this.ctx.toast(p.title + ' starts at ' + clock(p.start) + ', ' + day(p.start).toLowerCase() + '.');
+      this.ctx.toast(p.title + ' starts at ' + clock(p.start) + ' ' + onDay(p.start) + '.');
     } else if (inArchive(c, p, t)) {
       this.ctx.playProgramme(c, p);
     } else if (c.archive) {
@@ -486,6 +511,57 @@ export class GuideScreen implements Screen {
     }
   }
 
+
+  /**
+   * record records the programme in focus, which has not ended, or calls
+   * its recording off. A locked channel's needs the PIN.
+   */
+  private record(): void {
+    const self = this;
+    const c = this.focusedChannel();
+    const p = this.focused();
+    const recordings = this.ctx.recordings;
+    if (!c || !p) {
+      return;
+    }
+    if (!recordings.on) {
+      this.ctx.toast(describe({ status: 409, code: 'recording_off', retryAfter: 0 }));
+      return;
+    }
+    if (p.stop <= now()) {
+      this.ctx.toast(p.title + ' has ended, so it cannot be recorded.');
+      return;
+    }
+    const r = recordings.find(c.id, p.start);
+    if (r) {
+      recordings.cancel(r, function (err) {
+        self.ctx.toast(err ? "Couldn't cancel the recording. " + describe(err) : 'Cancelled the recording of ' + p.title + '.');
+        self.render();
+      });
+      return;
+    }
+    const schedule = function (pin: string) {
+      recordings.record(c.id, p.start, pin, function (err) {
+        if (err) {
+          self.ctx.toast("Couldn't record " + p.title + '. ' + describe(err));
+        } else if (p.start <= now()) {
+          self.ctx.toast('Recording ' + p.title + ' until ' + clock(p.stop) + '. It will be on Movies.');
+        } else {
+          self.ctx.toast(p.title + ' will be recorded at ' + clock(p.start) + ' ' + onDay(p.start) + '. It will be on Movies.');
+        }
+        self.render();
+      });
+    };
+    if (c.locked) {
+      this.ctx.unlock(label(c), function (ok) {
+        if (ok) {
+          schedule(keptPIN());
+        }
+      });
+      return;
+    }
+    schedule('');
+  }
 
   private chooseGroup(): void {
     const self = this;
@@ -531,6 +607,7 @@ export class GuideScreen implements Screen {
   tick(): void {
     this.clockView.tick();
     this.render();
+    this.askRecordings(false);
   }
 
   lineupChanged(): void {
@@ -565,6 +642,12 @@ export class GuideScreen implements Screen {
 /** inArchive says whether a programme has ended and plays from its channel's archive at t (D81). */
 export function inArchive(c: Channel, p: Programme, t: number): boolean {
   return !!c.archive && p.stop <= t && p.start > t - c.archive * 86400;
+}
+
+/** onDay says which day a time is on, after a clock time: today, tomorrow, or on Fri 4. */
+function onDay(sec: number): string {
+  const d = day(sec);
+  return d === 'Today' || d === 'Tomorrow' || d === 'Yesterday' ? d.toLowerCase() : 'on ' + d;
 }
 
 /** daysBack returns how many days back the guide reaches on a channel: a day, or as far as its archive. */

@@ -81,6 +81,13 @@ tags:
       The boxes and players that use Overscan (D23). A new one waits until the
       administrator approves it: a box running Overscan's page by the
       six-digit code it shows (D39), a Stalker client by its MAC address.
+  - name: recordings
+    description: >-
+      Programmes that boxes record from the guide on this server (D89), once
+      `recordings_cap` in the settings gives them room. A recording plays
+      the channel through the stream hub, as a device of its own, from a
+      minute before its programme to two minutes after it, and its file goes
+      in the recordings folder, which a folder source reads.
 
 paths:
   /session:
@@ -959,6 +966,16 @@ paths:
                 tmdb_language:
                   type: string
                   pattern: "^([a-z]{2}(-[A-Z]{2})?)?$"
+                recordings_cap:
+                  type: integer
+                  minimum: 0
+                  maximum: 4000
+                  description: >-
+                    The room that recordings may take, in gigabytes; 0 turns
+                    recording off (D89). Turning it on makes the recordings
+                    folder and, unless a source reads it, a folder source
+                    for it. A server that cannot record answers 503
+                    (`no_recorder`).
       responses:
         "200":
           $ref: "#/components/responses/Settings"
@@ -970,6 +987,161 @@ paths:
           $ref: "#/components/responses/CSRF"
         "415":
           $ref: "#/components/responses/NotJSON"
+        "503":
+          $ref: "#/components/responses/NoRecorder"
+
+  /recordings:
+    get:
+      tags: [recordings]
+      operationId: listRecordings
+      summary: List the recordings
+      description: >-
+        The recordings to come and under way, the soonest first, and the last
+        hundred that were made, failed or were called off, the latest first,
+        with the room they may take and the room they take.
+      responses:
+        "200":
+          description: The recordings.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [cap_gb, used_bytes, upcoming, recent]
+                properties:
+                  cap_gb:
+                    type: integer
+                    description: The room they may take, in gigabytes; 0 while recording is off.
+                  used_bytes:
+                    type: integer
+                    description: The room the files in the recordings folder take.
+                  upcoming:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Recording"
+                  recent:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Recording"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+
+    post:
+      tags: [recordings]
+      operationId: scheduleRecording
+      summary: Record a programme
+      description: >-
+        Schedules a programme of a channel in the household's lineup, named
+        by when it begins, as the guide gives it, as a box does from its
+        guide. Scheduling it again answers the recording already scheduled.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entry_id, start]
+              properties:
+                entry_id:
+                  type: integer
+                  description: The lineup entry, as the channels' list gives it.
+                start:
+                  type: string
+                  format: date-time
+      responses:
+        "200":
+          description: The recording.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Recording"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          description: The lineup has no such channel, or its guide no programme that starts then (`not_found`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: >-
+            Recording is off (`recording_off`), the programme has ended
+            (`programme_ended`), or it has been recorded already
+            (`recorded`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+
+  /recordings/{id}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [recordings]
+      operationId: cancelRecording
+      summary: Call a recording off
+      description: >-
+        A recording to come is called off. One under way ends now, and what
+        it has written is kept, as a recording made.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "200":
+          description: The recording, as it is now.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Recording"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: It is no longer to come (`not_to_come`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /recordings/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    delete:
+      tags: [recordings]
+      operationId: deleteRecording
+      summary: Delete a recording
+      description: >-
+        Deletes a recording that was made, failed or was called off, with its
+        file.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: It is still to come or under way (`to_come`); call it off first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /library/{kind}/shelves:
     parameters:
@@ -1981,6 +2153,43 @@ components:
           type: string
           format: date-time
           description: For a past programme, when it began.
+    Recording:
+      type: object
+      required: [id, device_id, entry_id, channel, title, start, stop, state, bytes]
+      properties:
+        id:
+          type: integer
+        device_id:
+          type: integer
+          description: The box that scheduled it.
+        entry_id:
+          type: integer
+          description: The lineup entry it records.
+        channel:
+          type: string
+          description: The channel's name, as the box saw it.
+        title:
+          type: string
+          description: The programme's, from the guide.
+        start:
+          type: string
+          format: date-time
+          description: When the programme begins; the recording begins a minute earlier.
+        stop:
+          type: string
+          format: date-time
+          description: When it ends; the recording ends two minutes later.
+        state:
+          type: string
+          enum: [scheduled, recording, done, failed, cancelled]
+        file:
+          type: string
+          description: Its file's name in the recordings folder, once there is one.
+        bytes:
+          type: integer
+        error:
+          type: string
+          description: Why it failed, as a sentence.
     Capture:
       type: object
       required: [module, action, params, example, user_agent, device_id, count, first_seen, last_seen]
@@ -2169,7 +2378,7 @@ components:
         application/json:
           schema:
             type: object
-            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes, adult_marks, radio_apart, tmdb_key_set, tmdb_language]
+            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes, adult_marks, radio_apart, tmdb_key_set, tmdb_language, recordings_cap]
             properties:
               repair_default:
                 type: boolean
@@ -2224,6 +2433,19 @@ components:
               tmdb_language:
                 type: string
                 description: The language TMDB is asked in, such as en-GB; "" for TMDB's own.
+              recordings_cap:
+                type: integer
+                minimum: 0
+                maximum: 4000
+                description: >-
+                  The room that recordings may take, in gigabytes (D89). 0, at
+                  first, for none: boxes cannot record.
+    NoRecorder:
+      description: This server cannot record (`no_recorder`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     PIN:
       description: Whether the household has a parental PIN.
       content:

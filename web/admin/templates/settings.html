@@ -136,6 +136,68 @@
     <p class="hint">Stalker clients see radio stations among their channels. Radio stations are numbered, grouped, hidden and locked on the <a href="/admin/lineup">Live TV</a> page, as channels are.</p>
   </section>
 
+  <section class="panel" id="recordings" aria-labelledby="recordings-title">
+    <div class="panel-title"><span class="tile-icon">{{template "i-record"}}</span><h2 id="recordings-title">Recordings</h2>{{if and .Data.CanRecord .Data.RecordingsCap}}<span class="badge ok">On</span>{{else}}<span class="badge">Off</span>{{end}}</div>
+    {{- if not .Data.CanRecord}}
+    <p class="state-line warn"><i class="dot bad" aria-hidden="true"></i>This server cannot record.</p>
+    {{- else if .Data.RecordingsFull}}
+    <p class="state-line warn"><i class="dot bad" aria-hidden="true"></i>The recordings take all their room. Delete some, or give them more, before the next one starts.</p>
+    {{- end}}
+    <form method="post" action="/admin/settings/recordings" hx-post="/admin/settings/recordings" hx-trigger="change" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" class="switch-row with-select">
+      <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+      <div>
+        <label for="recordings-cap">Record on this server</label>
+        <p id="recordings-text">{{if .Data.RecordingsCap}}Boxes record programmes from the TV Guide with the green key. This server records them, in up to {{.Data.RecordingsCap}} GB, and boxes play them on Movies, from the folder source that reads them.{{else}}Off: boxes cannot record. Once it is on, they record programmes from the TV Guide on this server, and play them on Movies.{{end}}</p>
+        <noscript><button class="small" type="submit">Save</button></noscript>
+      </div>
+      <select id="recordings-cap" name="cap" aria-describedby="recordings-text"{{if not .Data.CanRecord}} disabled{{end}}>
+        {{- range .Data.RecordingCaps}}
+        <option value="{{.}}"{{if eq . $.Data.RecordingsCap}} selected{{end}}>{{if .}}Up to {{.}} GB{{else}}Off{{end}}</option>
+        {{- end}}
+      </select>
+    </form>
+    {{- if .Data.CanRecord}}
+    <p class="hint">They go in <code>{{.Data.RecordingsDir}}</code>, and take {{.Data.RecordingsUsedText}} there. A recording runs from a minute before its programme to two minutes after it, and uses one of its source's connections all that time.</p>
+    {{- end}}
+    {{- if or .Data.Upcoming .Data.Recent}}
+    <div class="table-wrap">
+    <table class="list recordings">
+      <thead><tr><th>Programme</th><th>When</th><th>State</th><th class="actions"><span class="sr">Actions</span></th></tr></thead>
+      <tbody>
+      {{- range .Data.RecordingRows}}
+        <tr>
+          <td><span class="strong">{{.Title}}</span><div class="note">{{.Channel}}</div></td>
+          <td>{{.Start.UTC.Format "2 Jan 15:04"}} to {{.Stop.UTC.Format "15:04"}} UTC</td>
+          <td>
+            {{- if eq .State "scheduled"}}<span class="badge">To come</span>
+            {{- else if eq .State "recording"}}<span class="badge bad">Recording</span>
+            {{- else if eq .State "done"}}<span class="badge ok">Done</span><div class="note">{{size .Size}}</div>
+            {{- else if eq .State "failed"}}<span class="badge warn">Failed</span><div class="note">{{.Error}}{{if .File}}; {{size .Size}} kept{{end}}</div>
+            {{- else}}<span class="badge">Called off</span>{{end}}
+          </td>
+          <td class="actions">
+            {{- if or (eq .State "scheduled") (eq .State "recording")}}
+            <form method="post" action="/admin/recordings/{{.ID}}/cancel" hx-post="/admin/recordings/{{.ID}}/cancel" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" hx-confirm="Call off {{.Title}}?{{if eq .State "recording"}} What it has recorded so far is kept.{{end}}">
+              <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+              <button class="small" type="submit">Call off</button>
+            </form>
+            {{- else}}
+            <form method="post" action="/admin/recordings/{{.ID}}/delete" hx-post="/admin/recordings/{{.ID}}/delete" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" hx-confirm="Delete {{.Title}}{{if .File}} and its file{{end}}?">
+              <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+              <button class="small danger" type="submit">Delete</button>
+            </form>
+            {{- end}}
+          </td>
+        </tr>
+      {{- end}}
+      </tbody>
+    </table>
+    </div>
+    {{- else if .Data.RecordingsCap}}
+    <p class="empty">Nothing recorded yet.</p>
+    {{- end}}
+  </section>
+
   <section class="panel" aria-labelledby="tmdb-title">
     <div class="panel-title"><span class="tile-icon">{{template "i-film"}}</span><h2 id="tmdb-title">Details from TMDB</h2>{{if .Data.TMDBKeySet}}<span class="badge ok">On</span>{{else}}<span class="badge">Off</span>{{end}}</div>
     {{- if .Data.TMDBKeySet}}

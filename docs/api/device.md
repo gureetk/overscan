@@ -2,7 +2,7 @@
 
 Overscan's own MAG page talks to the server through the device API, a JSON API under `/api/device/v1/` built for the box ([plan](../plan.md), section 9). The page and the server ship together, so the API changes with them. It is not meant for other clients: third-party players have the Stalker API.
 
-Version 0, in M1, covers what the first page needs: a session, the channel list, and playing a channel. M2 adds what the page's new interface needs ([D52](../decisions.md)): the guide, favourites, what the box watched, search, and the box's own settings. M3 adds films and series ([D63](../decisions.md) to [D65](../decisions.md)), plays through ffmpeg those whose sound the box cannot play ([D68](../decisions.md)), checks what each box plays ([D70](../decisions.md)), and has Jellyfin transcode the video it cannot play ([D71](../decisions.md)). M4 adds past programmes from their sources' archives ([D81](../decisions.md), [D84](../decisions.md)), locks on films and series ([D85](../decisions.md)), and radio stations ([D87](../decisions.md)).
+Version 0, in M1, covers what the first page needs: a session, the channel list, and playing a channel. M2 adds what the page's new interface needs ([D52](../decisions.md)): the guide, favourites, what the box watched, search, and the box's own settings. M3 adds films and series ([D63](../decisions.md) to [D65](../decisions.md)), plays through ffmpeg those whose sound the box cannot play ([D68](../decisions.md)), checks what each box plays ([D70](../decisions.md)), and has Jellyfin transcode the video it cannot play ([D71](../decisions.md)). M4 adds past programmes from their sources' archives ([D81](../decisions.md), [D84](../decisions.md)), locks on films and series ([D85](../decisions.md)), radio stations ([D87](../decisions.md)), and recordings ([D89](../decisions.md)).
 
 ## Conventions
 
@@ -18,6 +18,9 @@ Version 0, in M1, covers what the first page needs: a session, the channel list,
 | `blocked` | 403 | The administrator has blocked this box. |
 | `not_found` | 404 | No such call, or no such channel, shelf, film, series or episode for this box. |
 | `no_archive` | 404 | The programme does not play from its channel's archive: the channel's source keeps none that Overscan plays, the programme has not ended, or it began longer ago than the archive reaches back ([D81](../decisions.md)). |
+| `recording_off` | 409 | The server does not record: the administrator has not turned recording on ([D89](../decisions.md)). |
+| `programme_ended` | 409 | The programme has ended, so it cannot be recorded. |
+| `recorded` | 409 | The programme has been recorded already: its recording was called off while it recorded, which kept what it had written. |
 | `pin_required` | 403 | The channel, film or series is locked: send the parental PIN ([D55](../decisions.md), [D85](../decisions.md)). |
 | `pin_wrong` | 403 | The PIN is not the account's. |
 | `pin_locked` | 429 | Five wrong PINs in 15 minutes: `Retry-After` says how many seconds the box must wait before it tries again. |
@@ -129,6 +132,26 @@ Answers how to play a past programme of a channel from its source's archive ([D8
 The link plays MPEG-TS without byte positions, and is played and sought in as a film's stream through ffmpeg: to play from a time, the page asks `start` with `?t=<seconds>` into the programme, which answers where the stream from that time starts, then plays `url` with `?t=` and that time, and counts the box's positions from it. An archive takes times to the minute, so a stream starts at the whole minute at or before the time asked for, which can be up to 59 seconds before the programme: `start` can answer less than 0. Each new request for the stream ends the one before, and the link's session goes on for six hours after the player stops, as a film's does. `duration` is the programme's length in seconds; the source's stream may run on past it. A source at its connection limit answers `limit`, as for channels.
 
 A Stalker portal's channel plays a past programme at the link that the portal gives for it ([D84](../decisions.md)), which plays the programme from its start. Its answer has `"seek": "player"` and `"solution": "ffmpeg"`, as a film's that plays as it is, and no `start`: the box's player seeks in it itself, with byte ranges that Overscan passes on to the portal.
+
+### `GET /api/device/v1/recordings`
+
+Answers whether the server records, and the account's recordings that are to come or under way, the soonest first ([D89](../decisions.md)):
+
+```json
+{"on": true, "recordings": [
+  {"id": 4, "channel": 17, "title": "Evening News", "start": 1796414400, "stop": 1796416200, "state": "scheduled"}
+]}
+```
+
+`channel` is the lineup entry's `id`, as in the channel list, and `start` and `stop` are the programme's, in Unix seconds, as the guide gives them. `state` is `scheduled` until the recording begins, a minute before `start`, and `recording` until it ends, two minutes after `stop`. Recordings that are done are films of the folder source that reads the recordings folder, on the box's Movies.
+
+### `POST /api/device/v1/recordings`
+
+Schedules a programme of a channel in the box's lineup, named by when it begins, as the guide gives it, with the parental PIN for a locked channel, as for `play`: `{"channel": 17, "start": 1796414400, "pin": "1234"}`. The programme must not have ended (`programme_ended`), and the server must record (`recording_off`). The answer is the recording, as in the list. Scheduling a programme again answers the recording already scheduled; one that failed or was called off before it began is scheduled again, and one that has been recorded is refused (`recorded`). The server records it from a minute before its start to two minutes after its end, through the stream hub as a device of its own: it holds one of its source's connections all that time, and fails if the source has none free when it begins. It never ends a box's stream.
+
+### `DELETE /api/device/v1/recordings/{id}`
+
+Calls off one of the account's recordings: one to come is `cancelled`; one under way ends now, and what it has written is kept. The answer is the recording.
 
 ### `PUT /api/device/v1/channels/{id}/favourite`, `DELETE` likewise
 

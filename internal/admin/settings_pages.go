@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -18,34 +19,40 @@ import (
 // repair's default and whether it reaches HLS, whether films are converted
 // and transcoded and how many at once ffmpeg may transcode (D78), the
 // parental PIN and what sources' marks for adults do (D86), where boxes
-// show radio stations (D87), TMDB's key for the titles in folders (D88), the
-// administrator's account, and facts about the server, its backups and the
-// support bundle (D59).
+// show radio stations (D87), TMDB's key for the titles in folders (D88),
+// recordings (D89), the administrator's account, and facts about the
+// server, its backups and the support bundle (D59).
 
 // settingsData is what the Settings page shows.
 type settingsData struct {
-	RepairDefault    bool   // channels are repaired unless they say otherwise (D58)
-	RepairHLS        bool   // repaired channels whose address is HLS are made one stream (D61)
-	CanRepair        bool   // there is an ffmpeg to repair them with (D57)
-	FFmpeg           string // which ffmpeg, as the server found it
-	ConvertSound     bool   // films whose sound or file a box cannot play go through ffmpeg (D68, D78)
-	ServerTranscodes bool   // films whose video a box cannot play go through their source's server (D71, D78)
-	Transcodes       int    // films whose video ffmpeg may transcode at a time, 0 for none (D73)
-	CanConvert       bool   // there are ffmpeg and ffprobe to convert films with (D68)
-	CanTranscode     bool   // ffmpeg can transcode them
-	ToneMap          bool   // and map a high dynamic range to the standard one
-	Missing          string // what ffmpeg lacks to transcode, if it cannot
-	PINSet           bool   // the household has a parental PIN (D55)
-	Locks            int    // locked groups, and channels locked one by one
-	LibraryLocks     int    // locked shelves of films and series, and titles locked one by one (D85)
-	Adult            string // what sources' marks for adults do (D86)
-	RadioApart       bool   // boxes show radio stations on their Radio screen alone (D87)
-	RadioStations    int    // radio stations that the sources list
-	TMDBKeySet       bool   // the administrator gave a key for TMDB (D88)
-	TMDBLanguage     string // the language TMDB is asked in, "" for its own
-	TMDBFound        int    // folders' titles that TMDB found
-	TMDBMissed       int    // and that it had no match for
-	TMDBNotice       string // the notice TMDB asks applications to show
+	RepairDefault    bool              // channels are repaired unless they say otherwise (D58)
+	RepairHLS        bool              // repaired channels whose address is HLS are made one stream (D61)
+	CanRepair        bool              // there is an ffmpeg to repair them with (D57)
+	FFmpeg           string            // which ffmpeg, as the server found it
+	ConvertSound     bool              // films whose sound or file a box cannot play go through ffmpeg (D68, D78)
+	ServerTranscodes bool              // films whose video a box cannot play go through their source's server (D71, D78)
+	Transcodes       int               // films whose video ffmpeg may transcode at a time, 0 for none (D73)
+	CanConvert       bool              // there are ffmpeg and ffprobe to convert films with (D68)
+	CanTranscode     bool              // ffmpeg can transcode them
+	ToneMap          bool              // and map a high dynamic range to the standard one
+	Missing          string            // what ffmpeg lacks to transcode, if it cannot
+	PINSet           bool              // the household has a parental PIN (D55)
+	Locks            int               // locked groups, and channels locked one by one
+	LibraryLocks     int               // locked shelves of films and series, and titles locked one by one (D85)
+	Adult            string            // what sources' marks for adults do (D86)
+	RadioApart       bool              // boxes show radio stations on their Radio screen alone (D87)
+	RadioStations    int               // radio stations that the sources list
+	TMDBKeySet       bool              // the administrator gave a key for TMDB (D88)
+	TMDBLanguage     string            // the language TMDB is asked in, "" for its own
+	TMDBFound        int               // folders' titles that TMDB found
+	TMDBMissed       int               // and that it had no match for
+	TMDBNotice       string            // the notice TMDB asks applications to show
+	CanRecord        bool              // this server records programmes (D89)
+	RecordingsCap    int               // the room recordings may take, in gigabytes; 0 while recording is off
+	RecordingsDir    string            // the folder they are written in
+	RecordingsUsed   int64             // the room they take, in bytes
+	Upcoming         []store.Recording // recordings to come and under way, the soonest first
+	Recent           []store.Recording // the last that were made, failed or were called off
 	Facts            []Fact
 	Started          time.Time
 	Portal           string // the address a MAG box loads
@@ -125,6 +132,18 @@ func (a *Admin) settings(r *http.Request) (settingsData, error) {
 	if d.TMDBFound, d.TMDBMissed, err = a.store.TMDBCounts(ctx); err != nil {
 		return d, err
 	}
+	if d.RecordingsCap, err = a.store.RecordingsCap(ctx); err != nil {
+		return d, err
+	}
+	if a.recorder != nil {
+		d.CanRecord, d.RecordingsDir, d.RecordingsUsed = true, a.recorder.Dir(), a.recorder.Used()
+	}
+	if d.Upcoming, err = a.store.Recordings(ctx, shownRecordings, store.RecordingScheduled, store.RecordingRecording); err != nil {
+		return d, err
+	}
+	if d.Recent, err = a.store.RecentRecordings(ctx, shownRecordings); err != nil {
+		return d, err
+	}
 	d.Portal, d.StalkerPortal = portalAddresses(r.Host, a.support.Listen)
 	return d, nil
 }
@@ -190,6 +209,35 @@ func (a *Admin) settingsDone(w http.ResponseWriter, r *http.Request, s store.Adm
 	default:
 		http.Redirect(w, r, "/admin/settings", http.StatusSeeOther)
 	}
+}
+
+// shownRecordings is how many recordings to come, and how many made, the
+// Settings page lists.
+const shownRecordings = 20
+
+// RecordingCaps returns the rooms for recordings that the Settings page
+// offers, with the one set if it is another.
+func (d settingsData) RecordingCaps() []int {
+	caps := recordingCaps
+	if !slices.Contains(caps, d.RecordingsCap) {
+		caps = append(slices.Clone(caps), d.RecordingsCap)
+		slices.Sort(caps)
+	}
+	return caps
+}
+
+// RecordingRows returns the recordings that the Settings page lists: those
+// to come, then those made.
+func (d settingsData) RecordingRows() []store.Recording {
+	return append(slices.Clip(d.Upcoming), d.Recent...)
+}
+
+// RecordingsUsedText says how much room the recordings take.
+func (d settingsData) RecordingsUsedText() string { return sizeText(d.RecordingsUsed) }
+
+// RecordingsFull reports whether the recordings take all their room.
+func (d settingsData) RecordingsFull() bool {
+	return d.RecordingsCap > 0 && d.RecordingsUsed >= int64(d.RecordingsCap)<<30
 }
 
 // AllLocks counts every lock: on groups and channels, and on shelves and
