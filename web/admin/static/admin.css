@@ -667,6 +667,7 @@ table.list { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
 .pin-forms form { margin: 0; }
 .pin-forms .row-form { flex-wrap: nowrap; }
 .pin-forms + .switch-row { margin-top: 1rem; }
+.tmdb-remove { margin-top: 0.75rem; }
 .pin-forms input { flex: 0 1 14rem; }
 
 /* The overview: what needs doing, tiles, what is playing. */

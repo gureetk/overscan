@@ -46,6 +46,8 @@ The notes in [protocol/catchup-notes.md](protocol/catchup-notes.md) are **Docume
 
 The notes in [protocol/playlist-notes.md](protocol/playlist-notes.md) are **Documented** from the public documentation of the same two players, and not from their code.
 
+The notes in [protocol/tmdb-notes.md](protocol/tmdb-notes.md) are **Documented** from The Movie Database's own developer documentation, the documentation of an open-source client (MIT), whose code was not read, and answers on TMDB's forum.
+
 ## Contributor rules
 
 - Do not paste proprietary code, or text from it, into issues, pull requests, comments or commit messages, even to ask a question.

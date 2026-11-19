@@ -53,8 +53,8 @@ ffmpeg; subtitles beside a film or in Jellyfin show on the box, and a playback
 check on each box measures what it plays. The fourth milestone has begun: past
 programmes play from the archives of the Xtream servers, playlists and Stalker
 portals that keep them, on the box and in Stalker clients; films and series
-can be locked with the parental PIN, as channels can; and radio stations play
-on a screen of their own.
+can be locked with the parental PIN, as channels can; radio stations play on
+a screen of their own; and a folder's titles can get their details from TMDB.
 [docs/trying-it.md](docs/trying-it.md) says how to try it.
 
 ## What it is meant to do
@@ -92,6 +92,7 @@ they are tested against a conformance suite, not assumed.
 | [docs/protocol/plex-api-notes.md](docs/protocol/plex-api-notes.md) | What Overscan asks of a Plex Media Server for its films, series and files |
 | [docs/protocol/catchup-notes.md](docs/protocol/catchup-notes.md) | How playlists and Xtream servers describe their archives of past programmes |
 | [docs/protocol/playlist-notes.md](docs/protocol/playlist-notes.md) | What Overscan reads from a playlist's channels, such as which are radio stations |
+| [docs/protocol/tmdb-notes.md](docs/protocol/tmdb-notes.md) | What Overscan asks of TMDB for the titles in folders, and what TMDB asks in return |
 | [docs/library-folders.md](docs/library-folders.md) | How Overscan reads a folder of films and series: names, .nfo files and pictures |
 | [docs/api/device.md](docs/api/device.md) | The device API that Overscan's MAG page uses |
 | [docs/api/admin.yaml](docs/api/admin.yaml) | The admin's JSON API, as an OpenAPI 3.1 description |

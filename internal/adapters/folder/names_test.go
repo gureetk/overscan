@@ -126,3 +126,20 @@ func FuzzNames(f *testing.F) {
 		normal(s)
 	})
 }
+
+func TestTMDBIDOf(t *testing.T) {
+	for names, want := range map[string]int64{
+		"Quiet Harbour (2019) [tmdbid-12345]": 12345,
+		"Quiet Harbour {tmdb-678}":            678,
+		"Quiet Harbour [TMDBID=9]":            9,
+		"Quiet Harbour [imdbid-tt0012345]":    0,
+		"Quiet Harbour (2019)":                0,
+	} {
+		if got := tmdbIDOf(names); got != want {
+			t.Errorf("%q: %d, want %d", names, got, want)
+		}
+	}
+	if got := tmdbIDOf("Plain", "Folder [tmdbid-5]"); got != 5 {
+		t.Errorf("the second name: %d", got)
+	}
+}

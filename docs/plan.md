@@ -212,7 +212,7 @@ Comes in M3, with movies and series (D48).
 
 - Watch configured root folders (allowlist, no escaping through symlinks).
 - Probe with ffprobe, cache results.
-- Identify titles from filename conventions and NFO sidecar files. Optional TMDB metadata with the user's own API key comes in a later milestone (M4 or after; check TMDB's terms and attribution requirements).
+- Identify titles from filename conventions and NFO sidecar files. Optional TMDB metadata with the user's own API key came in M4 (D88; TMDB's terms and attribution in `protocol/tmdb-notes.md`).
 - Group episodes into seasons and series.
 - **In place (D67, `library-folders.md`):** a folder is a source, opened so that nothing outside it can be read; it is read on demand and again after a quarter of an hour rather than watched; titles come from names, `.nfo` files and pictures; episodes group into seasons and series. ffprobe reads a file the first time it plays, and again when it has changed (D68).
 
@@ -485,7 +485,7 @@ Each phase ends with a pre-release of v0.3.0 (`v0.3.0-alpha.N`), as M3's phases 
 - Archive passthrough from sources that have it: Xtream servers, playlists that describe their catch-up, and Stalker portals, on the box and for Stalker clients. **In place:** a channel whose source keeps an archive plays its past programmes from it, through the hub, with the source's login kept on the server; the box's guide marks them and goes back as far as the archive, and the page seeks by asking again from a time (D81); a playlist's channels play their archives as its catch-up attributes say (D82, [catch-up notes](protocol/catchup-notes.md)); a Stalker portal's play at the link that the portal gives for the programme, which the box's player seeks in with byte ranges (D84); Stalker clients see the archive flags and the programmes marked, and play them with `tv_archive/create_link`; and a read of a guide keeps the past that the read before had (D83).
 - Full parental control, adult marks: the PIN for films and series as for channels (D55, D79), and the marks that sources give. **In place:** shelves of films and series, and titles, are locked from the *Movies* and *Series* pages; the box marks a locked title, hides its picture and its details until the PIN is typed, and plays it only with the PIN; Stalker clients do not see locked titles (D85). Xtream servers' and Stalker portals' marks for adults are kept, and do nothing, lock or hide, as a setting says, nothing at first (D86).
 - Radio. **In place:** the radio stations that Xtream servers and playlists list are marked in the lineup; the box plays them on a *Radio* screen, without a picture, and a setting keeps them out of its Live TV (D87).
-- Optional TMDB metadata for local files, with the administrator's own key.
+- Optional TMDB metadata for local files, with the administrator's own key. **In place:** with a key given on the *Settings* page, the films and series in folders that lack a poster or a plot get what their folders leave out from TMDB, found by the TMDB ID in their names or `.nfo` files or by name and year, looked up in the background one request at a time; a series' episodes when a box opens it (D88).
 - Local recording and timeshift (optional).
 *Done when:* a past programme plays on the box, with seeking, from each kind of source that keeps catch-up (an Xtream server, a playlist, a Stalker portal), and a Stalker client sees and plays the same; a recording made on the server plays back on the box; a locked or adult film asks for the PIN on the box and is hidden from Stalker clients; a radio station plays; and a folder's titles get TMDB details once a key is set.
 
@@ -631,7 +631,7 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 - M3U/XMLTV and Xtream output in M6, with an admin-only debug playlist in M1.
 - Ministra-style management REST is in the backlog.
 - Copies of the old Stalker Middleware source are off-limits under the clean-room policy.
-- Optional TMDB metadata: a later milestone (M4 or after).
+- Optional TMDB metadata: in M4, with the administrator's own key (D88).
 - Repository: private on GitHub for now, and v0.1.0 a private release (D49).
 - Logo: option C, "Bleed" (a disc cropped by a screen frame, with the cropped part ghosted out), in ink, paper and teal. Apache-2.0.
 - Admin sign-in: one administrator, an argon2id password set on the server, sessions in the database, and the portal's address unless `admin_listen` names another (D44).

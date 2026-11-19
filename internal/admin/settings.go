@@ -5,11 +5,15 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"overscan.gureet.ca/internal/store"
+	"overscan.gureet.ca/internal/tmdb"
 )
 
 // Settings for the whole server: whether channels are repaired unless they
@@ -18,8 +22,9 @@ import (
 // once ffmpeg may transcode whose video a box cannot play (D73), and
 // whether films go through ffmpeg to convert their sound, and through
 // their source's server to transcode their video (D78), what sources'
-// marks for adults do (D86), and whether boxes show radio stations on their
-// Radio screen alone (D87).
+// marks for adults do (D86), whether boxes show radio stations on their
+// Radio screen alone (D87), and TMDB's key and language (D88), whose key
+// the API never gives back.
 
 type apiSettings struct {
 	RepairDefault    bool   `json:"repair_default"`
@@ -29,6 +34,8 @@ type apiSettings struct {
 	ServerTranscodes bool   `json:"server_transcodes"`
 	AdultMarks       string `json:"adult_marks"`
 	RadioApart       bool   `json:"radio_apart"`
+	TMDBKeySet       bool   `json:"tmdb_key_set"`
+	TMDBLanguage     string `json:"tmdb_language"`
 }
 
 func (a *Admin) apiSettings(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
@@ -41,7 +48,13 @@ func (a *Admin) apiSettings(w http.ResponseWriter, r *http.Request, _ store.Admi
 				if v.ConvertSound, err = a.store.ConvertsSound(ctx); err == nil {
 					if v.ServerTranscodes, err = a.store.ServerTranscodes(ctx); err == nil {
 						if v.AdultMarks, err = a.store.AdultMarks(ctx); err == nil {
-							v.RadioApart, err = a.store.RadioApart(ctx)
+							if v.RadioApart, err = a.store.RadioApart(ctx); err == nil {
+								var key string
+								if key, err = a.store.TMDBKey(ctx); err == nil {
+									v.TMDBKeySet = key != ""
+									v.TMDBLanguage, err = a.store.TMDBLanguage(ctx)
+								}
+							}
 						}
 					}
 				}
@@ -122,6 +135,24 @@ func (a *Admin) apiChangeSettings(w http.ResponseWriter, r *http.Request, _ stor
 				return
 			}
 			if a.editAnswer(w, a.setRadioApart(r.Context(), on)) {
+				return
+			}
+		case "tmdb_language":
+			var language string
+			if json.Unmarshal(v, &language) != nil {
+				apiError(w, http.StatusBadRequest, "bad_json", "tmdb_language is a language such as en-GB, or \"\".")
+				return
+			}
+			if a.editAnswer(w, a.setTMDBLanguage(r.Context(), language)) {
+				return
+			}
+		case "tmdb_key":
+			var key string
+			if json.Unmarshal(v, &key) != nil {
+				apiError(w, http.StatusBadRequest, "bad_json", "tmdb_key is TMDB's API key or read access token, or \"\" to remove it.")
+				return
+			}
+			if _, err := a.setTMDBKey(r.Context(), key); a.editAnswer(w, err) {
 				return
 			}
 		default:
@@ -283,6 +314,81 @@ func (a *Admin) radioForm(w http.ResponseWriter, r *http.Request, s store.AdminS
 		done = "Boxes show radio stations on their Radio screen alone."
 	}
 	a.settingsDone(w, r, s, a.setRadioApart(r.Context(), on), done)
+}
+
+// tmdbCheckTimeout bounds asking TMDB whether it takes a key.
+const tmdbCheckTimeout = 10 * time.Second
+
+// setTMDBKey keeps TMDB's key, once TMDB has taken it, or removes it when
+// it is "" (D88). A key that TMDB cannot be asked about now is kept, and
+// the warning says so.
+func (a *Admin) setTMDBKey(ctx context.Context, key string) (warning string, err error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		if err := a.store.SetTMDBKey(ctx, ""); err != nil {
+			return "", err
+		}
+		a.log.Info("TMDB's key removed in the admin; folders' titles show what their folders have from their next read")
+		return "", nil
+	}
+	if len(key) > 1024 || strings.ContainsAny(key, " \t\r\n") {
+		return "", badEdit(http.StatusBadRequest, "bad_tmdb_key", "That is not a key for TMDB.")
+	}
+	language, err := a.store.TMDBLanguage(ctx)
+	if err != nil {
+		return "", err
+	}
+	check, cancel := context.WithTimeout(ctx, tmdbCheckTimeout)
+	defer cancel()
+	switch err := tmdb.New(key, language, "Overscan/"+a.version).WithBase(a.tmdbBase).Check(check); {
+	case errors.Is(err, tmdb.ErrKey):
+		return "", badEdit(http.StatusBadRequest, "bad_tmdb_key", "TMDB refused the key.")
+	case err != nil:
+		warning = "TMDB could not be asked whether it takes the key: " + err.Error() + "."
+		a.log.Warn("TMDB's key saved in the admin, though TMDB could not be asked whether it takes it", "error", err)
+	default:
+		a.log.Info("TMDB's key saved in the admin; folders' titles get what their folders lack from TMDB")
+	}
+	if err := a.store.SetTMDBKey(ctx, key); err != nil {
+		return "", err
+	}
+	return warning, nil
+}
+
+// setTMDBLanguage sets the language that TMDB is asked in: such as en-GB,
+// or "" for TMDB's own.
+func (a *Admin) setTMDBLanguage(ctx context.Context, language string) error {
+	language = strings.TrimSpace(language)
+	if language != "" && !tmdb.ValidLanguage(language) {
+		return badEdit(http.StatusBadRequest, "bad_tmdb_language", "A language for TMDB is two small letters, and a region if you like: en or en-GB.")
+	}
+	if err := a.store.SetTMDBLanguage(ctx, language); err != nil {
+		return err
+	}
+	a.log.Info("TMDB's language set in the admin", "language", language)
+	return nil
+}
+
+// tmdbForm sets TMDB's key and language from the Settings page, or removes
+// the key.
+func (a *Admin) tmdbForm(w http.ResponseWriter, r *http.Request, s store.AdminSession) {
+	ctx := r.Context()
+	if r.PostFormValue("remove") != "" {
+		_, err := a.setTMDBKey(ctx, "")
+		a.settingsDone(w, r, s, err, "TMDB's key is removed. Titles in folders show what their folders have from their next read.")
+		return
+	}
+	if err := a.setTMDBLanguage(ctx, r.PostFormValue("language")); err != nil {
+		a.settingsDone(w, r, s, err, "")
+		return
+	}
+	key := r.PostFormValue("key")
+	if key == "" {
+		a.settingsDone(w, r, s, nil, "TMDB's language is saved.")
+		return
+	}
+	warning, err := a.setTMDBKey(ctx, key)
+	a.settingsDone(w, r, s, err, strings.TrimSpace("TMDB's key is saved. Titles in folders that lack a poster or a plot get them from TMDB from their folder's next read. "+warning))
 }
 
 // repairChoice reads a channel's repair switch from a form: "on" or "off",

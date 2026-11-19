@@ -101,3 +101,17 @@ func FuzzParseNFO(f *testing.F) {
 		}
 	})
 }
+
+func TestNFOTMDBID(t *testing.T) {
+	for data, want := range map[string]int64{
+		`<movie><title>A</title><uniqueid type="imdb">tt1</uniqueid><uniqueid type="tmdb">4321</uniqueid></movie>`: 4321,
+		`<movie><title>A</title><tmdbid>77</tmdbid></movie>`:                                                       77,
+		`<movie><title>A</title><uniqueid type="TMDB"> 8 </uniqueid><tmdbid>77</tmdbid></movie>`:                   8,
+		`<movie><title>A</title><uniqueid type="tmdb">x</uniqueid></movie>`:                                        0,
+	} {
+		info, ok := parseNFO([]byte(data))
+		if !ok || info.TMDBID != want {
+			t.Errorf("%s: %d, want %d", data, info.TMDBID, want)
+		}
+	}
+}

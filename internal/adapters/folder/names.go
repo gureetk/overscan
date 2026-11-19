@@ -104,6 +104,22 @@ var (
 	tagMark = regexp.MustCompile(`\[[^\]]*\]|\{[^}]*\}`)
 )
 
+// tmdbTag finds a TMDB ID in a name's tags, as in [tmdbid-123] or
+// {tmdb-123}.
+var tmdbTag = regexp.MustCompile(`(?i)[\[{]tmdb(?:id)?[-=](\d{1,9})[\]}]`)
+
+// tmdbIDOf returns the first TMDB ID that the names' tags give, or 0.
+func tmdbIDOf(names ...string) int64 {
+	for _, name := range names {
+		if m := tmdbTag.FindStringSubmatch(name); m != nil {
+			if n, err := strconv.ParseInt(m[1], 10, 64); err == nil && n > 0 {
+				return n
+			}
+		}
+	}
+	return 0
+}
+
 // seasonOfFolder returns the season that a folder's name says it holds.
 func seasonOfFolder(name string) (int, bool) {
 	name = strings.TrimSpace(name)
