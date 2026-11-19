@@ -669,7 +669,19 @@ table.list { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
 .pin-forms + .switch-row { margin-top: 1rem; }
 .tmdb-remove { margin-top: 0.75rem; }
 .panel > .table-wrap { width: calc(100% + 2.5rem); margin: 0.875rem -1.25rem -1.25rem; }
-.recordings td { overflow-wrap: anywhere; }
+.recordings td { overflow-wrap: break-word; }
+.recordings .nowrap { white-space: nowrap; }
+@media (max-width: 47.5rem) {
+  /* On a phone, each recording is a block: the programme, then its state
+     and what can be done with it, on one line below. */
+  table.list.recordings thead { display: none; }
+  table.list.recordings tr { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; padding: 0.875rem 1.25rem; border-bottom: 1px solid var(--line); }
+  table.list.recordings tr:last-child { border-bottom: 0; }
+  table.list.recordings td, table.list.recordings td:first-child, table.list.recordings td:last-child { display: block; padding: 0; border: 0; }
+  table.list.recordings td:first-child { flex: 1 1 100%; }
+  table.list.recordings td:nth-child(2) { flex: 1 1 0; min-width: 0; }
+  table.list.recordings td.actions { flex: 0 0 auto; }
+}
 .recordings .actions form { margin: 0; }
 .pin-forms input { flex: 0 1 14rem; }
 
