@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"overscan.gureet.ca/internal/store"
+	"overscan.gureet.ca/internal/tmdb"
 	"overscan.gureet.ca/web"
 )
 
@@ -38,6 +39,8 @@ type Admin struct {
 	sources Sources           // reads sources; nil if this server cannot
 	streams Streams           // lists what is playing; nil if none
 	support Support           // what the support bundle needs from outside the admin
+	// tmdbBase is TMDB's address, which a test changes (D88).
+	tmdbBase string
 }
 
 // New returns the admin, which keeps its administrator and sessions in st.
@@ -47,15 +50,16 @@ func New(st *store.Store, log *slog.Logger, version string) *Admin {
 		panic(err) // the directory is embedded at build time
 	}
 	a := &Admin{
-		store:   st,
-		log:     log,
-		version: version,
-		started: time.Now().UTC().Truncate(time.Second),
-		now:     time.Now,
-		params:  DefaultParams,
-		limit:   newLimiter(),
-		static:  static,
-		hashes:  map[string]string{},
+		store:    st,
+		log:      log,
+		version:  version,
+		started:  time.Now().UTC().Truncate(time.Second),
+		now:      time.Now,
+		params:   DefaultParams,
+		limit:    newLimiter(),
+		static:   static,
+		hashes:   map[string]string{},
+		tmdbBase: tmdb.DefaultBase,
 	}
 	err = fs.WalkDir(static, ".", func(name string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -121,6 +125,7 @@ func (a *Admin) Handler() http.Handler {
 	mux.Handle("POST /admin/settings/pin", a.page(a.pinForm))
 	mux.Handle("POST /admin/settings/adult", a.page(a.adultForm))
 	mux.Handle("POST /admin/settings/radio", a.page(a.radioForm))
+	mux.Handle("POST /admin/settings/tmdb", a.page(a.tmdbForm))
 	mux.Handle("GET /admin/support-bundle", a.page(a.supportBundle))
 	mux.Handle("GET /admin/{$}", a.page(a.home))
 	mux.HandleFunc("/admin/", a.notFound)

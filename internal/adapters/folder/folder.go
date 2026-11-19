@@ -111,6 +111,9 @@ type Film struct {
 	// Poster and Backdrop are the addresses of its pictures, "" if none.
 	// ReadPicture reads them.
 	Poster, Backdrop string
+	// TMDBID is its ID on TMDB, from its .nfo file or a tag in its name or
+	// its folder's, as in [tmdbid-123]; 0 if none (D88).
+	TMDBID int64
 }
 
 // Show is a series in the folder.
@@ -125,6 +128,7 @@ type Show struct {
 	Info     Info      // what its tvshow.nfo says, if it has one
 	Poster   string
 	Backdrop string
+	TMDBID   int64 // its ID on TMDB, from tvshow.nfo or a tag in its folder's name; 0 if none (D88)
 	// Episodes are its episodes, by season and number, from Show alone.
 	Episodes []Episode
 }
@@ -430,6 +434,13 @@ func (f *Folder) film(ctx context.Context, w *found, v video, alone bool) Film {
 		}
 		film.Year = cmp.Or(info.Year, film.Year)
 	}
+	film.TMDBID = film.Info.TMDBID
+	if film.TMDBID == 0 {
+		film.TMDBID = tmdbIDOf(v.name)
+	}
+	if film.TMDBID == 0 && own {
+		film.TMDBID = tmdbIDOf(path.Base(dir))
+	}
 	lower := strings.ToLower(v.name)
 	posters := []string{lower + "-poster", lower}
 	backdrops := []string{lower + "-fanart", lower + "-backdrop"}
@@ -499,6 +510,10 @@ func (f *Folder) shows(ctx context.Context, w *found, only string, episodes bool
 						s.Name = info.Title
 					}
 					s.Year = cmp.Or(info.Year, s.Year)
+				}
+				s.TMDBID = s.Info.TMDBID
+				if s.TMDBID == 0 {
+					s.TMDBID = tmdbIDOf(path.Base(k.showDir))
 				}
 				s.Poster = files.picture("poster", "folder", "cover", "default", "show")
 				s.Backdrop = files.picture("fanart", "backdrop", "background", "art")

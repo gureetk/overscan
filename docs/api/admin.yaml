@@ -949,6 +949,16 @@ paths:
                   enum: [nothing, lock, hide]
                 radio_apart:
                   type: boolean
+                tmdb_key:
+                  type: string
+                  maxLength: 1024
+                  description: >-
+                    TMDB's API key or read access token, which TMDB must take
+                    when it can be asked; "" removes it (D88). It is never
+                    given back.
+                tmdb_language:
+                  type: string
+                  pattern: "^([a-z]{2}(-[A-Z]{2})?)?$"
       responses:
         "200":
           $ref: "#/components/responses/Settings"
@@ -2159,7 +2169,7 @@ components:
         application/json:
           schema:
             type: object
-            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes, adult_marks, radio_apart]
+            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes, adult_marks, radio_apart, tmdb_key_set, tmdb_language]
             properties:
               repair_default:
                 type: boolean
@@ -2206,6 +2216,14 @@ components:
                   Boxes show radio stations on their Radio screen alone, and not
                   among the channels of Live TV and the guide (D87). Off at
                   first: they show in both.
+              tmdb_key_set:
+                type: boolean
+                description: >-
+                  The administrator gave a key for TMDB, with which the films
+                  and series in folders get what their folders lack (D88).
+              tmdb_language:
+                type: string
+                description: The language TMDB is asked in, such as en-GB; "" for TMDB's own.
     PIN:
       description: Whether the household has a parental PIN.
       content:

@@ -41,6 +41,8 @@ A Plex Media Server is a source of films and series too (D72). Overscan needs th
 
 A folder on the server is a source of films and series too (D67). Choose *Folder*, and enter the folder's absolute path, such as `/srv/media/films`; *Test* says how many films and series Overscan finds in it. Overscan reads the names of files and folders, the `.nfo` files and the pictures beside them as Kodi, Jellyfin and Plex lay them out, and never changes them; [library-folders.md](library-folders.md) says how, and how to let the service read the folder. Each folder is a shelf on the boxes' *Movies* and *Series*.
 
+With a key of your own from The Movie Database (TMDB), given under *Details from TMDB* on the admin's *Settings* page, a folder's films and series that lack a poster or a plot get them from TMDB, with their cast and rating; what the folder has comes first (D88). TMDB checks the key as you save it. Titles are looked up in the background after each read of the folder, and the server log says `looked a source's films up on TMDB` with how many it found. The key is yours, under TMDB's terms of use, and free for use that is not commercial.
+
 A playlist source can become an Xtream source of the same server, and keep its channels with their numbers, names and other changes. Back up the data folder first. Then on the source's *Change* page choose *Xtream server* and enter the server's address, username and password. At the next read the log should say `source refreshed` with `added=0`. Changing the type back to a playlist works the same way.
 
 A source can also come from the configuration file, as in earlier versions:

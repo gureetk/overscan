@@ -34,6 +34,7 @@ type Info struct {
 	Premiered time.Time     // a film's or a series' first showing, an episode's airing
 	Season    int           // an episode's; -1 if not given
 	Episode   int           // an episode's number; -1 if not given
+	TMDBID    int64         // the title's ID on TMDB, 0 if not given (D88)
 }
 
 // maxNFOBytes is the most of an .nfo file that is read.
@@ -61,6 +62,11 @@ type nfoXML struct {
 	Actors      []struct {
 		Name string `xml:"name"`
 	} `xml:"actor"`
+	UniqueIDs []struct {
+		Type  string `xml:"type,attr"`
+		Value string `xml:",chardata"`
+	} `xml:"uniqueid"`
+	TMDBID string `xml:"tmdbid"`
 }
 
 type nfoRating struct {
@@ -130,6 +136,18 @@ func parseNFO(data []byte) (info Info, ok bool) {
 	if m := leadingDigits.FindStringSubmatch(x.Runtime); m != nil {
 		if n, _ := strconv.Atoi(m[1]); n > 0 && n < 2000 {
 			info.Runtime = time.Duration(n) * time.Minute
+		}
+	}
+	ids := []string{x.TMDBID}
+	for _, u := range x.UniqueIDs {
+		if strings.EqualFold(strings.TrimSpace(u.Type), "tmdb") {
+			ids = append([]string{u.Value}, ids...)
+		}
+	}
+	for _, id := range ids {
+		if n, err := strconv.ParseInt(strings.TrimSpace(id), 10, 64); err == nil && n > 0 && n < 1e9 {
+			info.TMDBID = n
+			break
 		}
 	}
 	for _, s := range []string{x.Premiered, x.ReleaseDate, x.Aired} {

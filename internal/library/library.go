@@ -41,6 +41,7 @@ import (
 	"overscan.gureet.ca/internal/source"
 	"overscan.gureet.ca/internal/store"
 	"overscan.gureet.ca/internal/subtitles"
+	"overscan.gureet.ca/internal/tmdb"
 )
 
 // How long what Overscan reads is kept before a device's request reads it
@@ -93,6 +94,11 @@ type Library struct {
 	// stalker holds the sessions of Stalker portals (D76).
 	stalker *stalker.Pool
 
+	// tmdbBase is TMDB's address, and tmdbRuns the lookups on TMDB under
+	// way in the background, by source and kind (D88).
+	tmdbBase string
+	tmdbRuns map[listKey]bool
+
 	// Overridden by tests.
 	maxListBytes int64
 }
@@ -125,6 +131,8 @@ func New(st *store.Store, log *slog.Logger, version string) *Library {
 		details:   map[int64]*pending{},
 		pages:     map[pageKey]*pending{},
 		stalker:   stalker.NewPool(nil),
+		tmdbBase:  tmdb.DefaultBase,
+		tmdbRuns:  map[listKey]bool{},
 	}
 }
 
@@ -369,7 +377,7 @@ func (l *Library) readList(src store.Source, kind string) error {
 			"took", l.now().Sub(start).Round(time.Millisecond))
 		return nil
 	}
-	read := &listRead{tooMany: fmt.Errorf("the server lists more than %d %s", maxTitles, what)}
+	read := &listRead{source: src.ID, tooMany: fmt.Errorf("the server lists more than %d %s", maxTitles, what)}
 	switch settings.Type {
 	case source.TypeXtream:
 		err = l.readXtreamList(ctx, settings, kind, read)
@@ -392,15 +400,21 @@ func (l *Library) readList(src store.Source, kind string) error {
 	l.log.Info("read a source's "+what, "source", src.Name, "titles", len(read.titles), "categories", len(read.categories),
 		"added", changes.Added, "missing", changes.Missing, "removed", changes.Purged, "skipped", read.skipped,
 		"took", l.now().Sub(start).Round(time.Millisecond))
+	if len(read.tmdb) > 0 {
+		l.startTMDB(src, kind, read.tmdb)
+	}
 	return nil
 }
 
 // listRead is what a read of a list found.
 type listRead struct {
+	source     int64
 	categories []store.LibraryCategory
 	titles     []store.LibraryTitle
 	skipped    int   // entries that could not be read
 	tooMany    error // the error once the list holds maxTitles
+	// tmdb are the folder's titles to look up on TMDB (D88).
+	tmdb []tmdbWant
 }
 
 // keep adds a title to the list, unless it is full.
@@ -877,6 +891,31 @@ func (l *Library) readFolderList(ctx context.Context, settings source.Settings, 
 	}
 	defer f.Close()
 	read.categories = []store.LibraryCategory{{Key: folderCategory, Name: f.Name()}}
+	// With TMDB's key, a title gets what its folder lacks from what TMDB
+	// said of it, and one that TMDB has not been asked about is looked up
+	// once the list is kept (D88).
+	c, err := l.tmdbClient(ctx)
+	if err != nil {
+		return err
+	}
+	var known map[string]store.TMDBTitle
+	if c != nil {
+		if known, err = l.store.TMDBTitles(ctx, read.source, kind); err != nil {
+			return err
+		}
+	}
+	withKnown := func(t *store.LibraryTitle, id int64) {
+		if c == nil {
+			return
+		}
+		row, asked := known[t.Key]
+		if asked && row.ID != 0 {
+			withTMDB(t, row.Details)
+		}
+		if (t.Poster == "" || t.Summary.Plot == "") && l.tmdbDue(row, asked) {
+			read.tmdb = append(read.tmdb, tmdbWant{key: t.Key, name: t.Name, year: t.Year, id: id})
+		}
+	}
 	if kind == store.KindMovie {
 		films, skipped, err := f.Films(ctx)
 		if err != nil {
@@ -887,6 +926,7 @@ func (l *Library) readFolderList(ctx context.Context, settings source.Settings, 
 			t := store.LibraryTitle{Key: film.Key, Category: folderCategory, Name: film.Name, Year: film.Year,
 				Rating: film.Info.Rating, Poster: film.Poster, Container: film.Container, AddedAt: film.Added,
 				Summary: folderSummary(film.Info, film.Backdrop)}
+			withKnown(&t, film.TMDBID)
 			if err := read.keep(t); err != nil {
 				return err
 			}
@@ -902,6 +942,7 @@ func (l *Library) readFolderList(ctx context.Context, settings source.Settings, 
 		t := store.LibraryTitle{Key: show.Key, Category: folderCategory, Name: show.Name, Year: show.Year,
 			Rating: show.Info.Rating, Poster: show.Poster, AddedAt: show.Added,
 			Summary: folderSummary(show.Info, show.Backdrop)}
+		withKnown(&t, show.TMDBID)
 		if err := read.keep(t); err != nil {
 			return err
 		}
@@ -947,6 +988,9 @@ func (l *Library) readFolderDetails(ctx context.Context, settings source.Setting
 		}
 		d := folderDetails(film.Info, film.Poster, film.Backdrop, film.Year)
 		d.Duration = int(film.Info.Runtime / time.Second)
+		if row, ok := l.openTMDB(ctx, t, film.Name, film.Year, film.TMDBID, d.Poster == "" || d.Plot == "", nil); ok {
+			fillDetails(&d, row.Details)
+		}
 		return l.store.SetMovieDetails(ctx, t.ID, d, film.Container, l.now())
 	}
 	show, err := f.Show(ctx, t.Key)
@@ -964,7 +1008,63 @@ func (l *Library) readFolderDetails(ctx context.Context, settings source.Setting
 		episodes[i] = store.LibraryEpisode{Key: e.Key, Season: e.Season, Number: e.Number, Name: e.Name,
 			Container: e.Container, Plot: e.Plot, Picture: e.Picture, Duration: int(e.Runtime / time.Second)}
 	}
+	var numbers []int
+	needs := d.Poster == "" || d.Plot == ""
+	for _, s := range d.Seasons {
+		numbers = append(numbers, s.Number)
+	}
+	for _, e := range episodes {
+		needs = needs || e.Plot == "" || e.Picture == ""
+	}
+	if row, ok := l.openTMDB(ctx, t, show.Name, show.Year, show.TMDBID, needs, numbers); ok {
+		fillDetails(&d, row.Details)
+		fillEpisodes(episodes, row.Episodes)
+	}
 	return l.store.SetSeriesDetails(ctx, t.ID, d, episodes, l.now())
+}
+
+// openTMDB returns what TMDB says of a folder's title that a device opened,
+// asking TMDB first when the folder lacks something and TMDB has not been
+// asked lately, and for a series' episodes of its seasons once TMDB found
+// it. ok is false without TMDB's key, or when TMDB has no match. A failed
+// request leaves the title as its folder has it, and the log says why.
+func (l *Library) openTMDB(ctx context.Context, t store.Title, name string, year int, id int64, needs bool, seasons []int) (store.TMDBTitle, bool) {
+	c, err := l.tmdbClient(ctx)
+	if err != nil || c == nil {
+		return store.TMDBTitle{}, false
+	}
+	row, asked, err := l.store.TMDBTitleOf(ctx, t.SourceID, t.Kind, t.Key)
+	if err != nil {
+		return store.TMDBTitle{}, false
+	}
+	fail := func(err error) (store.TMDBTitle, bool) {
+		l.log.Warn("cannot look a title up on TMDB; it shows what its folder has", "title", name, "error", err)
+		return row, asked && row.ID != 0
+	}
+	changed := false
+	if needs && l.tmdbDue(row, asked) {
+		found, err := l.findTMDB(ctx, c, t.Kind, name, year, id)
+		if err != nil {
+			return fail(err)
+		}
+		if found.ID == row.ID {
+			found.Episodes = row.Episodes
+		}
+		row, asked, changed = found, true, true
+	}
+	if t.Kind == store.KindSeries && row.ID != 0 && len(row.Episodes) == 0 && needs && len(seasons) > 0 {
+		eps, err := l.tmdbEpisodes(ctx, c, row.ID, seasons)
+		if err != nil && len(eps) == 0 {
+			return fail(err)
+		}
+		row.Episodes, changed = eps, true
+	}
+	if changed {
+		if err := l.store.SetTMDBTitle(ctx, t.SourceID, t.Kind, t.Key, row); err != nil {
+			l.log.Error("cannot keep what TMDB says of a title", "title", name, "error", err)
+		}
+	}
+	return row, row.ID != 0
 }
 
 // subtitleTimeout caps finding a film's or an episode's subtitles.

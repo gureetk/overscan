@@ -57,7 +57,7 @@ Overscan reads the `.nfo` files that Kodi writes, which Jellyfin and Plex's agen
 - a series': `tvshow.nfo` in its folder;
 - an episode's: the video's name with `.nfo`. A file for several episodes describes the first.
 
-It takes the title, the year, the plot (or else the outline), the genres, the directors, the first eight actors, the countries, the age rating (`mpaa`, as in `Rated PG-13` or `US:PG-13`), the rating (the default one of `ratings`, else `rating`, out of 10 unless it says otherwise), the running time in minutes, the date it was first shown (`premiered`, `releasedate` or `aired`), and an episode's season and number. A file in UTF-8 or ISO-8859-1 is read; one that holds only an address, as some do, is not.
+It takes the title, the year, the plot (or else the outline), the genres, the directors, the first eight actors, the countries, the age rating (`mpaa`, as in `Rated PG-13` or `US:PG-13`), the rating (the default one of `ratings`, else `rating`, out of 10 unless it says otherwise), the running time in minutes, the date it was first shown (`premiered`, `releasedate` or `aired`), an episode's season and number, and the title's ID on TMDB (`uniqueid` of type `tmdb`, or `tmdbid`). A file in UTF-8 or ISO-8859-1 is read; one that holds only an address, as some do, is not.
 
 ## Pictures
 
@@ -72,6 +72,10 @@ JPEG or PNG files, up to 16 MiB, with names in any case:
 | An episode's picture | the video's name with `-thumb` or nothing more |
 
 The box gets them through Overscan, scaled to the size it draws. A picture that changes gets a new address, so boxes fetch it again.
+
+## Details from TMDB
+
+With a key of your own from The Movie Database (TMDB), given on the admin's *Settings* page, a film or a series that lacks a poster or a plot gets what its folder leaves out from TMDB: the poster, the wide picture, the plot, the genres, the cast, the director, the running time, the date and the rating, and for a series its seasons' names and pictures, and its episodes' names, plots and pictures (D88). What the folder has always comes first. Overscan finds a title on TMDB by the ID in its `.nfo` file, or in a tag of its name or its folder's name (`[tmdbid-123]` or `{tmdb-123}`), and otherwise by its name and year, taking only a title of the same name within a year of it. It looks titles up in the background after a folder is read, one request at a time, and asks again after 30 days, or after 7 for a title that TMDB had no match for. A series' episodes are read from TMDB when a box opens it. Without the key, nothing is asked of TMDB, and what it said is forgotten. [protocol/tmdb-notes.md](protocol/tmdb-notes.md) says what is asked of TMDB.
 
 ## Subtitles
 
