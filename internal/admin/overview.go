@@ -450,6 +450,9 @@ type apiStream struct {
 	// Timeshift is a box's channel that plays through a timeshift buffer
 	// (D92).
 	Timeshift bool `json:"timeshift,omitempty"`
+	// Shared is a channel that plays from a shared tuner, whose one
+	// connection to the source serves every screen on it (D93).
+	Shared bool `json:"shared,omitempty"`
 	// Programme and AiredAt are, for a past programme of the channel that
 	// plays from its source's archive (D81), its title and when it began.
 	Programme string     `json:"programme,omitempty"`
@@ -466,7 +469,7 @@ func (a *Admin) apiStreams(w http.ResponseWriter, r *http.Request, _ store.Admin
 		out[i] = apiStream{Kind: s.Kind, DeviceID: s.DeviceID, Device: s.Device, EntryID: s.EntryID, ItemID: s.ItemID,
 			Channel: s.Channel, SourceID: s.SourceID, Source: s.Source, StartedAt: s.Started.UTC().Truncate(time.Second),
 			Bytes: s.Bytes, HLS: s.HLS, Repaired: s.Repaired, Converted: s.Converted, Transcoded: s.Transcoded,
-			TranscodedBy: s.TranscodedBy, Playing: s.Playing, Timeshift: s.Timeshift, Programme: s.Programme}
+			TranscodedBy: s.TranscodedBy, Playing: s.Playing, Timeshift: s.Timeshift, Shared: s.Shared, Programme: s.Programme}
 		if !s.Aired.IsZero() {
 			aired := s.Aired.UTC()
 			out[i].AiredAt = &aired

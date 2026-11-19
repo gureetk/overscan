@@ -24,8 +24,10 @@ import (
 // their source's server to transcode their video (D78), what sources'
 // marks for adults do (D86), whether boxes show radio stations on their
 // Radio screen alone (D87), TMDB's key and language (D88), whose key the
-// API never gives back, the room that recordings may take (D89), and how
-// many minutes of a box's live channel the server keeps (D92).
+// API never gives back, the room that recordings may take (D89), how
+// many minutes of a box's live channel the server keeps (D92), and whether
+// one connection to a source serves every screen that plays a channel
+// (D93).
 
 type apiSettings struct {
 	RepairDefault    bool   `json:"repair_default"`
@@ -39,6 +41,7 @@ type apiSettings struct {
 	TMDBLanguage     string `json:"tmdb_language"`
 	RecordingsCap    int    `json:"recordings_cap"`
 	TimeshiftMinutes int    `json:"timeshift_minutes"`
+	SharedTuner      bool   `json:"shared_tuner"`
 }
 
 func (a *Admin) apiSettings(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
@@ -57,7 +60,9 @@ func (a *Admin) apiSettings(w http.ResponseWriter, r *http.Request, _ store.Admi
 									v.TMDBKeySet = key != ""
 									if v.TMDBLanguage, err = a.store.TMDBLanguage(ctx); err == nil {
 										if v.RecordingsCap, err = a.store.RecordingsCap(ctx); err == nil {
-											v.TimeshiftMinutes, err = a.store.Timeshift(ctx)
+											if v.TimeshiftMinutes, err = a.store.Timeshift(ctx); err == nil {
+												v.SharedTuner, err = a.store.SharedTuner(ctx)
+											}
 										}
 									}
 								}
@@ -178,6 +183,15 @@ func (a *Admin) apiChangeSettings(w http.ResponseWriter, r *http.Request, _ stor
 				return
 			}
 			if a.editAnswer(w, a.setTimeshift(r.Context(), minutes)) {
+				return
+			}
+		case "shared_tuner":
+			var on bool
+			if json.Unmarshal(v, &on) != nil {
+				apiError(w, http.StatusBadRequest, "bad_json", "shared_tuner is true or false.")
+				return
+			}
+			if a.editAnswer(w, a.setSharedTuner(r.Context(), on)) {
 				return
 			}
 		default:

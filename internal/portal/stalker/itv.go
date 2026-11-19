@@ -224,7 +224,7 @@ func (a *API) createLink(w http.ResponseWriter, r *http.Request, d store.Device)
 		reply("", "nothing_to_play")
 		return
 	}
-	if !a.hub.Available(entry.SourceID, d.ID) {
+	if !a.hub.AvailableChannel(r.Context(), entry, d.ID) {
 		reply("", "limit")
 		return
 	}

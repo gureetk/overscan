@@ -537,8 +537,13 @@ func (h *Hub) openShift(ctx context.Context, c claims, name string) *shift {
 func (h *Hub) tune(s *session) {
 	defer s.shift.close()
 	src := h.source(s.sourceID).Name
-	h.log.Info("a box's channel goes through a timeshift buffer", "channel", s.channel, "source", src,
-		"device", s.deviceID, "keeps", s.shift.keep)
+	if s.shared {
+		h.log.Info("a channel plays from a shared tuner, whose one connection to the source serves every screen on it",
+			"channel", s.channel, "source", src, "keeps", s.shift.keep)
+	} else {
+		h.log.Info("a box's channel goes through a timeshift buffer", "channel", s.channel, "source", src,
+			"device", s.deviceID, "keeps", s.shift.keep)
+	}
 	wait := s.shift.retry
 	for first := true; s.ctx.Err() == nil; first = false {
 		target := s.streamURL
@@ -575,18 +580,20 @@ func (h *Hub) tune(s *session) {
 	}
 }
 
-// serveShift plays a box's live session that has a timeshift buffer from
-// the buffer: from its end, or, with ?behind=<seconds>, from that long
-// before it.
+// serveShift plays a live session that has a buffer from the buffer: a
+// box's timeshift buffer (D92), or the shared tuner's of a screen on one
+// (D93). It plays from the buffer's end, or, with ?behind=<seconds> on a
+// link that may go back, from that long before it.
 func (h *Hub) serveShift(w http.ResponseWriter, r *http.Request, s *session) {
+	b := s.buffer()
 	var behind time.Duration
-	if v := r.URL.Query().Get("behind"); v != "" {
+	if v := r.URL.Query().Get("behind"); v != "" && (s.shift != nil || s.canShift) {
 		n, err := strconv.ParseFloat(v, 64)
 		if err != nil || math.IsNaN(n) || n < 0 {
 			http.Error(w, "behind is a number of seconds", http.StatusBadRequest)
 			return
 		}
-		behind = time.Duration(min(n, s.shift.keep.Seconds()) * float64(time.Second))
+		behind = time.Duration(min(n, b.keep.Seconds()) * float64(time.Second))
 	}
 
 	h.begin(s)
@@ -595,7 +602,7 @@ func (h *Hub) serveShift(w http.ResponseWriter, r *http.Request, s *session) {
 	defer cancel()
 	stop := context.AfterFunc(s.ctx, cancel)
 	defer stop()
-	status, header, off := s.shift.start(ctx, behind)
+	status, header, off := b.start(ctx, behind)
 	if status != http.StatusOK {
 		if ctx.Err() == nil {
 			http.Error(w, shiftRefusal(status), status)
@@ -608,10 +615,10 @@ func (h *Hub) serveShift(w http.ResponseWriter, r *http.Request, s *session) {
 	w.WriteHeader(http.StatusOK)
 	if behind > 0 {
 		h.log.Info("a box plays its channel from its timeshift buffer", "channel", s.channel,
-			"behind", behind.Round(time.Second), "kept", s.shift.kept().Round(time.Second), "device", s.deviceID)
+			"behind", behind.Round(time.Second), "kept", b.kept().Round(time.Second), "device", s.deviceID)
 	}
 	rc := http.NewResponseController(w)
-	s.shift.copyTo(ctx, w, func() { _ = rc.Flush() }, off)
+	b.copyTo(ctx, w, func() { _ = rc.Flush() }, off)
 }
 
 // shiftRefusal says why a request of a timeshift buffer gets no stream.

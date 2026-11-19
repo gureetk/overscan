@@ -46,6 +46,11 @@ const (
 	// Radio screen alone, and not among the channels of Live TV and the
 	// guide; off until it is set (D87).
 	settingRadioApart = "radio_apart"
+
+	// settingSharedTuner is "1" if one connection to a source serves every
+	// screen of the household that plays a channel (D93); off until it is
+	// set.
+	settingSharedTuner = "shared_tuner"
 )
 
 // What a source's mark for adults does (D86).
@@ -205,6 +210,18 @@ func (s *Store) RadioApart(ctx context.Context) (bool, error) {
 // screen alone.
 func (s *Store) SetRadioApart(ctx context.Context, on bool) error {
 	return s.setSetting(ctx, settingRadioApart, onOff(on))
+}
+
+// SharedTuner reports whether one connection to a source serves every
+// screen of the household that plays a channel (D93). It is off until set.
+func (s *Store) SharedTuner(ctx context.Context) (bool, error) {
+	v, _, err := s.setting(ctx, settingSharedTuner)
+	return v == "1", err
+}
+
+// SetSharedTuner turns the shared tuner on or off.
+func (s *Store) SetSharedTuner(ctx context.Context, on bool) error {
+	return s.setSetting(ctx, settingSharedTuner, onOff(on))
 }
 
 // onOff writes a switch as a setting's value.
