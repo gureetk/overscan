@@ -2,13 +2,16 @@
 
 // Watching full screen, with the info banner: the channel, what is on now
 // and next, what the picture and sound are, and what the colour keys do.
+// While the server keeps the channel in a timeshift buffer (D92), Play and
+// Pause or Green pause it, Left, Right, Rewind and Fast-forward go back and
+// on in it, and Stop goes back to live.
 
 import type { Channel, StreamAudio } from '../api';
 import { el, Logo, setHTML, setText, setWidth, show } from '../dom';
 import { star } from '../icons';
 import type { Press } from '../keys';
 import type { PickItem } from '../overlays';
-import { clock, duration, now, progress, span } from '../time';
+import { clock, duration, hms, now, progress, span } from '../time';
 import { Clock, type Ctx, escape, Footer, type Screen, type VideoArea } from './screen';
 
 /** How long the banner shows by itself. */
@@ -24,6 +27,8 @@ export class WatchScreen implements Screen {
   private name: HTMLElement;
   private fav: HTMLElement;
   private nowLine: HTMLElement;
+  private liveDot: HTMLElement;
+  private nowWord: HTMLElement;
   private nowText: HTMLElement;
   private badges: HTMLElement;
   private title: HTMLElement;
@@ -35,6 +40,8 @@ export class WatchScreen implements Screen {
   private clockView: Clock;
   private timer = 0;
   private infoTimer = 0;
+  /** Redraws the banner each second while the channel is paused or behind live. */
+  private shiftTimer = 0;
 
   constructor(parent: HTMLElement, ctx: Ctx) {
     this.ctx = ctx;
@@ -50,8 +57,8 @@ export class WatchScreen implements Screen {
     this.fav.innerHTML = star(15);
     const what = el('div', 'what', top);
     this.nowLine = el('div', 'now-line', what);
-    el('span', 'live-dot', this.nowLine);
-    el('span', 'now-word', this.nowLine, 'NOW');
+    this.liveDot = el('span', 'live-dot', this.nowLine);
+    this.nowWord = el('span', 'now-word', this.nowLine, 'NOW');
     this.nowText = el('span', 'now-text', this.nowLine);
     this.badges = el('span', 'badges', this.nowLine);
     this.title = el('div', 'title', what);
@@ -85,18 +92,32 @@ export class WatchScreen implements Screen {
     this.ctx.videoChanged();
     clearTimeout(this.timer);
     this.timer = setTimeout(function () {
-      self.hideBanner();
+      // A paused channel keeps its banner.
+      if (self.ctx.player.paused()) {
+        self.showBanner();
+      } else {
+        self.hideBanner();
+      }
     }, bannerMs);
     // What the picture and sound are is known a moment after a stream starts.
     clearTimeout(this.infoTimer);
     this.infoTimer = setTimeout(function () {
       self.drawBadges();
     }, 1500);
+    clearInterval(this.shiftTimer);
+    if (this.ctx.player.shifted()) {
+      this.shiftTimer = setInterval(function () {
+        if (self.overVideo()) {
+          self.draw();
+        }
+      }, 1000);
+    }
   }
 
   private hideBanner(): void {
     clearTimeout(this.timer);
     clearTimeout(this.infoTimer);
+    clearInterval(this.shiftTimer);
     if (this.banner.style.display !== 'none') {
       show(this.banner, false);
       this.ctx.videoChanged();
@@ -108,10 +129,15 @@ export class WatchScreen implements Screen {
     if (!c) {
       return;
     }
-    const t = now();
+    // Behind live, the banner says what shows, and how far behind it is.
+    const player = this.ctx.player;
+    const shifted = player.shifted();
+    const behind = shifted ? player.behind() : 0;
+    const t = now() - behind;
+    show(this.liveDot, !shifted);
+    setText(this.nowWord, !shifted ? 'NOW' : (player.paused() ? 'PAUSED ' : '') + (behind >= 1 ? '−' + hms(behind) : 'LIVE'));
     this.clockView.tick();
     this.logo.set(c.logo || '', c.name);
-    const player = this.ctx.player;
     setText(this.number, String(this.ctx.lineup.shownNumber(c, player.listKey, player.index)));
     setText(this.name, c.name);
     const favourite = this.ctx.lineup.isFavourite(c.id);
@@ -127,16 +153,22 @@ export class WatchScreen implements Screen {
     }
     setHTML(this.next, next ? '<span class="at">Next ' + clock(next.start) + '</span>' + escape(next.title) : '');
     this.drawBadges();
+    const colours = [{ key: 'red', text: favourite ? 'Remove from Favourites' : 'Add to Favourites' }];
+    if (player.shiftable()) {
+      colours.push({ key: 'green', text: player.paused() ? 'Play' : 'Pause' });
+    }
+    colours.push({ key: 'yellow', text: 'Audio' }, { key: 'blue', text: 'Guide' });
     this.footer.set(
-      [
-        { key: 'red', text: favourite ? 'Remove from Favourites' : 'Add to Favourites' },
-        { key: 'yellow', text: 'Audio' },
-        { key: 'blue', text: 'Guide' },
-      ],
-      [
-        { key: 'CH +/−', text: 'Change channel' },
-        { key: 'OK', text: 'Channel list' },
-      ],
+      colours,
+      shifted
+        ? [
+            { key: 'lr', text: 'Back and on' },
+            { key: 'STOP', text: 'Live' },
+          ]
+        : [
+            { key: 'CH +/−', text: 'Change channel' },
+            { key: 'OK', text: 'Channel list' },
+          ],
     );
   }
 
@@ -163,6 +195,11 @@ export class WatchScreen implements Screen {
   }
 
   key(p: Press): boolean {
+    const player = this.ctx.player;
+    if (player.shiftable() && this.shiftKey(p)) {
+      this.showBanner();
+      return true;
+    }
     switch (p.key) {
       case 'up':
       case 'pageUp':
@@ -206,6 +243,49 @@ export class WatchScreen implements Screen {
         this.ctx.player.stop();
         this.ctx.back();
         return true;
+    }
+    return false;
+  }
+
+  /**
+   * shiftKey handles a key that pauses the channel or moves through its
+   * timeshift buffer, and reports whether it did: Left and Right only once
+   * it is paused or behind live, and Stop only then too.
+   */
+  private shiftKey(p: Press): boolean {
+    const player = this.ctx.player;
+    const shifted = player.shifted();
+    switch (p.key) {
+      case 'playPause':
+      case 'green':
+        player.pauseToggle();
+        return true;
+      case 'rewind':
+        player.seekShift(-60);
+        return true;
+      case 'forward':
+        if (shifted) {
+          player.seekShift(60);
+        }
+        return true;
+      case 'left':
+        if (shifted) {
+          player.seekShift(-10);
+          return true;
+        }
+        return false;
+      case 'right':
+        if (shifted) {
+          player.seekShift(30);
+          return true;
+        }
+        return false;
+      case 'stop':
+        if (shifted) {
+          player.live();
+          return true;
+        }
+        return false;
     }
     return false;
   }

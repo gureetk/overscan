@@ -49,6 +49,7 @@ type settingsData struct {
 	TMDBNotice       string            // the notice TMDB asks applications to show
 	CanRecord        bool              // this server records programmes (D89)
 	RecordingsCap    int               // the room recordings may take, in gigabytes; 0 while recording is off
+	Timeshift        int               // the minutes of a box's live channel the server keeps; 0 while timeshift is off (D92)
 	RecordingsDir    string            // the folder they are written in
 	RecordingsUsed   int64             // the room they take, in bytes
 	Upcoming         []store.Recording // recordings to come and under way, the soonest first
@@ -133,6 +134,9 @@ func (a *Admin) settings(r *http.Request) (settingsData, error) {
 		return d, err
 	}
 	if d.RecordingsCap, err = a.store.RecordingsCap(ctx); err != nil {
+		return d, err
+	}
+	if d.Timeshift, err = a.store.Timeshift(ctx); err != nil {
 		return d, err
 	}
 	if a.recorder != nil {

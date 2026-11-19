@@ -24,7 +24,8 @@ import (
 // their source's server to transcode their video (D78), what sources'
 // marks for adults do (D86), whether boxes show radio stations on their
 // Radio screen alone (D87), TMDB's key and language (D88), whose key the
-// API never gives back, and the room that recordings may take (D89).
+// API never gives back, the room that recordings may take (D89), and how
+// many minutes of a box's live channel the server keeps (D92).
 
 type apiSettings struct {
 	RepairDefault    bool   `json:"repair_default"`
@@ -37,6 +38,7 @@ type apiSettings struct {
 	TMDBKeySet       bool   `json:"tmdb_key_set"`
 	TMDBLanguage     string `json:"tmdb_language"`
 	RecordingsCap    int    `json:"recordings_cap"`
+	TimeshiftMinutes int    `json:"timeshift_minutes"`
 }
 
 func (a *Admin) apiSettings(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
@@ -54,7 +56,9 @@ func (a *Admin) apiSettings(w http.ResponseWriter, r *http.Request, _ store.Admi
 								if key, err = a.store.TMDBKey(ctx); err == nil {
 									v.TMDBKeySet = key != ""
 									if v.TMDBLanguage, err = a.store.TMDBLanguage(ctx); err == nil {
-										v.RecordingsCap, err = a.store.RecordingsCap(ctx)
+										if v.RecordingsCap, err = a.store.RecordingsCap(ctx); err == nil {
+											v.TimeshiftMinutes, err = a.store.Timeshift(ctx)
+										}
 									}
 								}
 							}
@@ -165,6 +169,15 @@ func (a *Admin) apiChangeSettings(w http.ResponseWriter, r *http.Request, _ stor
 				return
 			}
 			if a.editAnswer(w, a.setRecordingsCap(r.Context(), gb)) {
+				return
+			}
+		case "timeshift_minutes":
+			var minutes int
+			if json.Unmarshal(v, &minutes) != nil {
+				apiError(w, http.StatusBadRequest, "bad_json", fmt.Sprintf("timeshift_minutes is a whole number of minutes from 0 to %d.", store.MaxTimeshift))
+				return
+			}
+			if a.editAnswer(w, a.setTimeshift(r.Context(), minutes)) {
 				return
 			}
 		default:

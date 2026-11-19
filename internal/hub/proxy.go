@@ -49,7 +49,13 @@ func (h *Hub) proxy(w http.ResponseWriter, r *http.Request, s *session, target s
 func (h *Hub) proxyIn(parent context.Context, w http.ResponseWriter, s *session, target string, continuous bool) {
 	h.begin(s)
 	defer h.finish(s)
+	h.copyIn(parent, w, s, target, continuous)
+}
 
+// copyIn is proxyIn without counting the request as a player's: a
+// timeshift buffer's tuner uses it (D92), with the buffer as w. A
+// timeshift buffer, like a past programme, gets no HLS playlist.
+func (h *Hub) copyIn(parent context.Context, w http.ResponseWriter, s *session, target string, continuous bool) {
 	// The request ends when the device goes away or the session ends.
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
@@ -95,6 +101,11 @@ func (h *Hub) proxyIn(parent context.Context, w http.ResponseWriter, s *session,
 				h.log.Warn("cannot relay a past programme's HLS stream", "channel", s.channel, "programme", s.programme,
 					"source", src, "reason", "it has "+unsupported)
 				http.Error(w, "this programme's stream cannot be relayed", http.StatusBadGateway)
+				return
+			case s.shift != nil:
+				h.log.Warn("cannot relay an HLS stream into a timeshift buffer", "channel", s.channel,
+					"source", src, "reason", "it has "+unsupported)
+				http.Error(w, "this stream cannot be relayed", http.StatusBadGateway)
 				return
 			case h.relayingToRepair(s):
 				// The link is continuous only so that the stream can be

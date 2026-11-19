@@ -23,6 +23,9 @@ export type Key =
   | 'mute'
   | 'info'
   | 'stop'
+  | 'playPause'
+  | 'rewind'
+  | 'forward'
   | 'red'
   | 'green'
   | 'yellow'
@@ -73,6 +76,15 @@ export function keyOf(e: KeyboardEvent): Press | null {
       return press('tv');
     case 122:
       return press('menu');
+    // TV browsers' media keys; Pause from a keyboard in dev mode.
+    case 19:
+    case 415:
+    case 463:
+      return press('playPause');
+    case 412:
+      return press('rewind');
+    case 417:
+      return press('forward');
   }
   if (e.altKey) {
     switch (code) {
@@ -82,6 +94,12 @@ export function keyOf(e: KeyboardEvent): Press | null {
         return press('info');
       case 83: // Alt+S
         return press('stop');
+      case 82: // Alt+R
+        return press('playPause');
+      case 66: // Alt+B
+        return press('rewind');
+      case 70: // Alt+F
+        return press('forward');
       case 71: // Alt+G
         return press('audio');
     }

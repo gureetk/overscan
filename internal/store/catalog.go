@@ -576,6 +576,7 @@ type PlayableEntry struct {
 	Locked    bool // it needs the parental PIN (D55)
 	Repair    bool // its stream goes through ffmpeg: its own switch says so, or else the default does (D57, D58)
 	RepairHLS bool // the server repairs HLS streams too, made into one continuous stream (D61)
+	Radio     bool // a radio station (D87)
 }
 
 // PlayableEntry returns the lineup entry with the given ID if a device may
@@ -586,11 +587,11 @@ func (s *Store) PlayableEntry(ctx context.Context, entryID int64) (PlayableEntry
 	var sourceName, sourceType string
 	err := s.db.QueryRowContext(ctx, `
 		SELECT e.id, e.lineup_id, c.id, c.source_id, COALESCE(e.name, c.name), c.stream_url, c.stream_secret,
-			s.name, s.type, (SELECT secret FROM source_secrets WHERE source_id = s.id), `+lockedEntry+`, COALESCE(c.repair, `+repairDefaultSQL+`), `+repairHLSSQL+
+			s.name, s.type, (SELECT secret FROM source_secrets WHERE source_id = s.id), `+lockedEntry+`, COALESCE(c.repair, `+repairDefaultSQL+`), `+repairHLSSQL+`, c.radio`+
 		lineupEntryJoins+`
 		WHERE e.id = ? AND `+shownEntry,
 		entryID).Scan(&p.EntryID, &p.LineupID, &p.ChannelID, &p.SourceID, &p.Name, &p.StreamURL, &sealed,
-		&sourceName, &sourceType, &sourceSealed, &p.Locked, &p.Repair, &p.RepairHLS)
+		&sourceName, &sourceType, &sourceSealed, &p.Locked, &p.Repair, &p.RepairHLS, &p.Radio)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PlayableEntry{}, ErrNotFound
 	}

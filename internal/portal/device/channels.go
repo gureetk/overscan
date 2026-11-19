@@ -154,6 +154,9 @@ type playRequest struct {
 type playResponse struct {
 	URL      string `json:"url"`
 	Solution string `json:"solution"`
+	// Timeshift is, for a link that plays through a timeshift buffer, how
+	// many seconds of the channel the server keeps (D92).
+	Timeshift int `json:"timeshift,omitempty"`
 }
 
 // play answers POST channels/{id}/play with a link that plays the channel
@@ -194,11 +197,29 @@ func (a *API) play(w http.ResponseWriter, r *http.Request, d store.Device) {
 		writeError(w, http.StatusServiceUnavailable, errLimit)
 		return
 	}
-	link := a.hub.Link(d.ID, entry)
+	// While timeshift is on, a channel plays through a buffer that keeps
+	// the last minutes of it, so that the box can pause and go back (D92).
+	// A radio station's screen has no use for one.
+	minutes, err := a.store.Timeshift(r.Context())
+	if err != nil {
+		a.internalError(w, "read the timeshift setting", err)
+		return
+	}
+	var link string
+	shifted := false
+	if minutes > 0 && !entry.Radio {
+		link, shifted = a.hub.ShiftLink(d.ID, entry)
+	} else {
+		link = a.hub.Link(d.ID, entry)
+	}
 	if err := a.store.RecordWatch(r.Context(), d.ID, entry.EntryID, a.now()); err != nil {
 		a.log.Warn("cannot record what a device watched", "mac", d.MAC, "error", err)
 	}
-	writeJSON(w, http.StatusOK, playResponse{URL: "http://" + r.Host + link, Solution: solution(link)})
+	resp := playResponse{URL: "http://" + r.Host + link, Solution: solution(link)}
+	if shifted {
+		resp.Timeshift = minutes * 60
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // pinRequest is the body of a PIN call.

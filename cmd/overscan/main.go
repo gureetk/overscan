@@ -180,6 +180,11 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger, recent *log
 	streams := hub.New(st, log, version, hubSources(sources))
 	ffmpegPath, ffmpegVersion := useFFmpeg(ctx, streams, cfg.FFmpeg, hub.RepairSet, log)
 	ffprobePath, ffprobeVersion := useFFprobe(ctx, streams, ffmpegPath, log)
+	// Boxes pause live TV and go back in it through buffers on disk, while
+	// the admin's timeshift setting is on (D92).
+	if err := streams.UseTimeshift(filepath.Join(cfg.DataDir, "timeshift")); err != nil {
+		log.Warn("cannot make the folder for timeshift buffers, so boxes cannot pause live TV", "error", err)
+	}
 	useEncoder(ctx, streams, ffmpegPath, ffprobePath, log)
 	refresher := catalog.NewRefresher(st, log, version)
 	refresher.AllowEmpty(cfg.RecordingsPath())
