@@ -223,6 +223,9 @@ func (g *Reader) read(ctx context.Context, src source.Settings, id int64, addres
 		}
 		return res, err
 	}
+	// What has ended and the new guide lacks stays, as long as it would
+	// have been kept (D83).
+	w.KeepPast(Behind)
 	if err := w.Commit(ctx, g.now(), from); err != nil {
 		return res, err
 	}

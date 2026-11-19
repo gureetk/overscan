@@ -11,16 +11,18 @@ import (
 
 // The first byte of every token says its form, so the forms can change: 1
 // for a lineup entry's link, 2 for a film's or an episode's, which also
-// says which of the two it plays.
+// says which of the two it plays, 3 for a past programme's (D81).
 const (
-	tokenVersion     = 1
-	itemTokenVersion = 2
+	tokenVersion        = 1
+	itemTokenVersion    = 2
+	archiveTokenVersion = 3
 )
 
 const (
-	claimsLen     = 1 + 8 + 8 + 8 + 8     // version, entry, device, expiry, nonce
-	itemClaimsLen = 1 + 1 + 8 + 8 + 8 + 8 // version, kind, item, device, expiry, nonce
-	macLen        = 16
+	claimsLen        = 1 + 8 + 8 + 8 + 8         // version, entry, device, expiry, nonce
+	itemClaimsLen    = 1 + 1 + 8 + 8 + 8 + 8     // version, kind, item, device, expiry, nonce
+	archiveClaimsLen = 1 + 8 + 8 + 8 + 8 + 8 + 8 // version, entry, device, expiry, nonce, start, stop
+	macLen           = 16
 )
 
 // What a token plays.
@@ -28,6 +30,7 @@ const (
 	kindEntry   byte = iota // a lineup entry: a live channel
 	kindMovie               // a film
 	kindEpisode             // an episode of a series
+	kindArchive             // a past programme of a lineup entry, from its source's archive (D81)
 )
 
 // convertFlag, in a film's or an episode's kind byte, marks a link that
@@ -51,20 +54,33 @@ type claims struct {
 	// transcode, with convert, says that its source's server transcodes
 	// it.
 	transcode bool
+	// start and stop are, for a past programme, when it began and ended,
+	// in Unix seconds.
+	start, stop int64
 }
 
 // sign returns c as a token: the claims and an HMAC-SHA256 of them, cut to
 // 128 bits, in URL-safe base64.
 func (h *Hub) sign(c claims) string {
 	var b []byte
-	if c.kind == kindEntry {
+	switch c.kind {
+	case kindArchive:
+		b = make([]byte, archiveClaimsLen, archiveClaimsLen+sha256.Size)
+		b[0] = archiveTokenVersion
+		binary.BigEndian.PutUint64(b[1:], uint64(c.entryID))
+		binary.BigEndian.PutUint64(b[9:], uint64(c.deviceID))
+		binary.BigEndian.PutUint64(b[17:], uint64(c.expires))
+		binary.BigEndian.PutUint64(b[25:], c.nonce)
+		binary.BigEndian.PutUint64(b[33:], uint64(c.start))
+		binary.BigEndian.PutUint64(b[41:], uint64(c.stop))
+	case kindEntry:
 		b = make([]byte, claimsLen, claimsLen+sha256.Size)
 		b[0] = tokenVersion
 		binary.BigEndian.PutUint64(b[1:], uint64(c.entryID))
 		binary.BigEndian.PutUint64(b[9:], uint64(c.deviceID))
 		binary.BigEndian.PutUint64(b[17:], uint64(c.expires))
 		binary.BigEndian.PutUint64(b[25:], c.nonce)
-	} else {
+	default:
 		b = make([]byte, itemClaimsLen, itemClaimsLen+sha256.Size)
 		b[0], b[1] = itemTokenVersion, c.kind
 		if c.convert {
@@ -95,6 +111,8 @@ func (h *Hub) verify(token string) (claims, bool) {
 		n = claimsLen
 	case itemTokenVersion:
 		n = itemClaimsLen
+	case archiveTokenVersion:
+		n = archiveClaimsLen
 	}
 	if n == 0 || len(b) != n+macLen {
 		return claims{}, false
@@ -104,7 +122,8 @@ func (h *Hub) verify(token string) (claims, bool) {
 	if !hmac.Equal(mac.Sum(nil)[:macLen], b[n:]) {
 		return claims{}, false
 	}
-	if b[0] == tokenVersion {
+	switch b[0] {
+	case tokenVersion:
 		return claims{
 			kind:     kindEntry,
 			entryID:  int64(binary.BigEndian.Uint64(b[1:])),
@@ -112,6 +131,17 @@ func (h *Hub) verify(token string) (claims, bool) {
 			expires:  int64(binary.BigEndian.Uint64(b[17:])),
 			nonce:    binary.BigEndian.Uint64(b[25:]),
 		}, true
+	case archiveTokenVersion:
+		c := claims{
+			kind:     kindArchive,
+			entryID:  int64(binary.BigEndian.Uint64(b[1:])),
+			deviceID: int64(binary.BigEndian.Uint64(b[9:])),
+			expires:  int64(binary.BigEndian.Uint64(b[17:])),
+			nonce:    binary.BigEndian.Uint64(b[25:]),
+			start:    int64(binary.BigEndian.Uint64(b[33:])),
+			stop:     int64(binary.BigEndian.Uint64(b[41:])),
+		}
+		return c, c.stop > c.start
 	}
 	kind := b[1] &^ (convertFlag | transcodeFlag)
 	if kind != kindMovie && kind != kindEpisode {

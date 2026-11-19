@@ -45,7 +45,7 @@ func (h *Hub) serveItem(w http.ResponseWriter, r *http.Request, rest string) {
 	token, _, _ := strings.Cut(first, ".")
 	c, ok := h.verify(token)
 	subtitle, isSubtitle := strings.CutPrefix(sub, "sub/")
-	if !ok || c.kind == kindEntry || hasSub && !isSubtitle && (sub != "start" || !c.convert) {
+	if !ok || c.kind != kindMovie && c.kind != kindEpisode || hasSub && !isSubtitle && (sub != "start" || !c.convert) {
 		http.Error(w, "invalid link", http.StatusForbidden)
 		return
 	}

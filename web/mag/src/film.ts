@@ -4,22 +4,28 @@
 // device.md), starting where the account got to, pausing and seeking, and
 // telling the server how far it got (D65). A file that the box cannot play
 // as it is comes as a stream that ffmpeg makes of it (D68), which has no
-// byte positions: the page seeks in it by asking for it from a time.
+// byte positions: the page seeks in it by asking for it from a time. A
+// past programme of a channel plays from its source's archive the same way
+// (D81), and asks for the parental PIN when its channel is locked (D55).
 
 import {
   type ApiError,
+  type ArchiveLink,
+  type Channel,
   type Client,
   describe,
   type EpisodeInfo,
   getFrom,
   type ItemLink,
   type PlaybackReport,
+  type Programme,
   type Progress,
   type StreamAudio,
   type StreamStart,
   type SubtitleInfo,
   type Title,
 } from './api';
+import { forgetPIN, keepPIN, keptPIN } from './pin';
 import { externalSubtitles, type Platform, type PlayerEvent } from './platform';
 
 /** How often the page tells the server how far it got, while one plays. */
@@ -46,6 +52,11 @@ const startLimitMs = 40000;
 const eventGraceMs = 8000;
 /** A film whose place stands still this long while it plays is waiting for its source. */
 const stallMs = 2500;
+/**
+ * A past programme whose stream goes on past its end, as some archives'
+ * streams do, ends this long after it.
+ */
+const programmeTailSec = 120;
 /** A wait this long is told to the server. */
 const longWaitMs = 10000;
 
@@ -60,16 +71,37 @@ function nowMs(): number {
   return new Date().getTime();
 }
 
-/** What plays: a film, or an episode of a series. */
+/** What plays: a film, an episode of a series, or a past programme of a channel. */
 export interface Playing {
+  /** The film or the series; for a past programme, one that stands for it. */
   title: Title;
   /** The episode, for a series. */
   episode: EpisodeInfo | null;
   /** The episode's season. */
   season: number;
+  /** A past programme of a channel, which plays from its source's archive (D81). */
+  programme?: PastProgramme | null;
+}
+
+/** A past programme of a channel. */
+export interface PastProgramme {
+  channel: Channel;
+  programme: Programme;
+}
+
+/** pastProgramme returns what plays a past programme of a channel. */
+export function pastProgramme(c: Channel, p: Programme): Playing {
+  return {
+    title: { id: 0, kind: 'movie', name: p.title, details: true, runtime: Math.round((p.stop - p.start) / 60) },
+    episode: null,
+    season: 0,
+    programme: { channel: c, programme: p },
+  };
 }
 
 export interface FilmHost {
+  /** Asks for the parental PIN for what, saying why; done gets it, or null if the viewer gave up. */
+  askPIN(what: string, message: string, done: (pin: string | null) => void): void;
   /** It started, or failed to; text says why it stopped, if it did. */
   stopped(text: string): void;
   /** Something went wrong that the viewer should hear of, while it plays on. */
@@ -94,8 +126,11 @@ export interface Subtitles {
   lang: string;
 }
 
-/** name returns what plays as the screen says it: a film's name, or a series' with S1 E2. */
+/** name returns what plays as the screen says it: a film's or a programme's name, or a series' with S1 E2. */
 export function playingName(p: Playing): string {
+  if (p.programme) {
+    return p.programme.programme.title;
+  }
   if (!p.episode) {
     return p.title.name;
   }
@@ -164,15 +199,38 @@ export class FilmPlayer {
     this.item = p;
     this.retries = 0;
     this.track = 0;
-    this.length = p.episode ? p.episode.duration || 0 : p.title.runtime ? p.title.runtime * 60 : 0;
-    this.start(Math.max(0, Math.floor(from)));
+    if (p.programme) {
+      this.length = p.programme.programme.stop - p.programme.programme.start;
+    } else {
+      this.length = p.episode ? p.episode.duration || 0 : p.title.runtime ? p.title.runtime * 60 : 0;
+    }
+    this.start(Math.max(0, Math.floor(from)), '');
   }
 
-  private start(from: number): void {
+  /** request returns the call that asks for what plays, with the PIN, if any. */
+  private request(p: Playing, pin: string): { path: string; body: object } {
+    if (p.programme) {
+      const body: { start: number; pin?: string } = { start: p.programme.programme.start };
+      if (pin) {
+        body.pin = pin;
+      }
+      return { path: 'channels/' + p.programme.channel.id + '/archive', body: body };
+    }
+    return { path: p.episode ? 'episodes/' + p.episode.id + '/play' : 'movies/' + p.title.id + '/play', body: { restart: true } };
+  }
+
+  private start(from: number, pin: string): void {
     const self = this;
     const p = this.item;
     if (!p) {
       return;
+    }
+    if (p.programme && p.programme.channel.locked && !pin) {
+      pin = keptPIN();
+      if (!pin) {
+        this.askPIN(p, from, '');
+        return;
+      }
     }
     const seq = ++this.seq;
     this.paused = false;
@@ -184,20 +242,18 @@ export class FilmPlayer {
     clearTimeout(this.watchTimer);
     this.setPhase('linking');
     this.askedAt = nowMs();
-    const path = p.episode ? 'episodes/' + p.episode.id + '/play' : 'movies/' + p.title.id + '/play';
-    this.client.call<ItemLink>('POST', path, { restart: true }, function (err, link) {
+    const call = this.request(p, pin);
+    this.client.call<ItemLink | ArchiveLink>('POST', call.path, call.body, function (err, link) {
       if (seq !== self.seq) {
         return;
       }
       self.linkMs = nowMs() - self.askedAt;
       if (err || !link) {
-        self.item = null;
-        if (err && (err.code === 'unauthorized' || err.code === 'blocked' || err.code === 'not_found')) {
-          self.host.lost(err);
-          return;
-        }
-        self.host.stopped("Can't play " + playingName(p) + '. ' + describe(err));
+        self.refused(p, from, err);
         return;
+      }
+      if (pin) {
+        keepPIN(pin);
       }
       self.link = link;
       self.shown = self.sameSubtitles(self.shown, link);
@@ -212,6 +268,48 @@ export class FilmPlayer {
       self.began(from);
       self.schedule();
     });
+  }
+
+  /** askPIN asks for the parental PIN, saying why, and starts what plays with it. */
+  private askPIN(p: Playing, from: number, message: string): void {
+    const self = this;
+    this.setPhase('linking');
+    this.host.askPIN(playingName(p), message, function (entered) {
+      if (self.item !== p) {
+        return;
+      }
+      if (entered) {
+        self.start(from, entered);
+      } else {
+        self.stop(false);
+        self.host.stopped('');
+      }
+    });
+  }
+
+  /** refused deals with a call for a link that the server refused. */
+  private refused(p: Playing, from: number, err: ApiError | null): void {
+    const code = err ? err.code : '';
+    if (code === 'pin_required' || code === 'pin_wrong') {
+      forgetPIN();
+      this.askPIN(p, from, code === 'pin_wrong' ? 'That PIN is not right. Try again.' : '');
+      return;
+    }
+    this.item = null;
+    if (code === 'pin_locked') {
+      const wait = err && err.retryAfter ? Math.ceil(err.retryAfter / 60) : 5;
+      this.host.stopped('Too many wrong PINs. Try again in ' + wait + (wait === 1 ? ' minute.' : ' minutes.'));
+      return;
+    }
+    if (code === 'no_archive') {
+      this.host.stopped("Can't play " + playingName(p) + '. ' + describe(err));
+      return;
+    }
+    if (err && (code === 'unauthorized' || code === 'blocked' || code === 'not_found')) {
+      this.host.lost(err);
+      return;
+    }
+    this.host.stopped("Can't play " + playingName(p) + '. ' + describe(err));
   }
 
   /** converted reports whether what plays is a stream through ffmpeg, which the page seeks in. */
@@ -230,12 +328,16 @@ export class FilmPlayer {
     if (!link) {
       return;
     }
-    if (at <= 0 || !link.start) {
+    // A past programme's stream starts at a whole minute, which can be
+    // before the programme, so the page asks where even from its start.
+    const programme = !!(this.item && this.item.programme);
+    if ((at <= 0 && !programme) || !link.start) {
       this.playFrom(seq, at > 0 ? at : 0);
       return;
     }
-    getFrom<StreamStart>(link.start + '?t=' + at, function (err, s) {
-      self.playFrom(seq, !err && s && typeof s.t === 'number' && s.t >= 0 ? s.t : at);
+    getFrom<StreamStart>(link.start + '?t=' + Math.max(0, at), function (err, s) {
+      const least = programme ? -60 : 0;
+      self.playFrom(seq, !err && s && typeof s.t === 'number' && s.t >= least ? s.t : Math.max(0, at));
     });
   }
 
@@ -246,7 +348,7 @@ export class FilmPlayer {
       return;
     }
     this.offset = t;
-    this.lastAt = t;
+    this.lastAt = Math.max(0, t);
     const query: string[] = [];
     if (t > 0) {
       query.push('t=' + t);
@@ -322,7 +424,13 @@ export class FilmPlayer {
     this.lastPos = pos;
     if (moving) {
       this.movedAt = t;
-      this.lastAt = this.offset + pos;
+      this.lastAt = Math.max(0, this.offset + pos);
+    }
+    const p = this.item;
+    if (p && p.programme && this.length > 0 && this.lastAt > this.length + programmeTailSec) {
+      // The archive's stream goes on into what came after the programme.
+      this.ended();
+      return;
     }
     switch (this.phase) {
       case 'starting':
@@ -384,8 +492,8 @@ export class FilmPlayer {
       return;
     }
     const r: PlaybackReport = {
-      kind: p.episode ? 'episode' : 'movie',
-      id: p.episode ? p.episode.id : p.title.id,
+      kind: p.programme ? 'programme' : p.episode ? 'episode' : 'movie',
+      id: p.programme ? p.programme.channel.id : p.episode ? p.episode.id : p.title.id,
       outcome: outcome,
       link_ms: Math.max(0, Math.round(this.linkMs)),
       moved_ms: Math.round(movedMs),
@@ -459,7 +567,7 @@ export class FilmPlayer {
     }
     const at = this.platform.position();
     if (at > 0) {
-      this.lastAt = this.offset + at;
+      this.lastAt = Math.max(0, this.offset + at);
     }
     return this.lastAt;
   }
@@ -714,7 +822,7 @@ export class FilmPlayer {
     this.setPhase('linking');
     setTimeout(function () {
       if (seq === self.seq && self.item === p) {
-        self.start(at);
+        self.start(at, keptPIN());
       }
     }, 1500);
   }
@@ -735,10 +843,10 @@ export class FilmPlayer {
     }, reportMs);
   }
 
-  /** report tells the server how far it got, or that it finished. */
+  /** report tells the server how far it got into a film or an episode, or that it finished. */
   private report(finished: boolean): void {
     const p = this.item;
-    if (!p) {
+    if (!p || p.programme) {
       return;
     }
     const path = p.episode ? 'episodes/' + p.episode.id + '/progress' : 'movies/' + p.title.id + '/progress';

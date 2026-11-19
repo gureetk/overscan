@@ -27,8 +27,8 @@ const (
 )
 
 // epgProgramme is a programme in the shape the protocol notes describe:
-// numbers and times as strings, times in Unix seconds. mark_archive is "0"
-// until catch-up exists.
+// numbers and times as strings, times in Unix seconds. mark_archive is "1"
+// for a programme that plays from its channel's archive (D81).
 type epgProgramme struct {
 	ID             string `json:"id"`
 	ChID           string `json:"ch_id"`
@@ -40,17 +40,46 @@ type epgProgramme struct {
 	MarkArchive    string `json:"mark_archive"`
 }
 
-func epgItem(entryID int64, p store.Programme) epgProgramme {
+// epgItem returns a programme of a lineup entry's channel in its Stalker
+// shape, marked as one that plays from the channel's archive if it has
+// ended within the days that the archive reaches back.
+func epgItem(entryID int64, p store.Programme, days int, now time.Time) epgProgramme {
+	mark := "0"
+	if store.InArchive(p, days, now) {
+		mark = "1"
+	}
 	return epgProgramme{
-		ID:             strconv.FormatInt(p.ID, 10),
+		ID:             programmeID(entryID, p.Start),
 		ChID:           strconv.FormatInt(entryID, 10),
 		Name:           p.Title,
 		Descr:          p.Description,
 		Category:       p.Category,
 		StartTimestamp: strconv.FormatInt(p.Start.Unix(), 10),
 		StopTimestamp:  strconv.FormatInt(p.Stop.Unix(), 10),
-		MarkArchive:    "0",
+		MarkArchive:    mark,
 	}
+}
+
+// minuteBits is how many low bits of a programme's ID hold its start, in
+// whole minutes since 1970: enough until 2097.
+const minuteBits = 26
+
+// programmeID returns the ID that clients know a programme by: its
+// channel's ID and its start, in whole minutes, as one number, so that it
+// stays the same when the guide is read again (D81).
+func programmeID(entryID int64, start time.Time) string {
+	return strconv.FormatInt(entryID<<minuteBits|(start.Unix()/60)&(1<<minuteBits-1), 10)
+}
+
+// programmeOf returns the channel and the minute of the start that a
+// programme's ID names.
+func programmeOf(id string) (entryID int64, minute time.Time, ok bool) {
+	n, err := strconv.ParseInt(id, 10, 64)
+	if err != nil || n <= 0 {
+		return 0, time.Time{}, false
+	}
+	entryID = n >> minuteBits
+	return entryID, time.Unix((n&(1<<minuteBits-1))*60, 0).UTC(), entryID > 0
 }
 
 // deviceZone returns the time zone that a device's timezone cookie names,
@@ -107,7 +136,7 @@ func (a *API) getShortEPG(w http.ResponseWriter, r *http.Request, d store.Device
 	}
 	out := make([]epgProgramme, 0, min(size, len(ps)))
 	for _, p := range ps[:min(size, len(ps))] {
-		out = append(out, epgItem(entryID, p))
+		out = append(out, epgItem(entryID, p, 0, now)) // none has ended
 	}
 	writeJS(w, out)
 }
@@ -136,7 +165,7 @@ func (a *API) getEPGInfo(w http.ResponseWriter, r *http.Request, d store.Device)
 	for entryID, ps := range byEntry {
 		items := make([]epgProgramme, len(ps))
 		for i, p := range ps {
-			items[i] = epgItem(entryID, p)
+			items[i] = epgItem(entryID, p, 0, now) // none has ended
 		}
 		data[strconv.FormatInt(entryID, 10)] = items
 	}
@@ -174,6 +203,17 @@ func (a *API) getSimpleDataTable(w http.ResponseWriter, r *http.Request, d store
 		a.internalError(w, "read the guide", err)
 		return
 	}
+	days := 0
+	if len(ps) > 0 {
+		lineupID, err := a.lineupID(r, d)
+		if err == nil {
+			days, err = a.store.EntryArchiveDays(r.Context(), lineupID, entryID)
+		}
+		if err != nil {
+			a.internalError(w, "read the guide", err)
+			return
+		}
+	}
 	// The day's own programmes: those that start on it.
 	var own []store.Programme
 	current := -1
@@ -202,7 +242,7 @@ func (a *API) getSimpleDataTable(w http.ResponseWriter, r *http.Request, d store
 		if start+i == current {
 			out.SelectedItem = i + 1
 		}
-		out.Data = append(out.Data, epgItem(entryID, p))
+		out.Data = append(out.Data, epgItem(entryID, p, days, a.now()))
 	}
 	writeJS(w, out)
 }

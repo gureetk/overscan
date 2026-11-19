@@ -40,11 +40,18 @@ const (
 // HLS address so that it can be repaired (D61) is refused if the relay
 // cannot play the stream.
 func (h *Hub) proxy(w http.ResponseWriter, r *http.Request, s *session, target string, continuous bool) {
+	h.proxyIn(r.Context(), w, s, target, continuous)
+}
+
+// proxyIn is proxy, for a request that ends when parent does, such as a
+// turn of a past programme's session (D81). A past programme gets no HLS
+// playlist of its own: its stream is relayed, or refused.
+func (h *Hub) proxyIn(parent context.Context, w http.ResponseWriter, s *session, target string, continuous bool) {
 	h.begin(s)
 	defer h.finish(s)
 
 	// The request ends when the device goes away or the session ends.
-	ctx, cancel := context.WithCancel(r.Context())
+	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	stop := context.AfterFunc(s.ctx, cancel)
 	defer stop()
@@ -56,10 +63,10 @@ func (h *Hub) proxy(w http.ResponseWriter, r *http.Request, s *session, target s
 		switch {
 		case ctx.Err() != nil:
 		case errors.As(err, &refused):
-			h.log.Warn("a stream's source refused it", "channel", s.channel, "source", src, "status", refused.status)
+			h.log.Warn("a stream's source refused it", s.what(), s.channel, "source", src, "status", refused.status)
 			http.Error(w, "the source answered "+refused.status, http.StatusBadGateway)
 		default:
-			h.log.Warn("cannot reach a stream", "channel", s.channel, "source", src, "error", err)
+			h.log.Warn("cannot reach a stream", s.what(), s.channel, "source", src, "error", err)
 			http.Error(w, "the source cannot be reached", http.StatusBadGateway)
 		}
 		return
@@ -72,7 +79,7 @@ func (h *Hub) proxy(w http.ResponseWriter, r *http.Request, s *session, target s
 		resp.Body.Close()
 		switch {
 		case errors.Is(err, errPlaylistTooLarge):
-			h.log.Warn("an HLS playlist is too large", "channel", s.channel, "source", src)
+			h.log.Warn("an HLS playlist is too large", s.what(), s.channel, "source", src)
 			http.Error(w, "the playlist is too large", http.StatusBadGateway)
 			return
 		case err != nil:
@@ -84,6 +91,11 @@ func (h *Hub) proxy(w http.ResponseWriter, r *http.Request, s *session, target s
 			switch {
 			case relayed:
 				return
+			case s.kind == kindArchive:
+				h.log.Warn("cannot relay a past programme's HLS stream", "channel", s.channel, "programme", s.programme,
+					"source", src, "reason", "it has "+unsupported)
+				http.Error(w, "this programme's stream cannot be relayed", http.StatusBadGateway)
+				return
 			case h.relayingToRepair(s):
 				// The link is continuous only so that the stream can be
 				// repaired, and the player it went to may not play a
@@ -94,7 +106,7 @@ func (h *Hub) proxy(w http.ResponseWriter, r *http.Request, s *session, target s
 				return
 			}
 			h.log.Warn("cannot relay an HLS stream; the player gets its playlist",
-				"channel", s.channel, "source", src, "reason", "it has "+unsupported)
+				s.what(), s.channel, "source", src, "reason", "it has "+unsupported)
 		}
 		h.writePlaylist(w, s, resp.Request.URL, data)
 		return
@@ -138,9 +150,9 @@ func (h *Hub) proxy(w http.ResponseWriter, r *http.Request, s *session, target s
 			if continuous && ctx.Err() == nil {
 				after := h.now().Sub(started).Round(100 * time.Millisecond)
 				if rerr == io.EOF {
-					h.log.Info("the source ended a stream", "channel", s.channel, "source", src, "after", after, "bytes", sent)
+					h.log.Info("the source ended a stream", s.what(), s.channel, "source", src, "after", after, "bytes", sent)
 				} else {
-					h.log.Warn("a stream's source broke off", "channel", s.channel, "source", src, "after", after, "bytes", sent, "error", fetchError(rerr))
+					h.log.Warn("a stream's source broke off", s.what(), s.channel, "source", src, "after", after, "bytes", sent, "error", fetchError(rerr))
 				}
 			}
 			return

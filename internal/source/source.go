@@ -86,6 +86,11 @@ type Settings struct {
 	// Numbers says how its channels are numbered: NumbersPlaylist or
 	// NumbersProvider.
 	Numbers string
+	// CatchupZone is, for an Xtream server or a playlist, the time zone of
+	// the dates and times in the addresses of its channels' archives
+	// (D81): "" for the one that an Xtream server gives, or else UTC; or an
+	// IANA name, such as UTC or Europe/London.
+	CatchupZone string
 }
 
 // Device is a box as a provider registered it with a Stalker portal: its MAC
@@ -155,7 +160,7 @@ func (s Settings) Host() string {
 // Error is a setting that breaks a rule. Its text never quotes the address
 // or the login.
 type Error struct {
-	Field string // the setting: name, type, url, username, password, mac, device, user_agent, max_connections, refresh or numbers
+	Field string // the setting: name, type, url, username, password, mac, device, user_agent, max_connections, refresh, numbers or catchup_zone
 	Text  string // what is wrong, as a sentence
 }
 
@@ -221,8 +226,22 @@ func (s Settings) Check() error {
 		return bad("user_agent", "A user agent is at most %d bytes of text, without control characters.", maxUserAgent)
 	case s.Numbers != NumbersPlaylist && s.Numbers != NumbersProvider:
 		return bad("numbers", "Numbers come from the playlist's order (playlist) or from the playlist's own numbers (provider).")
+	case s.CatchupZone != "" && s.Type != TypeXtream && s.Type != TypeM3U:
+		return bad("catchup_zone", "Only an Xtream server or a playlist has a time zone for its catch-up.")
+	case s.CatchupZone != "" && !ValidZone(s.CatchupZone):
+		return bad("catchup_zone", "A time zone is a name such as UTC or Europe/London, or empty for the server's own.")
 	}
 	return nil
+}
+
+// ValidZone reports whether s names a time zone that Overscan knows, such
+// as UTC or Europe/London.
+func ValidZone(s string) bool {
+	if s == "" || len(s) > 64 || s == "Local" || hasControl(s) {
+		return false
+	}
+	_, err := time.LoadLocation(s)
+	return err == nil
 }
 
 // validPortal reports whether s can be a Stalker portal's address: http or

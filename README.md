@@ -86,6 +86,7 @@ they are tested against a conformance suite, not assumed.
 | [docs/protocol/xtream-api-notes.md](docs/protocol/xtream-api-notes.md) | What a client sees when it reads a provider through the Xtream API |
 | [docs/protocol/jellyfin-api-notes.md](docs/protocol/jellyfin-api-notes.md) | What Overscan asks of a Jellyfin server for its films, series and files |
 | [docs/protocol/plex-api-notes.md](docs/protocol/plex-api-notes.md) | What Overscan asks of a Plex Media Server for its films, series and files |
+| [docs/protocol/catchup-notes.md](docs/protocol/catchup-notes.md) | How playlists and Xtream servers describe their archives of past programmes |
 | [docs/library-folders.md](docs/library-folders.md) | How Overscan reads a folder of films and series: names, .nfo files and pictures |
 | [docs/api/device.md](docs/api/device.md) | The device API that Overscan's MAG page uses |
 | [docs/api/admin.yaml](docs/api/admin.yaml) | The admin's JSON API, as an OpenAPI 3.1 description |

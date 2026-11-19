@@ -6,13 +6,12 @@
 // list it was played from.
 
 import { type ApiError, type Channel, type Client, describe, type PlayLink } from './api';
+import { forgetPIN, keepPIN, keptPIN } from './pin';
 import type { Platform, PlayerEvent } from './platform';
 
 /** A failing stream is started again at most maxRetries times in retryWindowMs. */
 const maxRetries = 3;
 const retryWindowMs = 60000;
-/** How long a right PIN is kept, so that changing between locked channels does not ask again. */
-const pinKeepMs = 10 * 60 * 1000;
 
 export interface PlayerHost {
   /** Asks for the PIN, saying why; done gets it, or null if the viewer gave up. */
@@ -39,8 +38,6 @@ export class Player {
   /** Counts play calls, so that the answer to a superseded one is ignored. */
   private seq = 0;
   private retries: number[] = [];
-  private pin = '';
-  private pinUntil = 0;
 
   constructor(platform: Platform, client: Client, host: PlayerHost) {
     this.platform = platform;
@@ -76,8 +73,7 @@ export class Player {
 
   /** forgetPIN drops a PIN that the page keeps. */
   forgetPIN(): void {
-    this.pin = '';
-    this.pinUntil = 0;
+    forgetPIN();
   }
 
   onEvent(event: PlayerEvent): void {
@@ -98,14 +94,10 @@ export class Player {
     }, 1500);
   }
 
-  private keptPIN(): string {
-    return this.pin && new Date().getTime() < this.pinUntil ? this.pin : '';
-  }
-
   private start(c: Channel, list: Channel[], key: string, pin: string): void {
     const self = this;
     if (c.locked && !pin) {
-      pin = this.keptPIN();
+      pin = keptPIN();
       if (!pin) {
         this.host.askPIN(c, '', function (entered) {
           if (entered) {
@@ -125,8 +117,7 @@ export class Player {
         return;
       }
       if (pin) {
-        self.pin = pin;
-        self.pinUntil = new Date().getTime() + pinKeepMs;
+        keepPIN(pin);
       }
       self.list = list;
       self.listKey = key;
@@ -192,7 +183,7 @@ export class Player {
     const seq = this.seq;
     setTimeout(function () {
       if (seq === self.seq && self.channel === c) {
-        self.start(c, self.list, self.listKey, self.keptPIN());
+        self.start(c, self.list, self.listKey, keptPIN());
       }
     }, 1000);
   }

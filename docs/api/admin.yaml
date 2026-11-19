@@ -1762,6 +1762,13 @@ components:
           type: string
           enum: [playlist, provider]
           description: How its channels are numbered (D40).
+        catchup_zone:
+          type: string
+          description: >-
+            For an Xtream server or a playlist, the time zone of the dates and
+            times in the addresses of its channels' archives (D81): an IANA name
+            such as UTC or Europe/London, or empty for the one that an Xtream
+            server gives, or else UTC.
         new_categories_hidden:
           type: boolean
           description: Whether the categories that it adds later start hidden in the lineup (D47).
@@ -1874,8 +1881,8 @@ components:
       properties:
         kind:
           type: string
-          enum: [live, movie, episode]
-          description: What plays, a channel, a film or an episode of a series.
+          enum: [live, movie, episode, archive]
+          description: What plays, a channel, a film, an episode of a series, or a past programme of a channel from its source's archive (D81).
         device_id:
           type: integer
         device:
@@ -1883,7 +1890,7 @@ components:
           description: The device's label, or else its MAC address.
         entry_id:
           type: integer
-          description: The channel's lineup entry; 0 for a film or an episode.
+          description: The channel's lineup entry, for a channel or its past programme; 0 for a film or an episode.
         item_id:
           type: integer
           description: The film's or the episode's ID; 0 for a channel.
@@ -1925,6 +1932,13 @@ components:
         playing:
           type: boolean
           description: A player is fetching it now; otherwise the session waits for one to come back.
+        programme:
+          type: string
+          description: For a past programme, its title, where the guide still has it.
+        aired_at:
+          type: string
+          format: date-time
+          description: For a past programme, when it began.
     Capture:
       type: object
       required: [module, action, params, example, user_agent, device_id, count, first_seen, last_seen]
@@ -2049,6 +2063,13 @@ components:
         numbers:
           type: string
           enum: [playlist, provider]
+        catchup_zone:
+          type: string
+          maxLength: 64
+          description: >-
+            For an Xtream server or a playlist only: the time zone of the dates
+            and times in its catch-up addresses, an IANA name such as UTC or
+            Europe/London, or empty for the server's own (D81).
         enabled:
           type: boolean
         new_categories_hidden:

@@ -96,6 +96,7 @@ func New(cfg config.Config, log *slog.Logger, version string, svc Services) *Ser
 	mux.HandleFunc("GET /{$}", s.handleRoot)
 	mux.Handle("GET /live/", svc.Hub)
 	mux.Handle("GET /vod/", svc.Hub)
+	mux.Handle("GET /archive/", svc.Hub)
 	mux.HandleFunc("GET /debug/lineup.m3u", s.handleDebugLineup)
 	mux.HandleFunc("GET /debug/play/{entry}", s.handleDebugPlay)
 	s.handler = mux

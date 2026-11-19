@@ -29,8 +29,9 @@ const (
 
 // playbackReport is the body of POST playback.
 type playbackReport struct {
-	// Kind is movie or episode, and ID the film's title ID or the
-	// episode's ID.
+	// Kind is movie, episode or programme, and ID the film's title ID, the
+	// episode's ID, or the ID of the channel whose past programme it is
+	// (D81).
 	Kind string `json:"kind"`
 	ID   int64  `json:"id"`
 	// Outcome is began, not_started, waited (it stood still and went on)
@@ -63,7 +64,7 @@ func (r playbackReport) valid() bool {
 	default:
 		return false
 	}
-	return (r.Kind == "movie" || r.Kind == "episode") && r.ID > 0 &&
+	return (r.Kind == "movie" || r.Kind == "episode" || r.Kind == "programme") && r.ID > 0 &&
 		r.LinkMs >= 0 && r.LinkMs <= maxReportMs && r.MovedMs >= -1 && r.MovedMs <= maxReportMs &&
 		r.EventMs >= -1 && r.EventMs <= maxReportMs && r.WaitMs >= 0 && r.WaitMs <= maxReportMs &&
 		r.From >= 0 && r.From <= maxSeconds &&
@@ -111,12 +112,21 @@ func (a *API) reportPlayback(w http.ResponseWriter, r *http.Request, d store.Dev
 		writeError(w, http.StatusTooManyRequests, errBusy)
 		return
 	}
-	var item store.PlayableItem
+	var name string
 	var err error
-	if req.Kind == "episode" {
+	switch req.Kind {
+	case "episode":
+		var item store.PlayableItem
 		item, err = a.store.PlayableEpisode(r.Context(), req.ID)
-	} else {
+		name = item.Name
+	case "programme":
+		var entry store.PlayableEntry
+		entry, err = a.store.PlayableEntry(r.Context(), req.ID)
+		name = "a past programme of " + entry.Name
+	default:
+		var item store.PlayableItem
 		item, err = a.store.PlayableMovie(r.Context(), req.ID)
+		name = item.Name
 	}
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, errNotFound)
@@ -126,7 +136,7 @@ func (a *API) reportPlayback(w http.ResponseWriter, r *http.Request, d store.Dev
 		a.internalError(w, "look up a title that played", err)
 		return
 	}
-	args := []any{"title", item.Name, "device", d.ID, "from", req.From, "converted", req.Converted,
+	args := []any{"title", name, "device", d.ID, "from", req.From, "converted", req.Converted,
 		"link_ms", req.LinkMs, "moved_ms", req.MovedMs, "event_ms", req.EventMs, "nudged", req.Nudged,
 		"events", req.Events}
 	switch req.Outcome {

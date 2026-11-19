@@ -28,8 +28,9 @@ type genre struct {
 
 // itvChannel is a channel in the shape the protocol notes describe (section
 // 4). Numbers are strings. A logo is an address on Overscan, which serves it
-// from its own copy (D54), and the archive flags stay off until catch-up
-// exists.
+// from its own copy (D54). The archive flags are on for a channel whose past
+// programmes play from its source's archive (D81), with how far back it
+// reaches in hours.
 type itvChannel struct {
 	ID                string `json:"id"`
 	Name              string `json:"name"`
@@ -159,6 +160,10 @@ func (a *API) getOrderedList(w http.ResponseWriter, r *http.Request, d store.Dev
 // address.
 func (a *API) itvChannel(r *http.Request, c store.LineupChannel) itvChannel {
 	id := strconv.FormatInt(c.EntryID, 10)
+	archive := "0"
+	if c.ArchiveDays > 0 {
+		archive = "1"
+	}
 	return itvChannel{
 		ID:                id,
 		Name:              c.Name,
@@ -168,10 +173,10 @@ func (a *API) itvChannel(r *http.Request, c store.LineupChannel) itvChannel {
 		Logo:              logoURL(r, c),
 		XMLTVID:           c.XMLTVID,
 		Censored:          "0",
-		TVArchive:         "0",
-		EnableTVArchive:   "0",
-		Archive:           "0",
-		TVArchiveDuration: "0",
+		TVArchive:         archive,
+		EnableTVArchive:   archive,
+		Archive:           archive,
+		TVArchiveDuration: strconv.Itoa(c.ArchiveDays * 24),
 	}
 }
 

@@ -115,7 +115,7 @@ export function devPlatform(mac: string, fail?: RegExp, hold?: RegExp): Platform
       // position: says. A stream that ffmpeg makes of one from a time
       // (?t=) is what is left of the file from there, and the box counts
       // its positions from 0.
-      file = url.indexOf('/vod/') >= 0;
+      file = url.indexOf('/vod/') >= 0 || url.indexOf('/archive/') >= 0;
       const at = /\bposition:(\d+)/.exec(url);
       const t = /[?&]t=(\d+(?:\.\d+)?)/.exec(url);
       fileLength = Math.max(1, fullLength - (t ? parseFloat(t[1]!) : 0));

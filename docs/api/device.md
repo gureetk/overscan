@@ -2,7 +2,7 @@
 
 Overscan's own MAG page talks to the server through the device API, a JSON API under `/api/device/v1/` built for the box ([plan](../plan.md), section 9). The page and the server ship together, so the API changes with them. It is not meant for other clients: third-party players have the Stalker API.
 
-Version 0, in M1, covers what the first page needs: a session, the channel list, and playing a channel. M2 adds what the page's new interface needs ([D52](../decisions.md)): the guide, favourites, what the box watched, search, and the box's own settings. M3 adds films and series ([D63](../decisions.md) to [D65](../decisions.md)), plays through ffmpeg those whose sound the box cannot play ([D68](../decisions.md)), checks what each box plays ([D70](../decisions.md)), and has Jellyfin transcode the video it cannot play ([D71](../decisions.md)).
+Version 0, in M1, covers what the first page needs: a session, the channel list, and playing a channel. M2 adds what the page's new interface needs ([D52](../decisions.md)): the guide, favourites, what the box watched, search, and the box's own settings. M3 adds films and series ([D63](../decisions.md) to [D65](../decisions.md)), plays through ffmpeg those whose sound the box cannot play ([D68](../decisions.md)), checks what each box plays ([D70](../decisions.md)), and has Jellyfin transcode the video it cannot play ([D71](../decisions.md)). M4 adds past programmes from their sources' archives ([D81](../decisions.md)).
 
 ## Conventions
 
@@ -17,6 +17,7 @@ Version 0, in M1, covers what the first page needs: a session, the channel list,
 | `unauthorized` | 401 | There is no valid session: start a new one. |
 | `blocked` | 403 | The administrator has blocked this box. |
 | `not_found` | 404 | No such call, or no such channel, shelf, film, series or episode for this box. |
+| `no_archive` | 404 | The programme does not play from its channel's archive: the channel's source keeps none that Overscan plays, the programme has not ended, or it began longer ago than the archive reaches back ([D81](../decisions.md)). |
 | `pin_required` | 403 | The channel is locked: send the parental PIN ([D55](../decisions.md)). |
 | `pin_wrong` | 403 | The PIN is not the account's. |
 | `pin_locked` | 429 | Five wrong PINs in 15 minutes: `Retry-After` says how many seconds the box must wait before it tries again. |
@@ -81,7 +82,7 @@ The whole lineup of the box's account, in one answer: the groups, in the order o
   "version": "9f2c41d07ab3e815",
   "groups": [{"id": 3, "name": "News"}, {"id": 4, "name": "Sports"}],
   "channels": [
-    {"id": 17, "number": 1, "name": "Example News", "group": 3, "logo": "/artwork/logo/17/5f0c2a9d81b4e6c3f7a1d208"},
+    {"id": 17, "number": 1, "name": "Example News", "group": 3, "logo": "/artwork/logo/17/5f0c2a9d81b4e6c3f7a1d208", "archive": 7},
     {"id": 18, "number": 2, "name": "Example Sports", "group": 4, "locked": true},
     {"id": 19, "number": 3, "name": "Example Weather", "group": 0}
   ],
@@ -90,7 +91,7 @@ The whole lineup of the box's account, in one answer: the groups, in the order o
 }
 ```
 
-A channel's `id` belongs to its place in the lineup and stays the same when its source is read again. Its name, number and group are as the administrator has set them (D47). `group` is 0 for a channel in no group. `logo`, for a channel whose source gives one, is the path on Overscan of its logo, scaled to fit 240×96 ([D54](../decisions.md)); the path changes when the logo does, so the page may keep the image. When the logo cannot be served, the path answers 404 and the page shows the channel's name instead. `locked` is there, and true, when the channel needs the account's parental PIN to play: it, or its group, is locked, and the account has a PIN ([D55](../decisions.md)). Groups are the lineup's, and the Stalker API's genres: a source's category goes to the group of its name, unless the administrator puts it in another, so channels from different sources whose categories have the same name share a group. A group's `id` stays the same when it is renamed. Hidden channels are left out.
+A channel's `id` belongs to its place in the lineup and stays the same when its source is read again. Its name, number and group are as the administrator has set them (D47). `group` is 0 for a channel in no group. `logo`, for a channel whose source gives one, is the path on Overscan of its logo, scaled to fit 240×96 ([D54](../decisions.md)); the path changes when the logo does, so the page may keep the image. When the logo cannot be served, the path answers 404 and the page shows the channel's name instead. `locked` is there, and true, when the channel needs the account's parental PIN to play: it, or its group, is locked, and the account has a PIN ([D55](../decisions.md)). `archive`, for a channel whose source keeps an archive that Overscan plays, is how many days back its past programmes play from it ([D81](../decisions.md)). Groups are the lineup's, and the Stalker API's genres: a source's category goes to the group of its name, unless the administrator puts it in another, so channels from different sources whose categories have the same name share a group. A group's `id` stays the same when it is renamed. Hidden channels are left out.
 
 `version` changes when the groups or channels do, logos included, and not when the favourites or the recent list do.
 
@@ -107,6 +108,18 @@ Answers how to play a channel through the stream hub. The body may be empty, or 
 ```
 
 The page plays it with `gSTB.Play(solution + " " + url)`. The solution is the box's name for a kind of player: `ffrt` for MPEG-TS streamed live over HTTP, and `ffmpeg` for HLS. The link ends in `.m3u8`, with `ffmpeg`, only when the channel's address does; otherwise it ends in `.ts`, with `ffrt`, and if the source answers with HLS anyway, the hub relays it as one MPEG-TS stream ([D42](../decisions.md)). The link must be opened within a minute; the hub session that it starts then carries reconnects ([plan](../plan.md), section 7). Switching channels on a source that is at its connection limit works, since the box's own older stream makes room, but a stream from another device does not ([D36](../decisions.md)).
+
+### `POST /api/device/v1/channels/{id}/archive`
+
+Answers how to play a past programme of a channel from its source's archive ([D81](../decisions.md)). The body names the programme by when it began, in Unix seconds, as the guide gives it, with the parental PIN for a locked channel, as for `play`: `{"start": 1794528000, "pin": "1234"}`. The programme must have ended, and begun within the days of the channel's `archive`; otherwise the answer is `no_archive`.
+
+```json
+{"url": "http://192.0.2.10:8080/archive/<token>.ts", "solution": "ffrt", "seek": "restart",
+ "start": "http://192.0.2.10:8080/archive/<token>/start", "duration": 3600,
+ "programme": {"id": 4019, "title": "Evening News", "start": 1794528000, "stop": 1794531600}}
+```
+
+The link plays MPEG-TS without byte positions, and is played and sought in as a film's stream through ffmpeg: to play from a time, the page asks `start` with `?t=<seconds>` into the programme, which answers where the stream from that time starts, then plays `url` with `?t=` and that time, and counts the box's positions from it. An archive takes times to the minute, so a stream starts at the whole minute at or before the time asked for, which can be up to 59 seconds before the programme: `start` can answer less than 0. Each new request for the stream ends the one before, and the link's session goes on for six hours after the player stops, as a film's does. `duration` is the programme's length in seconds; the source's stream may run on past it. A source at its connection limit answers `limit`, as for channels.
 
 ### `PUT /api/device/v1/channels/{id}/favourite`, `DELETE` likewise
 
@@ -349,4 +362,4 @@ Tells the server how a film or an episode started on the box, or did not, for it
  "nudged": true, "converted": false, "from": 0, "events": "\"2\" \"7\" \"4\""}
 ```
 
-`kind` is `movie` or `episode`, and `id` the film's or the episode's. `outcome` is `began`; `not_started`, when the box showed nothing moving for 40 seconds, and the player never said it started; `waited`, when it stood still for more than 10 seconds while it played, then went on; or `stalled`, when it stood still for 40 seconds and did not. The page starts a film that did not start, or stalled, again. Times are in milliseconds: `link_ms`, how long the server took to give the link; `moved_ms`, from the play command until the box's place in it moved, `-1` if it never did; `event_ms`, until the player said it started, `-1` if it never did; and `wait_ms`, how long it stood still. `nudged` says that the page paused it and played it again, six seconds after it was given to the box with nothing moving, as a viewer might. `converted` says it came through ffmpeg; `from`, where it started, in seconds; `events`, the player's events since the play command, as the box gave them, at most 200 bytes. The answer is `{}`, or `not_found` for a title that has gone; a box that sends more than 30 in a minute gets `busy`.
+`kind` is `movie`, `episode`, or `programme` for a past programme ([D81](../decisions.md)), and `id` the film's, the episode's, or the channel's. `outcome` is `began`; `not_started`, when the box showed nothing moving for 40 seconds, and the player never said it started; `waited`, when it stood still for more than 10 seconds while it played, then went on; or `stalled`, when it stood still for 40 seconds and did not. The page starts a film that did not start, or stalled, again. Times are in milliseconds: `link_ms`, how long the server took to give the link; `moved_ms`, from the play command until the box's place in it moved, `-1` if it never did; `event_ms`, until the player said it started, `-1` if it never did; and `wait_ms`, how long it stood still. `nudged` says that the page paused it and played it again, six seconds after it was given to the box with nothing moving, as a viewer might. `converted` says it came through ffmpeg; `from`, where it started, in seconds; `events`, the player's events since the play command, as the box gave them, at most 200 bytes. The answer is `{}`, or `not_found` for a title that has gone; a box that sends more than 30 in a minute gets `busy`.

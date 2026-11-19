@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"overscan.gureet.ca/internal/admin"
 	"overscan.gureet.ca/internal/artwork"
@@ -29,13 +30,16 @@ type group struct {
 // which stays the same across refreshes; Group is 0 for a channel in no
 // group. Logo is the path on Overscan of its logo, if it has one (D54).
 // Locked is set when playing it needs the account's parental PIN (D55).
+// Archive is how many days back its past programmes play from its source's
+// archive (D81), 0 or left out for none.
 type channel struct {
-	ID     int64  `json:"id"`
-	Number int    `json:"number"`
-	Name   string `json:"name"`
-	Group  int64  `json:"group"`
-	Logo   string `json:"logo,omitempty"`
-	Locked bool   `json:"locked,omitempty"`
+	ID      int64  `json:"id"`
+	Number  int    `json:"number"`
+	Name    string `json:"name"`
+	Group   int64  `json:"group"`
+	Logo    string `json:"logo,omitempty"`
+	Locked  bool   `json:"locked,omitempty"`
+	Archive int    `json:"archive,omitempty"`
 }
 
 // channelsResponse is the device's whole lineup, in one answer, with the
@@ -66,7 +70,7 @@ func (a *API) lineupOf(ctx context.Context, d store.Device) (channelsResponse, s
 	}
 	for i, c := range entries {
 		resp.Channels[i] = channel{ID: c.EntryID, Number: c.Number, Name: c.Name, Group: c.GroupID,
-			Logo: artwork.LogoPath(c.EntryID, c.Logo), Locked: c.Locked && acct.PINHash != ""}
+			Logo: artwork.LogoPath(c.EntryID, c.Logo), Locked: c.Locked && acct.PINHash != "", Archive: c.ArchiveDays}
 	}
 	sum := sha256.New()
 	_ = json.NewEncoder(sum).Encode([]any{resp.Groups, resp.Channels})
@@ -209,6 +213,84 @@ func (a *API) pinOK(w http.ResponseWriter, r *http.Request, d store.Device, acct
 	}
 	a.pins.reset(d.ID)
 	return true
+}
+
+// archiveRequest is the body of an archive call: when the programme began,
+// in Unix seconds, and the parental PIN, for a locked channel (D55).
+type archiveRequest struct {
+	Start int64  `json:"start"`
+	PIN   string `json:"pin"`
+}
+
+// archiveResponse says how the box plays a past programme (D81): its
+// stream, which the page seeks in by asking for it from a time, t seconds
+// into the programme, after asking Start where the stream from that time
+// starts; the programme's length, in seconds; and the programme.
+type archiveResponse struct {
+	URL       string    `json:"url"`
+	Solution  string    `json:"solution"`
+	Seek      string    `json:"seek"`
+	Start     string    `json:"start"`
+	Duration  int64     `json:"duration"`
+	Programme programme `json:"programme"`
+}
+
+// playArchive answers POST channels/{id}/archive with a link that plays a
+// past programme of the channel from its source's archive (D81): the one
+// that began at the time given, if it has ended and the archive reaches
+// back to it. A locked channel needs the account's PIN in the body.
+func (a *API) playArchive(w http.ResponseWriter, r *http.Request, d store.Device) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusNotFound, errNotFound)
+		return
+	}
+	var req archiveRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Start <= 0 || req.Start > 1<<40 {
+		writeError(w, http.StatusBadRequest, errBadRequest)
+		return
+	}
+	ctx := r.Context()
+	entry, err := a.store.PlayableArchive(ctx, id)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		writeError(w, http.StatusNotFound, errNotFound)
+		return
+	case errors.Is(err, store.ErrNoArchive):
+		writeError(w, http.StatusNotFound, errNoArchive)
+		return
+	case err != nil:
+		a.internalError(w, "look up a channel's archive", err)
+		return
+	}
+	acct, err := a.store.Account(ctx, d.AccountID)
+	if err != nil {
+		a.internalError(w, "look up account", err)
+		return
+	}
+	if entry.LineupID != acct.LineupID {
+		writeError(w, http.StatusNotFound, errNotFound)
+		return
+	}
+	p, err := a.store.ProgrammeAt(ctx, acct.LineupID, id, time.Unix(req.Start, 0))
+	if errors.Is(err, store.ErrNotFound) || err == nil && !store.InArchive(p, entry.Days, a.now()) {
+		writeError(w, http.StatusNotFound, errNoArchive)
+		return
+	}
+	if err != nil {
+		a.internalError(w, "look up a programme", err)
+		return
+	}
+	if entry.Locked && acct.PINHash != "" && !a.pinOK(w, r, d, acct, req.PIN) {
+		return
+	}
+	if !a.hub.Available(entry.SourceID, d.ID) {
+		writeError(w, http.StatusServiceUnavailable, errLimit)
+		return
+	}
+	link, start := a.hub.ArchiveLink(d.ID, entry.PlayableEntry, p.Start, p.Stop)
+	writeJSON(w, http.StatusOK, archiveResponse{URL: "http://" + r.Host + link, Solution: "ffrt", Seek: "restart",
+		Start: "http://" + r.Host + start, Duration: int64(p.Stop.Sub(p.Start) / time.Second), Programme: fullProgramme(p)})
 }
 
 // solution returns the box player's solution for a hub link: ffrt, for

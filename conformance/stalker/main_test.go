@@ -8,8 +8,8 @@
 //
 // It builds Overscan from this repository and runs it with a fictional
 // lineup of three channels in two genres (testdata/lineup.m3u), which a fake
-// provider streams, with a guide for two of them, and a fictional library
-// of films and a series in a folder.
+// provider streams, with a guide for two of them and an archive of one, and
+// a fictional library of films and a series in a folder.
 package stalker_test
 
 import (
@@ -69,8 +69,22 @@ func run(m *testing.M) (int, error) {
 	return code, nil
 }
 
-// stream is the fake provider: an endless MPEG-TS stream of empty packets.
+// archiveAsked holds the start times, in Unix seconds, that the fake
+// provider was asked for its archive from.
+var archiveAsked struct {
+	sync.Mutex
+	starts []string
+}
+
+// stream is the fake provider: an endless MPEG-TS stream of empty packets,
+// for a channel's live stream and for its archive, which a request asks
+// for with utc and lutc.
 func stream(w http.ResponseWriter, r *http.Request) {
+	if utc := r.URL.Query().Get("utc"); utc != "" {
+		archiveAsked.Lock()
+		archiveAsked.starts = append(archiveAsked.starts, utc)
+		archiveAsked.Unlock()
+	}
 	w.Header().Set("Content-Type", "video/mp2t")
 	packet := append([]byte{0x47}, bytes.Repeat([]byte{0xff}, 187)...)
 	rc := http.NewResponseController(w)

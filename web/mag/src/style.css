@@ -1471,6 +1471,24 @@ html.video #app {
   color: #8a8a91;
 }
 
+/* A past programme that plays from its channel's archive (D81): brighter
+   than other past programmes, with a small play mark before its title. */
+.cell.archived .cell-title {
+  color: #c5c5cb;
+}
+
+.cell.archived .cell-title:before {
+  content: '';
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin: 0 0.3125rem 0.0625rem 0;
+  border-style: solid;
+  border-width: 0.25rem 0 0.25rem 0.4375rem;
+  border-color: transparent transparent transparent currentColor;
+  vertical-align: middle;
+}
+
 .cell.airing {
   background: #232327;
 }

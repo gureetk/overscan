@@ -242,6 +242,7 @@ type apiSource struct {
 	RefreshSeconds      int64   `json:"refresh_seconds"`
 	UserAgent           string  `json:"user_agent"`
 	Numbers             string  `json:"numbers"`
+	CatchupZone         string  `json:"catchup_zone"`
 	NewCategoriesHidden bool    `json:"new_categories_hidden"`
 	Channels            int     `json:"channels"`
 	RefreshedAt         *string `json:"refreshed_at"`
@@ -316,8 +317,9 @@ var addressNames = map[store.AddressState]string{
 func sourceBody(s store.Source, reads libraryReads) apiSource {
 	out := apiSource{ID: s.ID, Name: s.Name, Type: s.Type, Host: s.Host, Address: addressNames[s.Address], Enabled: s.Enabled,
 		MaxConnections: s.MaxConnections, RefreshSeconds: int64(s.Refresh / time.Second), UserAgent: s.UserAgent,
-		Numbers: s.Numbers, NewCategoriesHidden: s.NewCategoriesHidden, Channels: s.Channels, RefreshError: s.RefreshError,
-		StreamLimit: s.StreamLimit(), Account: accountBody(s.Account),
+		Numbers: s.Numbers, CatchupZone: s.CatchupZone, NewCategoriesHidden: s.NewCategoriesHidden, Channels: s.Channels,
+		RefreshError: s.RefreshError,
+		StreamLimit:  s.StreamLimit(), Account: accountBody(s.Account),
 		Guide: apiGuide{Listed: s.Guide.Listed, Error: s.Guide.Error, Channels: s.Guide.Channels, Programmes: s.Guide.Programmes}}
 	if !s.Guide.ReadAt.IsZero() {
 		t := s.Guide.ReadAt.UTC().Format("2006-01-02T15:04:05Z")
@@ -396,6 +398,7 @@ type apiSourceChange struct {
 	MaxConnections      *int    `json:"max_connections"`
 	RefreshSeconds      *int64  `json:"refresh_seconds"`
 	Numbers             *string `json:"numbers"`
+	CatchupZone         *string `json:"catchup_zone"`
 	Enabled             *bool   `json:"enabled"`
 	NewCategoriesHidden *bool   `json:"new_categories_hidden"`
 	// A Stalker portal's box (D76).
@@ -411,7 +414,7 @@ type apiSourceChange struct {
 // settings, besides whether it is on and how new categories start.
 func (c apiSourceChange) changesSettings() bool {
 	return c.Name != nil || c.Type != nil || c.URL != nil || c.Username != nil || c.Password != nil ||
-		c.UserAgent != nil || c.MaxConnections != nil || c.RefreshSeconds != nil || c.Numbers != nil ||
+		c.UserAgent != nil || c.MaxConnections != nil || c.RefreshSeconds != nil || c.Numbers != nil || c.CatchupZone != nil ||
 		c.MAC != nil || c.Serial != nil || c.DeviceID != nil || c.DeviceID2 != nil || c.Signature != nil || c.Model != nil
 }
 
@@ -451,6 +454,7 @@ func (c apiSourceChange) apply(s source.Settings) source.Settings {
 	set(&s.Password, c.Password)
 	set(&s.UserAgent, c.UserAgent)
 	set(&s.Numbers, c.Numbers)
+	set(&s.CatchupZone, c.CatchupZone)
 	set(&s.Device.MAC, c.MAC)
 	set(&s.Device.Serial, c.Serial)
 	set(&s.Device.DeviceID, c.DeviceID)
@@ -1120,6 +1124,9 @@ func formSettings(r *http.Request) (source.Settings, error) {
 		}
 	default:
 		settings.URL = strings.TrimSpace(r.PostFormValue("url"))
+	}
+	if settings.Type == source.TypeXtream || settings.Type == source.TypeM3U {
+		settings.CatchupZone = strings.TrimSpace(r.PostFormValue("catchup_zone"))
 	}
 	n, present, ok := formInt(r, limit)
 	if !ok {

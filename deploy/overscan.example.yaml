@@ -76,6 +76,10 @@ ffmpeg: ffmpeg
 #     # the playlist gives them (tvg-chno), where it gives any. Changing it
 #     # numbers the source's channels again.
 #     numbers: playlist
+#     # The time zone of the dates and times in the addresses of the
+#     # channels' archives, for past programmes (D81): UTC if not set for a
+#     # playlist, and the server's own for an Xtream server. Optional.
+#     # catchup_zone: Europe/London
 #
 #   # A server that answers the Xtream API (D50). Its address is only the
 #   # server's, without a page; the login has its own fields. Overscan asks

@@ -306,6 +306,12 @@
       <input id="source-agent" name="user_agent" value="{{$f.Settings.UserAgent}}" maxlength="200" spellcheck="false" autocomplete="off">
       <p class="hint">For a provider that expects a particular player. Leave it empty for Overscan's own.</p>
     </div>
+
+    <div class="field for-channels for-catchup">
+      <label for="source-catchup-zone">Catch-up time zone <span class="muted">(optional)</span></label>
+      <input id="source-catchup-zone" name="catchup_zone" value="{{$f.Settings.CatchupZone}}" maxlength="64" spellcheck="false" autocomplete="off" placeholder="The server's own">
+      <p class="hint">The time zone of the times in the addresses of past programmes, such as UTC or Europe/London. Leave it empty for the one an Xtream server gives, or UTC for a playlist. Change it if past programmes start at the wrong time.</p>
+    </div>
   </div>
 
   {{- with $f.Found}}<p class="alert notice" role="status">{{.}}</p>{{end}}
