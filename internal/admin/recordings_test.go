@@ -130,7 +130,7 @@ func TestRecordings(t *testing.T) {
 
 	page = ta.do("GET", "/admin/settings", nil, c).Body.String()
 	mustContain(t, "the list", page,
-		`<span class="strong">Evening News</span><div class="note">Alpha</div>`, "5 Dec 20:00 to 21:00 UTC", "To come",
+		`<span class="strong">Evening News</span><div class="note">Alpha · <span class="nowrap">5 Dec 20:00 to 21:00 UTC</span></div>`, "To come",
 		`<span class="badge bad">Recording</span>`,
 		`<span class="badge ok">Done</span><div class="note">2.0 GB</div>`,
 		`<span class="badge warn">Failed</span><div class="note">its source would not play the channel (503 Service Unavailable)</div>`,

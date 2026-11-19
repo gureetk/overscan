@@ -162,12 +162,11 @@
     {{- if or .Data.Upcoming .Data.Recent}}
     <div class="table-wrap">
     <table class="list recordings">
-      <thead><tr><th>Programme</th><th>When</th><th>State</th><th class="actions"><span class="sr">Actions</span></th></tr></thead>
+      <thead><tr><th>Programme</th><th>State</th><th class="actions"><span class="sr">Actions</span></th></tr></thead>
       <tbody>
       {{- range .Data.RecordingRows}}
         <tr>
-          <td><span class="strong">{{.Title}}</span><div class="note">{{.Channel}}</div></td>
-          <td>{{.Start.UTC.Format "2 Jan 15:04"}} to {{.Stop.UTC.Format "15:04"}} UTC</td>
+          <td><span class="strong">{{.Title}}</span><div class="note">{{.Channel}} · <span class="nowrap">{{.Start.UTC.Format "2 Jan 15:04"}} to {{.Stop.UTC.Format "15:04"}} UTC</span></div></td>
           <td>
             {{- if eq .State "scheduled"}}<span class="badge">To come</span>
             {{- else if eq .State "recording"}}<span class="badge bad">Recording</span>
