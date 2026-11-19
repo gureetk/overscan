@@ -42,6 +42,7 @@ type Server struct {
 	// shares handler (D44).
 	adminHandler http.Handler
 	pages        pageLog
+	admin        *admin.Admin
 }
 
 // Services are what the server's handlers work with.
@@ -110,6 +111,7 @@ func New(cfg config.Config, log *slog.Logger, version string, svc Services) *Ser
 	// The admin shares the main address unless admin_listen names one of
 	// its own, which then serves it alone (D44).
 	a := admin.New(svc.Store, log, version)
+	s.admin = a
 	if svc.Sources != nil {
 		a.UseSources(svc.Sources)
 	}
@@ -144,6 +146,7 @@ func (s *Server) AdminHandler() http.Handler { return s.adminHandler }
 
 // Run listens on the configured addresses and serves until ctx is done.
 func (s *Server) Run(ctx context.Context) error {
+	s.admin.PrepareRecordings(ctx)
 	ln, err := net.Listen("tcp", s.cfg.Listen)
 	if err != nil {
 		return err

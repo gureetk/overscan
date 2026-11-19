@@ -217,7 +217,7 @@ func TestCancelAndRecover(t *testing.T) {
 	if !r.Cancel(rec.ID) {
 		t.Fatal("not running")
 	}
-	if got := waitState(t, st, rec.ID, store.RecordingDone); got.Size == 0 {
+	if got := waitState(t, st, rec.ID, store.RecordingDone); got.Size == 0 || got.Dir != r.Dir() {
 		t.Errorf("cancelled %+v", got)
 	}
 	if r.Cancel(rec.ID) {
@@ -227,7 +227,7 @@ func TestCancelAndRecover(t *testing.T) {
 	// One that a stop of the server left under way ends when called off,
 	// before a start goes on with it.
 	paused := schedule(t, st, entry, "Paused", now.Add(-10*time.Minute), now.Add(time.Hour))
-	if err := st.SetRecordingState(ctx, paused.ID, store.RecordingRecording, FileName(paused), 0, ""); err != nil {
+	if err := st.SetRecordingState(ctx, paused.ID, store.RecordingRecording, "", FileName(paused), 0, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(r.Dir(), "."+FileName(paused)), make([]byte, 376), 0o600); err != nil {
@@ -244,14 +244,14 @@ func TestCancelAndRecover(t *testing.T) {
 	// programme has ended, ends at the next start, which keeps what it wrote
 	// under its own name.
 	left := schedule(t, st, entry, "Left", now.Add(-2*time.Hour), now.Add(-time.Hour))
-	if err := st.SetRecordingState(ctx, left.ID, store.RecordingRecording, FileName(left), 0, ""); err != nil {
+	if err := st.SetRecordingState(ctx, left.ID, store.RecordingRecording, "", FileName(left), 0, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(r.Dir(), "."+FileName(left)), make([]byte, 188), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	empty := schedule(t, st, entry, "Empty", now.Add(-90*time.Minute), now.Add(-time.Hour))
-	if err := st.SetRecordingState(ctx, empty.ID, store.RecordingRecording, FileName(empty), 0, ""); err != nil {
+	if err := st.SetRecordingState(ctx, empty.ID, store.RecordingRecording, "", FileName(empty), 0, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(r.Dir(), "."+FileName(empty)), nil, 0o600); err != nil {
@@ -270,6 +270,25 @@ func TestCancelAndRecover(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(r.Dir(), "."+FileName(empty))); !os.IsNotExist(err) {
 		t.Errorf("an empty file is left: %v", err)
+	}
+
+	// One left under way in a folder that is no longer the recordings
+	// folder ends there at the next start, rather than going on.
+	old := t.TempDir()
+	moved := schedule(t, st, entry, "Moved", now.Add(-5*time.Minute), now.Add(time.Hour))
+	if err := st.SetRecordingState(ctx, moved.ID, store.RecordingRecording, old, FileName(moved), 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(old, "."+FileName(moved)), make([]byte, 188), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r.recover(ctx)
+	if got, _ := st.RecordingByID(ctx, moved.ID); got.State != store.RecordingFailed || got.Dir != old || got.Size != 188 ||
+		!strings.Contains(got.Error, "the recordings folder changed") {
+		t.Errorf("moved %+v", got)
+	}
+	if _, err := os.Stat(filepath.Join(old, FileName(moved))); err != nil {
+		t.Errorf("its file: %v", err)
 	}
 }
 

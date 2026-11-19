@@ -45,6 +45,10 @@ Recordings (D89), once turned on in the admin's *Settings*, go in `/var/lib/over
     [Service]
     ReadWritePaths=/srv/recordings
 
+    systemctl restart overscan
+
+At its start, the server points the `recordings` source at the new folder. Recordings made before stay where they were: move their files into the new folder to keep them on the box's shelf. The admin still deletes them, from either folder.
+
 ## 4. Manage
 
 Run Overscan's commands as its user. Debian containers may not have `sudo`; `runuser` is always there:

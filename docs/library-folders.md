@@ -79,7 +79,7 @@ With a key of your own from The Movie Database (TMDB), given on the admin's *Set
 
 ## Recordings
 
-The programmes that boxes record (D89) go in a folder that a folder source named `recordings` reads, which Overscan adds when recording is turned on. A recording's file is named `<title> - <channel> - <date> <time> [<number>].ts`: the folder source takes the title up to the number in square brackets, or up to a year in brackets in the programme's title, and a programme whose title has a season and an episode, such as `S01E02`, shows as an episode on *Series*. While it records, the file's name starts with a dot, which the folder source passes over, so a recording shows on *Movies* once it has ended.
+The programmes that boxes record (D89) go in a folder that a folder source named `recordings` reads, which Overscan adds when recording is turned on. A recording's file is named `<title> - <channel> - <date> <time> [<number>].ts`: the folder source takes the title up to the number in square brackets, or up to a year in brackets in the programme's title, and a programme whose title has a season and an episode, such as `S01E02`, shows as an episode on *Series*. While it records, the file's name starts with a dot, which the folder source passes over, so a recording shows on *Movies* once it has ended. The folder is `Recordings` in the data directory unless `recordings_dir` in the configuration file names another; when that changes, the next start points the `recordings` source at the new folder, and the recordings made before stay in the old one until their files are moved.
 
 ## Subtitles
 

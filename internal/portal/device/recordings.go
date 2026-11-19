@@ -176,7 +176,7 @@ func (a *API) unrecord(w http.ResponseWriter, r *http.Request, d store.Device) {
 	}
 	switch rec.State {
 	case store.RecordingScheduled:
-		if err := a.store.SetRecordingState(ctx, id, store.RecordingCancelled, "", 0, ""); err != nil {
+		if err := a.store.SetRecordingState(ctx, id, store.RecordingCancelled, "", "", 0, ""); err != nil {
 			a.internalError(w, "call off a recording", err)
 			return
 		}

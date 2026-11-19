@@ -58,22 +58,23 @@ func TestRecordings(t *testing.T) {
 		t.Errorf("again %+v", again)
 	}
 	// One called off is scheduled again; one made stays made.
-	if err := st.SetRecordingState(ctx, first.ID, RecordingCancelled, "", 0, ""); err != nil {
+	if err := st.SetRecordingState(ctx, first.ID, RecordingCancelled, "", "", 0, ""); err != nil {
 		t.Fatal(err)
 	}
 	if again := schedule("News", at); again.ID != first.ID || again.State != RecordingScheduled {
 		t.Errorf("called off, then again %+v", again)
 	}
-	if err := st.SetRecordingState(ctx, first.ID, RecordingDone, "News.ts", 188, ""); err != nil {
+	if err := st.SetRecordingState(ctx, first.ID, RecordingDone, "/srv/recordings", "News.ts", 188, ""); err != nil {
 		t.Fatal(err)
 	}
-	if again := schedule("News", at); again.State != RecordingDone || again.File != "News.ts" || again.Size != 188 {
+	if again := schedule("News", at); again.State != RecordingDone || again.File != "News.ts" || again.Size != 188 ||
+		again.Dir != "/srv/recordings" {
 		t.Errorf("made, then again %+v", again)
 	}
 
 	later := schedule("Later", at.Add(2*time.Hour))
 	failed := schedule("Failed", at.Add(-2*time.Hour))
-	if err := st.SetRecordingState(ctx, failed.ID, RecordingFailed, "", 0, "its source would not play the channel"); err != nil {
+	if err := st.SetRecordingState(ctx, failed.ID, RecordingFailed, "", "", 0, "its source would not play the channel"); err != nil {
 		t.Fatal(err)
 	}
 	if list, _ := st.Recordings(ctx, 0, RecordingScheduled, RecordingRecording); len(list) != 1 || list[0].ID != later.ID {
