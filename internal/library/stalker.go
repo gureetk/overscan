@@ -231,7 +231,7 @@ func (l *Library) readPortalPage(cat store.PortalCategory, p int) error {
 func portalItem(module string, it stalker.Item) store.PortalItem {
 	t := store.LibraryTitle{Key: module + ":" + it.ID, Name: it.Name, Year: it.Year, Rating: it.Rating,
 		Poster: it.Poster, AddedAt: it.Added, Summary: store.TitleSummary{Plot: it.Description, Genre: it.Genres,
-			Cast: it.Actors, Director: it.Director, Runtime: it.Minutes}}
+			Cast: it.Actors, Director: it.Director, Runtime: it.Minutes}, Adult: it.Censored}
 	out := store.PortalItem{Kind: store.KindSeries, Title: t}
 	switch {
 	case module == stalker.ModuleSeries:

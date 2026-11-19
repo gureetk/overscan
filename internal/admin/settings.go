@@ -17,14 +17,16 @@ import (
 // made one stream so that they can be (D61), how many films and episodes at
 // once ffmpeg may transcode whose video a box cannot play (D73), and
 // whether films go through ffmpeg to convert their sound, and through
-// their source's server to transcode their video (D78).
+// their source's server to transcode their video (D78), and what sources'
+// marks for adults do (D86).
 
 type apiSettings struct {
-	RepairDefault    bool `json:"repair_default"`
-	RepairHLS        bool `json:"repair_hls"`
-	TranscodeVideo   int  `json:"transcode_video"`
-	ConvertSound     bool `json:"convert_sound"`
-	ServerTranscodes bool `json:"server_transcodes"`
+	RepairDefault    bool   `json:"repair_default"`
+	RepairHLS        bool   `json:"repair_hls"`
+	TranscodeVideo   int    `json:"transcode_video"`
+	ConvertSound     bool   `json:"convert_sound"`
+	ServerTranscodes bool   `json:"server_transcodes"`
+	AdultMarks       string `json:"adult_marks"`
 }
 
 func (a *Admin) apiSettings(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
@@ -35,7 +37,9 @@ func (a *Admin) apiSettings(w http.ResponseWriter, r *http.Request, _ store.Admi
 		if v.RepairHLS, err = a.store.RepairHLS(ctx); err == nil {
 			if v.TranscodeVideo, err = a.store.Transcodes(ctx); err == nil {
 				if v.ConvertSound, err = a.store.ConvertsSound(ctx); err == nil {
-					v.ServerTranscodes, err = a.store.ServerTranscodes(ctx)
+					if v.ServerTranscodes, err = a.store.ServerTranscodes(ctx); err == nil {
+						v.AdultMarks, err = a.store.AdultMarks(ctx)
+					}
 				}
 			}
 		}
@@ -96,6 +100,15 @@ func (a *Admin) apiChangeSettings(w http.ResponseWriter, r *http.Request, _ stor
 				return
 			}
 			if a.editAnswer(w, a.setServerTranscodes(r.Context(), on)) {
+				return
+			}
+		case "adult_marks":
+			var marks string
+			if json.Unmarshal(v, &marks) != nil {
+				apiError(w, http.StatusBadRequest, "bad_json", "adult_marks is nothing, lock or hide.")
+				return
+			}
+			if a.editAnswer(w, a.setAdultMarks(r.Context(), marks)) {
 				return
 			}
 		default:
@@ -212,6 +225,30 @@ func (a *Admin) serverTranscodeForm(w http.ResponseWriter, r *http.Request, s st
 		done = "Jellyfin servers transcode their films whose video a box cannot play, from their next start."
 	}
 	a.settingsDone(w, r, s, a.setServerTranscodes(r.Context(), on), done)
+}
+
+// setAdultMarks sets what the marks that sources put on channels and titles
+// for adults do: nothing, lock or hide (D86).
+func (a *Admin) setAdultMarks(ctx context.Context, marks string) error {
+	if marks != store.AdultNothing && marks != store.AdultLock && marks != store.AdultHide {
+		return badEdit(http.StatusBadRequest, "bad_adult_marks", "Marks for adults do nothing, lock or hide.")
+	}
+	if err := a.store.SetAdultMarks(ctx, marks); err != nil {
+		return err
+	}
+	a.log.Info("what marks for adults do set in the admin", "adult_marks", marks)
+	return nil
+}
+
+// adultForm sets from the Settings page what marks for adults do.
+func (a *Admin) adultForm(w http.ResponseWriter, r *http.Request, s store.AdminSession) {
+	marks := r.PostFormValue("adult")
+	done := map[string]string{
+		store.AdultNothing: "Channels, films and series that their sources mark for adults are like any other.",
+		store.AdultLock:    "Channels, films and series that their sources mark for adults need the parental PIN.",
+		store.AdultHide:    "Channels, films and series that their sources mark for adults are hidden from devices.",
+	}[marks]
+	a.settingsDone(w, r, s, a.setAdultMarks(r.Context(), marks), done)
 }
 
 // repairChoice reads a channel's repair switch from a form: "on" or "off",

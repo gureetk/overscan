@@ -113,6 +113,7 @@ type Stream struct {
 	EPGChannelID string // its ID in the server's guide, "" if none
 	CategoryID   string // "" if none
 	ArchiveDays  int    // how many days of catch-up it keeps, 0 for none
+	Adult        bool   // the server marks it for adults (is_adult)
 }
 
 // Account signs in and returns what the server says about the account. A
@@ -197,6 +198,7 @@ func (c *Client) LiveStreams(ctx context.Context) ([]Stream, int, error) {
 		Category    text   `json:"category_id"`
 		Archive     flag   `json:"tv_archive"`
 		ArchiveDays number `json:"tv_archive_duration"`
+		Adult       flag   `json:"is_adult"`
 	}](ctx, c, c.api("get_live_streams", nil))
 	if err != nil {
 		return nil, 0, err
@@ -215,6 +217,7 @@ func (c *Client) LiveStreams(ctx context.Context) ([]Stream, int, error) {
 			Icon:         strings.TrimSpace(string(r.Icon)),
 			EPGChannelID: strings.TrimSpace(string(r.EPG)),
 			CategoryID:   strings.TrimSpace(string(r.Category)),
+			Adult:        bool(r.Adult),
 		}
 		if r.Archive && r.ArchiveDays > 0 {
 			s.ArchiveDays = int(min(r.ArchiveDays, 365))

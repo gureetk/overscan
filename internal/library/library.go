@@ -560,6 +560,7 @@ func movieTitle(m xtream.Movie) store.LibraryTitle {
 		AddedAt:   m.Added,
 		Summary: store.TitleSummary{Plot: m.Plot, Genre: m.Genre, Cast: m.Cast, Director: m.Director,
 			Runtime: m.Runtime},
+		Adult: m.Adult,
 	}
 }
 

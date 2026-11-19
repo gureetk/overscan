@@ -119,6 +119,7 @@ func (a *Admin) Handler() http.Handler {
 	mux.Handle("POST /admin/settings/convert", a.page(a.convertForm))
 	mux.Handle("POST /admin/settings/server-transcode", a.page(a.serverTranscodeForm))
 	mux.Handle("POST /admin/settings/pin", a.page(a.pinForm))
+	mux.Handle("POST /admin/settings/adult", a.page(a.adultForm))
 	mux.Handle("GET /admin/support-bundle", a.page(a.supportBundle))
 	mux.Handle("GET /admin/{$}", a.page(a.home))
 	mux.HandleFunc("/admin/", a.notFound)

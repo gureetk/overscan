@@ -54,6 +54,9 @@ type LibraryTitle struct {
 	File    string
 	AddedAt time.Time
 	Summary TitleSummary
+	// Adult is set when the source marks the title as one for adults
+	// (D86).
+	Adult bool
 }
 
 // TitleSummary is what a source's list says about a title beyond its name.
@@ -195,8 +198,8 @@ func (s *Store) ApplyLibrary(ctx context.Context, sourceID int64, kind string, c
 
 	upsert, err := tx.PrepareContext(ctx, `
 		INSERT INTO titles (source_id, kind, source_key, category_id, name, year, rating, poster, container, file,
-			added_at, summary, position, generation, missing_since)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+			added_at, summary, adult, position, generation, missing_since)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
 		ON CONFLICT (source_id, kind, source_key) DO UPDATE SET
 			category_id = excluded.category_id,
 			name = excluded.name,
@@ -207,6 +210,7 @@ func (s *Store) ApplyLibrary(ctx context.Context, sourceID int64, kind string, c
 			file = CASE WHEN excluded.file <> '' THEN excluded.file ELSE titles.file END,
 			added_at = excluded.added_at,
 			summary = excluded.summary,
+			adult = excluded.adult,
 			position = excluded.position,
 			generation = excluded.generation,
 			missing_since = NULL`)
@@ -229,8 +233,8 @@ func (s *Store) ApplyLibrary(ctx context.Context, sourceID int64, kind string, c
 			return fail(err)
 		}
 		if _, err := upsert.ExecContext(ctx, sourceID, kind, t.Key, category, t.Name, max(0, t.Year),
-			min(max(0, t.Rating), 100), t.Poster, t.Container, t.File, unixOrZero(t.AddedAt), string(summary), i+1,
-			gen); err != nil {
+			min(max(0, t.Rating), 100), t.Poster, t.Container, t.File, unixOrZero(t.AddedAt), string(summary), t.Adult,
+			i+1, gen); err != nil {
 			return fail(err)
 		}
 		if known[t.Key] {
@@ -368,10 +372,25 @@ const hiddenCategories = `SELECT hc.id FROM library_categories hc JOIN sources h
 		CASE WHEN hs.type = '` + source.TypeStalker + `' THEN 'category:' || hc.id ELSE 'name:' || hc.name END`
 
 // libraryShown is the condition, on a title t and its source s, that
-// devices see it: the admin lists it, and the administrator has not hidden
-// it, nor the shelf it is on (D79).
+// devices see it: the admin lists it, the administrator has not hidden it,
+// nor the shelf it is on (D79), and it is not one that its source marks for
+// adults, which the setting says to hide (D86).
 const libraryShown = libraryListed + ` AND t.hidden = 0 AND (t.category_id IS NULL OR t.category_id NOT IN (` +
-	hiddenCategories + `))`
+	hiddenCategories + `)) AND NOT (t.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultHide + `')`
+
+// lockedCategories is the SQL of the IDs of the categories on the shelves
+// that the administrator locked (D85), as hiddenCategories is of those
+// hidden.
+const lockedCategories = `SELECT lc.id FROM library_categories lc JOIN sources ls ON ls.id = lc.source_id
+	JOIN shelf_settings lss ON lss.kind = lc.kind AND lss.locked = 1 AND lss.shelf =
+		CASE WHEN ls.type = '` + source.TypeStalker + `' THEN 'category:' || lc.id ELSE 'name:' || lc.name END`
+
+// titleLocked is true of a title t that needs the parental PIN, once the
+// account has one: the administrator locked it, or the shelf it is on
+// (D85), or its source marks it for adults, which the setting says to lock
+// (D86).
+const titleLocked = `(t.locked = 1 OR t.category_id IS NOT NULL AND t.category_id IN (` + lockedCategories + `)
+	OR t.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultLock + `')`
 
 // mergedShelf is the condition, on a source s, that its categories are
 // shelves that merge with other sources' categories of the same name: a
@@ -388,6 +407,9 @@ type Shelf struct {
 	// Portal says that the shelf is a Stalker portal's category, whose
 	// titles are read a page at a time as devices browse it (D77).
 	Portal bool
+	// Locked is set when the administrator locked the shelf, which locks
+	// every title on it (D85).
+	Locked bool
 }
 
 // Shelves returns the shelves of films or of series that devices see, by
@@ -399,9 +421,10 @@ func (s *Store) Shelves(ctx context.Context, kind string) ([]Shelf, error) {
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, n, portal FROM (
+		SELECT id, name, n, portal, locked FROM (
 			SELECT min(c.id) AS id, COALESCE(max(ss.name), c.name) AS name, count(t.id) AS n, 0 AS portal,
-				min(c.source_id) AS src, min(c.position) AS pos, max(ss.position) AS place, c.name AS own
+				min(c.source_id) AS src, min(c.position) AS pos, max(ss.position) AS place, c.name AS own,
+				COALESCE(max(ss.locked), 0) AS locked
 			FROM library_categories c
 				JOIN titles t ON t.category_id = c.id
 				JOIN sources s ON s.id = t.source_id
@@ -409,7 +432,8 @@ func (s *Store) Shelves(ctx context.Context, kind string) ([]Shelf, error) {
 			WHERE c.kind = ? AND `+libraryShown+` AND `+mergedShelf+`
 			GROUP BY c.name
 			UNION ALL
-			SELECT c.id, COALESCE(ss.name, c.name), COALESCE(c.total, -1), 1, c.source_id, c.position, ss.position, c.name
+			SELECT c.id, COALESCE(ss.name, c.name), COALESCE(c.total, -1), 1, c.source_id, c.position, ss.position, c.name,
+				COALESCE(ss.locked, 0)
 			FROM library_categories c JOIN sources s ON s.id = c.source_id
 				LEFT JOIN shelf_settings ss ON ss.kind = c.kind AND ss.shelf = 'category:' || c.id
 			WHERE c.kind = ? AND `+portalCategoryShown+` AND COALESCE(c.total, -1) <> 0)
@@ -421,7 +445,7 @@ func (s *Store) Shelves(ctx context.Context, kind string) ([]Shelf, error) {
 	out := []Shelf{}
 	for rows.Next() {
 		var sh Shelf
-		if err := rows.Scan(&sh.ID, &sh.Name, &sh.Count, &sh.Portal); err != nil {
+		if err := rows.Scan(&sh.ID, &sh.Name, &sh.Count, &sh.Portal, &sh.Locked); err != nil {
 			return nil, fmt.Errorf("store: %s shelves: %w", kind, err)
 		}
 		out = append(out, sh)
@@ -441,14 +465,18 @@ type TitleRow struct {
 	Rating  int    // out of 100, 0 if not known
 	Poster  string // the source's address of its picture, "" if none; devices get one on Overscan
 	AddedAt time.Time
+	// Locked is set when devices need the parental PIN to play it, once
+	// the account has one (D85, D86).
+	Locked bool
 }
 
-const titleRowColumns = `t.id, t.kind, t.name, t.year, t.rating, t.poster, t.added_at`
+const titleRowColumns = `t.id, t.kind, t.name, t.year, t.rating, t.poster, t.added_at, ` + titleLocked
 
 func scanTitleRow(row rowScanner, extra ...any) (TitleRow, error) {
 	var r TitleRow
 	var added int64
-	if err := row.Scan(append([]any{&r.ID, &r.Kind, &r.Name, &r.Year, &r.Rating, &r.Poster, &added}, extra...)...); err != nil {
+	if err := row.Scan(append([]any{&r.ID, &r.Kind, &r.Name, &r.Year, &r.Rating, &r.Poster, &added, &r.Locked},
+		extra...)...); err != nil {
 		return TitleRow{}, err
 	}
 	r.AddedAt = timeOrZero(added)
@@ -555,13 +583,18 @@ type TitleListing struct {
 // those on a shelf, or all of them for shelf 0, whose names hold text if it
 // is not "" (ignoring the case of letters A to Z), in an order (ByAdded or
 // ByName), from offset, at most limit of them; and how many there are in
-// all. It returns ErrNotFound for a shelf that does not exist.
-func (s *Store) TitlePage(ctx context.Context, kind string, shelfID int64, text, order string, offset, limit int) ([]TitleListing, int, error) {
+// all. With unlocked, it leaves out the titles that are locked (D85). It
+// returns ErrNotFound for a shelf that does not exist.
+func (s *Store) TitlePage(ctx context.Context, kind string, shelfID int64, text, order string, offset, limit int,
+	unlocked bool) ([]TitleListing, int, error) {
 	if err := checkKind(kind); err != nil {
 		return nil, 0, err
 	}
 	what := "page of " + kind
 	where := `t.kind = ? AND ` + libraryShown
+	if unlocked {
+		where += ` AND NOT ` + titleLocked
+	}
 	args := []any{kind}
 	if shelfID != 0 {
 		var name string
@@ -804,6 +837,10 @@ type PlayableItem struct {
 	// item's, an Xtream stream's or episode's, or the file's path in a
 	// folder.
 	Key string
+	// Locked is set when devices need the parental PIN to play it, once
+	// the account has one: the film, or the episode's series, is locked
+	// (D85, D86).
+	Locked bool
 }
 
 // defaultContainer is the extension of a file whose source gives none.
@@ -818,10 +855,10 @@ func (s *Store) PlayableMovie(ctx context.Context, id int64) (PlayableItem, erro
 	var sealed []byte
 	err := s.db.QueryRowContext(ctx, `
 		SELECT t.source_id, t.name, t.source_key, t.container, t.file, s.name, s.type,
-			(SELECT secret FROM source_secrets WHERE source_id = s.id)
+			(SELECT secret FROM source_secrets WHERE source_id = s.id), `+titleLocked+`
 		FROM titles t JOIN sources s ON s.id = t.source_id
 		WHERE t.id = ? AND t.kind = ? AND `+libraryShown, id, KindMovie).Scan(
-		&p.SourceID, &p.Name, &key, &p.Container, &file, &sourceName, &sourceType, &sealed)
+		&p.SourceID, &p.Name, &key, &p.Container, &file, &sourceName, &sourceType, &sealed, &p.Locked)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PlayableItem{}, ErrNotFound
 	}
@@ -845,11 +882,11 @@ func (s *Store) PlayableEpisode(ctx context.Context, id int64) (PlayableItem, er
 	var sealed []byte
 	err := s.db.QueryRowContext(ctx, `
 		SELECT t.id, t.source_id, t.name, e.season, e.number, e.source_key, e.container, e.file, s.name, s.type,
-			(SELECT secret FROM source_secrets WHERE source_id = s.id)
+			(SELECT secret FROM source_secrets WHERE source_id = s.id), `+titleLocked+`
 		FROM episodes e JOIN titles t ON t.id = e.title_id JOIN sources s ON s.id = t.source_id
 		WHERE e.id = ? AND e.missing_since IS NULL AND `+libraryShown, id).Scan(
 		&p.TitleID, &p.SourceID, &series, &season, &number, &key, &p.Container, &file, &sourceName, &sourceType,
-		&sealed)
+		&sealed, &p.Locked)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PlayableItem{}, ErrNotFound
 	}

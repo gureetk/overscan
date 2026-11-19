@@ -52,7 +52,8 @@ transcoded by Jellyfin or, where the administrator lets it, by Overscan's own
 ffmpeg; subtitles beside a film or in Jellyfin show on the box, and a playback
 check on each box measures what it plays. The fourth milestone has begun: past
 programmes play from the archives of the Xtream servers, playlists and Stalker
-portals that keep them, on the box and in Stalker clients.
+portals that keep them, on the box and in Stalker clients, and films and series
+can be locked with the parental PIN, as channels can.
 [docs/trying-it.md](docs/trying-it.md) says how to try it.
 
 ## What it is meant to do

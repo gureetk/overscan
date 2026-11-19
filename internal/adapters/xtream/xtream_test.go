@@ -36,7 +36,7 @@ const streams = `[
 	 "epg_channel_id":"news.one","added":"1767225600","category_id":"1","custom_sid":"","tv_archive":1,
 	 "direct_source":"","tv_archive_duration":"3"},
 	{"num":"2","name":"Sport One","stream_type":"live","stream_id":"102","stream_icon":"","epg_channel_id":null,
-	 "category_id":null,"tv_archive":"0","tv_archive_duration":7},
+	 "category_id":null,"tv_archive":"0","tv_archive_duration":7,"is_adult":1},
 	{"num":3,"name":"Radio One","stream_type":"radio_streams","stream_id":103,"category_id":2},
 	"not an object",
 	{"num":4,"name":"No ID","stream_type":"live"},
@@ -207,7 +207,7 @@ func TestLiveLists(t *testing.T) {
 	want := []Stream{
 		{ID: 101, Num: 1, Name: "News One", Type: "live", Icon: "http://img.example/1.png", EPGChannelID: "news.one",
 			CategoryID: "1", ArchiveDays: 3},
-		{ID: 102, Num: 2, Name: "Sport One", Type: "live"},
+		{ID: 102, Num: 2, Name: "Sport One", Type: "live", Adult: true},
 		{ID: 103, Num: 3, Name: "Radio One", Type: "radio_streams", CategoryID: "2"},
 		{ID: 105, Num: 5, Name: "Odd", Type: "live"},
 	}

@@ -195,7 +195,7 @@ func (a *API) search(w http.ResponseWriter, r *http.Request, d store.Device) {
 	for _, p := range found {
 		resp.Programmes = append(resp.Programmes, searchProgramme{Channel: p.EntryID, programme: shortProgramme(p.Programme)})
 	}
-	if resp.Movies, resp.Series, err = a.searchTitles(ctx, q); err != nil {
+	if resp.Movies, resp.Series, err = a.searchTitles(ctx, d, q); err != nil {
 		a.internalError(w, "search the films and series", err)
 		return
 	}

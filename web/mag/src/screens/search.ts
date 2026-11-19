@@ -8,7 +8,7 @@ import type { Channel, SearchProgramme, SearchResult, TitleKind, TitleRow } from
 import { el, Logo, setClass, setText } from '../dom';
 import type { Press } from '../keys';
 import { ListView } from '../list';
-import { thumb } from '../library';
+import { hiddenPoster, thumb } from '../library';
 import { label } from '../player';
 import { clock, day, now, span } from '../time';
 import { meta } from './library';
@@ -141,10 +141,10 @@ export class SearchScreen implements Screen {
     setClass(logo.el, 'logo result-logo' + (r.title ? ' poster' : ''));
     if (r.title) {
       setText(parts[0] as HTMLElement, '');
-      logo.set(thumb(r.title.poster), ''); // the name is beside it
+      logo.set(hiddenPoster(r.title) ? '' : thumb(r.title.poster), ''); // the name is beside it
       setText(text.firstChild as HTMLElement, r.title.name);
       const m = meta(r.title);
-      setText(text.lastChild as HTMLElement, (r.kind === 'movie' ? 'Film' : 'Series') + (m ? ' · ' + m : ''));
+      setText(text.lastChild as HTMLElement, (r.kind === 'movie' ? 'Film' : 'Series') + (m ? ' · ' + m : '') + (r.title.locked ? ' · Locked' : ''));
       return;
     }
     if (!r.channel) {

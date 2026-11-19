@@ -6,6 +6,7 @@
 // loading.
 
 import type { ApiError, Callback, Client, LibraryState, ShelfPage, Title, TitleKind } from './api';
+import { keptPIN } from './pin';
 
 /** How many titles a part of a shelf holds. */
 export const pageSize = 200;
@@ -21,6 +22,11 @@ interface Kept {
 /** path returns the API's path for a kind's calls: movies or series. */
 export function kindPath(kind: TitleKind): string {
   return kind === 'movie' ? 'movies' : 'series';
+}
+
+/** hiddenPoster says whether a title's picture stays hidden: it is locked, and the page keeps no PIN (D85). */
+export function hiddenPoster(t: { locked?: boolean }): boolean {
+  return !!t.locked && !keptPIN();
 }
 
 /** thumb returns the path of a poster's small copy, for a list's rows. */

@@ -16,8 +16,9 @@ import (
 // The Settings page gathers what applies to the whole server: stream
 // repair's default and whether it reaches HLS, whether films are converted
 // and transcoded and how many at once ffmpeg may transcode (D78), the
-// parental PIN, the administrator's account, and facts about the server,
-// its backups and the support bundle (D59).
+// parental PIN and what sources' marks for adults do (D86), the
+// administrator's account, and facts about the server, its backups and the
+// support bundle (D59).
 
 // settingsData is what the Settings page shows.
 type settingsData struct {
@@ -34,6 +35,8 @@ type settingsData struct {
 	Missing          string // what ffmpeg lacks to transcode, if it cannot
 	PINSet           bool   // the household has a parental PIN (D55)
 	Locks            int    // locked groups, and channels locked one by one
+	LibraryLocks     int    // locked shelves of films and series, and titles locked one by one (D85)
+	Adult            string // what sources' marks for adults do (D86)
 	Facts            []Fact
 	Started          time.Time
 	Portal           string // the address a MAG box loads
@@ -88,6 +91,12 @@ func (a *Admin) settings(r *http.Request) (settingsData, error) {
 		return d, err
 	}
 	if d.Locks, err = a.lockCount(ctx); err != nil {
+		return d, err
+	}
+	if d.LibraryLocks, err = a.store.LibraryLocks(ctx); err != nil {
+		return d, err
+	}
+	if d.Adult, err = a.store.AdultMarks(ctx); err != nil {
 		return d, err
 	}
 	d.Portal, d.StalkerPortal = portalAddresses(r.Host, a.support.Listen)
@@ -156,3 +165,7 @@ func (a *Admin) settingsDone(w http.ResponseWriter, r *http.Request, s store.Adm
 		http.Redirect(w, r, "/admin/settings", http.StatusSeeOther)
 	}
 }
+
+// AllLocks counts every lock: on groups and channels, and on shelves and
+// titles.
+func (d settingsData) AllLocks() int { return d.Locks + d.LibraryLocks }

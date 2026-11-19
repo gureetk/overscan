@@ -294,3 +294,25 @@ func portalShelvesNoWant(t *testing.T, st *store.Store, kind string) map[string]
 	}
 	return out
 }
+
+// A portal's film that it marks for adults is locked when the setting says
+// so (D86).
+func TestPortalAdultMarks(t *testing.T) {
+	p := stalkertest.New(t)
+	p.Censored = []string{"1002"}
+	l, st, _ := newPortalLibrary(t, p)
+	ctx := context.Background()
+	if err := st.SetAdultMarks(ctx, store.AdultLock); err != nil {
+		t.Fatal(err)
+	}
+	drama := portalShelves(t, l, st, store.KindMovie)["Drama"]
+	part, err := l.PortalPart(ctx, drama, 0, 14)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, title := range part.Titles {
+		if want := title.Name == "Example Film 02"; title.Locked != want {
+			t.Errorf("%s: locked %v", title.Name, title.Locked)
+		}
+	}
+}

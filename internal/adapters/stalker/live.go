@@ -37,12 +37,16 @@ const (
 type Genre struct {
 	ID    string
 	Title string
+	// Censored is a genre of channels that the portal marks for adults
+	// (section 4).
+	Censored bool
 }
 
 // genreJSON is a genre or a category as a portal sends it.
 type genreJSON struct {
-	ID    text `json:"id"`
-	Title text `json:"title"`
+	ID       text `json:"id"`
+	Title    text `json:"title"`
+	Censored flag `json:"censored"`
 }
 
 func genres(items list[genreJSON]) []Genre {
@@ -52,7 +56,7 @@ func genres(items list[genreJSON]) []Genre {
 		if id == "" || id == "*" || title == "" {
 			continue
 		}
-		out = append(out, Genre{ID: id, Title: title})
+		out = append(out, Genre{ID: id, Title: title, Censored: bool(g.Censored)})
 	}
 	return out
 }

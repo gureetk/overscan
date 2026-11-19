@@ -666,6 +666,7 @@ table.list { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
 .pin-forms { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.875rem; }
 .pin-forms form { margin: 0; }
 .pin-forms .row-form { flex-wrap: nowrap; }
+.pin-forms + .switch-row { margin-top: 1rem; }
 .pin-forms input { flex: 0 1 14rem; }
 
 /* The overview: what needs doing, tiles, what is playing. */
@@ -831,10 +832,12 @@ h2.with-dot .count { margin-left: 0; }
 .channels-panel .pages { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: 0.875rem 1.25rem; border-top: 1px solid var(--line); color: var(--text3); font-size: 0.84375rem; }
 .pages .tick-hint { margin-left: auto; }
 
-/* The bar for ticked channels shows once one is ticked; CSS counts them. */
-#lineup-results { counter-reset: ticked; }
-#lineup-results input[form="bulk"][name="ids"]:checked { counter-increment: ticked; }
-#lineup-results:has(input[form="bulk"][name="ids"]:checked) .tick-hint { visibility: hidden; }
+/* The bar for ticked channels or titles shows once one is ticked; CSS counts them. */
+#lineup-results, #library-results { counter-reset: ticked; }
+#lineup-results input[form="bulk"][name="ids"]:checked,
+#library-results input[form="bulk"][name="ids"]:checked { counter-increment: ticked; }
+#lineup-results:has(input[form="bulk"][name="ids"]:checked) .tick-hint,
+#library-results:has(input[form="bulk"][name="ids"]:checked) .tick-hint { visibility: hidden; }
 .bulk {
   position: sticky;
   bottom: 1rem;
@@ -850,7 +853,8 @@ h2.with-dot .count { margin-left: 0; }
   color: var(--on-focus);
   box-shadow: var(--shadow);
 }
-#lineup-results:has(input[form="bulk"][name="ids"]:checked) .bulk { display: flex; }
+#lineup-results:has(input[form="bulk"][name="ids"]:checked) .bulk,
+#library-results:has(input[form="bulk"][name="ids"]:checked) .bulk { display: flex; }
 .bulk-count { padding: 0 0.625rem 0 0.5rem; font-size: 0.875rem; font-weight: 600; white-space: nowrap; }
 .bulk-count::before { content: counter(ticked) " ticked"; }
 .bulk > button, .bulk > details > summary.button, .bulk-move > button, .bulk-move > select {
@@ -948,6 +952,7 @@ h2.with-dot .count { margin-left: 0; }
   .bulk-count::before { content: counter(ticked); }
   .bulk .phone-hide { display: none; }
   .bulk .menu > .phone-only { display: flex; }
+  .bulk > details.phone-only { display: block; }
   .channel-panel { z-index: 30; width: 100vw; border-width: 0; }
 }
 .channels-panel .table-wrap { width: 100%; }

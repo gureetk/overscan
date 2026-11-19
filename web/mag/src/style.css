@@ -2244,6 +2244,17 @@ html.video #app {
   color: #4a4a50;
 }
 
+.title-row .lock-mark {
+  margin-left: 0.625rem;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+  color: #a1a1a8;
+}
+
+.channel.focus .lock-mark {
+  color: #4a4a50;
+}
+
 .library-status {
   margin-top: 1.25rem;
   padding: 0 0.25rem;

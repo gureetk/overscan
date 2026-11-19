@@ -82,7 +82,8 @@ func (s *Store) LineupGroups(ctx context.Context, lineupID int64) ([]LineupGroup
 
 	rows, err = s.db.QueryContext(ctx, `
 		SELECT COALESCE(g.id, 0), count(*),
-			COALESCE(sum(e.number IS NOT NULL AND COALESCE(e.hidden, g.hidden, 0) = 0), 0),
+			COALESCE(sum(e.number IS NOT NULL AND COALESCE(e.hidden, g.hidden, 0) = 0
+				AND NOT (c.adult = 1 AND `+adultMarksSQL+` = '`+AdultHide+`')), 0),
 			COALESCE(min(CASE WHEN COALESCE(e.hidden, g.hidden, 0) = 0 THEN e.number END), 0)`+lineupEntryJoins+`
 		WHERE e.lineup_id = ? AND c.missing_since IS NULL AND s.enabled = 1
 		GROUP BY COALESCE(g.id, 0)`,
@@ -348,6 +349,10 @@ type LineupEntry struct {
 	GroupLocked bool  // its group is locked
 	Repair      bool  // its stream goes through ffmpeg: its own switch says so, or else the default does (D57, D58)
 	RepairOwn   *bool // its own switch; nil if it follows the default
+	// Adult is set when its source marks it for adults (D86), and
+	// AdultLocked or AdultHidden when the setting locks or hides such
+	// channels.
+	Adult, AdultLocked, AdultHidden bool
 }
 
 // EntryQuery picks a lineup's entries.
@@ -424,14 +429,15 @@ const entrySelect = `
 			CASE e.hidden WHEN 0 THEN 1 WHEN 1 THEN 2 ELSE 0 END,
 			e.number IS NULL OR COALESCE(e.hidden, g.hidden, 0) = 1 OR c.missing_since IS NOT NULL,
 			c.missing_since IS NOT NULL, c.logo, e.locked, COALESCE(g.locked, 0),
-			COALESCE(c.repair, ` + repairDefaultSQL + `), c.repair`
+			COALESCE(c.repair, ` + repairDefaultSQL + `), c.repair, c.adult,
+			c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultLock + `', c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultHide + `'`
 
 func scanEntry(row rowScanner) (LineupEntry, error) {
 	var e LineupEntry
 	var own sql.NullBool
 	err := row.Scan(&e.ID, &e.ChannelID, &e.SourceID, &e.Source, &e.Number, &e.Pinned, &e.Name, &e.ChannelName,
 		&e.Renamed, &e.GroupID, &e.Group, &e.Moved, &e.Category, &e.Visibility, &e.Hidden, &e.Missing, &e.Logo,
-		&e.Locked, &e.GroupLocked, &e.Repair, &own)
+		&e.Locked, &e.GroupLocked, &e.Repair, &own, &e.Adult, &e.AdultLocked, &e.AdultHidden)
 	if own.Valid {
 		e.RepairOwn = &own.Bool
 	}

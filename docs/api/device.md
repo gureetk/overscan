@@ -2,7 +2,7 @@
 
 Overscan's own MAG page talks to the server through the device API, a JSON API under `/api/device/v1/` built for the box ([plan](../plan.md), section 9). The page and the server ship together, so the API changes with them. It is not meant for other clients: third-party players have the Stalker API.
 
-Version 0, in M1, covers what the first page needs: a session, the channel list, and playing a channel. M2 adds what the page's new interface needs ([D52](../decisions.md)): the guide, favourites, what the box watched, search, and the box's own settings. M3 adds films and series ([D63](../decisions.md) to [D65](../decisions.md)), plays through ffmpeg those whose sound the box cannot play ([D68](../decisions.md)), checks what each box plays ([D70](../decisions.md)), and has Jellyfin transcode the video it cannot play ([D71](../decisions.md)). M4 adds past programmes from their sources' archives ([D81](../decisions.md), [D84](../decisions.md)).
+Version 0, in M1, covers what the first page needs: a session, the channel list, and playing a channel. M2 adds what the page's new interface needs ([D52](../decisions.md)): the guide, favourites, what the box watched, search, and the box's own settings. M3 adds films and series ([D63](../decisions.md) to [D65](../decisions.md)), plays through ffmpeg those whose sound the box cannot play ([D68](../decisions.md)), checks what each box plays ([D70](../decisions.md)), and has Jellyfin transcode the video it cannot play ([D71](../decisions.md)). M4 adds past programmes from their sources' archives ([D81](../decisions.md), [D84](../decisions.md)), and locks on films and series ([D85](../decisions.md)).
 
 ## Conventions
 
@@ -18,7 +18,7 @@ Version 0, in M1, covers what the first page needs: a session, the channel list,
 | `blocked` | 403 | The administrator has blocked this box. |
 | `not_found` | 404 | No such call, or no such channel, shelf, film, series or episode for this box. |
 | `no_archive` | 404 | The programme does not play from its channel's archive: the channel's source keeps none that Overscan plays, the programme has not ended, or it began longer ago than the archive reaches back ([D81](../decisions.md)). |
-| `pin_required` | 403 | The channel is locked: send the parental PIN ([D55](../decisions.md)). |
+| `pin_required` | 403 | The channel, film or series is locked: send the parental PIN ([D55](../decisions.md), [D85](../decisions.md)). |
 | `pin_wrong` | 403 | The PIN is not the account's. |
 | `pin_locked` | 429 | Five wrong PINs in 15 minutes: `Retry-After` says how many seconds the box must wait before it tries again. |
 | `limit` | 503 | The channel's, film's or episode's source has no free connection ([D36](../decisions.md)). |
@@ -91,7 +91,7 @@ The whole lineup of the box's account, in one answer: the groups, in the order o
 }
 ```
 
-A channel's `id` belongs to its place in the lineup and stays the same when its source is read again. Its name, number and group are as the administrator has set them (D47). `group` is 0 for a channel in no group. `logo`, for a channel whose source gives one, is the path on Overscan of its logo, scaled to fit 240×96 ([D54](../decisions.md)); the path changes when the logo does, so the page may keep the image. When the logo cannot be served, the path answers 404 and the page shows the channel's name instead. `locked` is there, and true, when the channel needs the account's parental PIN to play: it, or its group, is locked, and the account has a PIN ([D55](../decisions.md)). `archive`, for a channel whose source keeps an archive that Overscan plays, is how many days back its past programmes play from it ([D81](../decisions.md)). Groups are the lineup's, and the Stalker API's genres: a source's category goes to the group of its name, unless the administrator puts it in another, so channels from different sources whose categories have the same name share a group. A group's `id` stays the same when it is renamed. Hidden channels are left out.
+A channel's `id` belongs to its place in the lineup and stays the same when its source is read again. Its name, number and group are as the administrator has set them (D47). `group` is 0 for a channel in no group. `logo`, for a channel whose source gives one, is the path on Overscan of its logo, scaled to fit 240×96 ([D54](../decisions.md)); the path changes when the logo does, so the page may keep the image. When the logo cannot be served, the path answers 404 and the page shows the channel's name instead. `locked` is there, and true, when the channel needs the account's parental PIN to play: it, or its group, is locked, or its source marks it for adults and the administrator chose to lock such channels ([D86](../decisions.md)), and the account has a PIN ([D55](../decisions.md)). `archive`, for a channel whose source keeps an archive that Overscan plays, is how many days back its past programmes play from it ([D81](../decisions.md)). Groups are the lineup's, and the Stalker API's genres: a source's category goes to the group of its name, unless the administrator puts it in another, so channels from different sources whose categories have the same name share a group. A group's `id` stays the same when it is renamed. Hidden channels are left out, and so are those that their sources mark for adults when the administrator chose to hide such channels.
 
 `version` changes when the groups or channels do, logos included, and not when the favourites or the recent list do.
 
@@ -108,6 +108,10 @@ Answers how to play a channel through the stream hub. The body may be empty, or 
 ```
 
 The page plays it with `gSTB.Play(solution + " " + url)`. The solution is the box's name for a kind of player: `ffrt` for MPEG-TS streamed live over HTTP, and `ffmpeg` for HLS. The link ends in `.m3u8`, with `ffmpeg`, only when the channel's address does; otherwise it ends in `.ts`, with `ffrt`, and if the source answers with HLS anyway, the hub relays it as one MPEG-TS stream ([D42](../decisions.md)). The link must be opened within a minute; the hub session that it starts then carries reconnects ([plan](../plan.md), section 7). Switching channels on a source that is at its connection limit works, since the box's own older stream makes room, but a stream from another device does not ([D36](../decisions.md)).
+
+### `POST /api/device/v1/pin`
+
+Checks the account's parental PIN, `{"pin": "1234"}`, before the page shows something locked, such as a locked film's details ([D85](../decisions.md)). It answers `{"ok": true}` when the PIN is right, or when the account has none; otherwise `pin_required` for an empty one, `pin_wrong`, or `pin_locked`, with the wrong PINs counted as a play call counts them.
 
 ### `POST /api/device/v1/channels/{id}/archive`
 
@@ -225,6 +229,8 @@ A shelf's titles, `count` of them (200 if not given, at most 1000) from `from` (
 
 `next` is the `from` of the next part, `-1` after the last. A part of a Stalker portal's shelf ends where the pages that Overscan read for it end, at most four pages of 14, so it can hold fewer titles than `count`: ask for the next part from `next`. Its places are the portal's, and its titles come in the portal's order, whatever `order` asks. A portal without a series module lists its series among its films, so its shelf of films can hold series: `kind` says which a title is, and a series opens with `GET /api/device/v1/series/{id}`.
 
+`locked` is there, and true, when playing the title needs the account's parental PIN: the administrator locked it or its shelf, or its source marks it for adults and the administrator chose to lock such titles ([D85](../decisions.md), [D86](../decisions.md)), and the account has a PIN. The page shows such a title without its picture until the PIN has been typed.
+
 A category's titles come the latest added first, or by name with `order=name`. `recent` holds the last 100 that the sources added, the latest first, and `continue` what the account is part way through, the latest watched first. `rating` is out of 100. `year`, `rating` and `poster` are left out where the source gives none. `progress` is how much of a film the account has watched, in per cent, and `watched` is there for a film it finished. On `continue`, `episode` says which episode of a series plays next, such as `"S1 E3"`, and `progress` is that episode's: the one the account played last if it did not finish it, else the one after it.
 
 #### `GET /api/device/v1/movies/{id}`, and `GET /api/device/v1/series/{id}`
@@ -242,7 +248,7 @@ A film or a series, with what its source says about it. The first time a box ope
 }
 ```
 
-`details` is false while the source's details have not been read, and the title shows what the source's list said; `details_error` then says why they could not be read just now. `runtime` is in minutes. `progress` is how far the account got into a film: `position` and `duration` in seconds, and `finished` once it played to the end, when `position` goes back to 0.
+`details` is false while the source's details have not been read, and the title shows what the source's list said; `details_error` then says why they could not be read just now. `locked` is as on a shelf: the page checks the PIN with `POST /api/device/v1/pin` before it shows such a title. `runtime` is in minutes. `progress` is how far the account got into a film: `position` and `duration` in seconds, and `finished` once it played to the end, when `position` goes back to 0.
 
 A series has, instead of `progress`, its seasons with their episodes, by number, and the episode to play next: the one the account played last, if it did not finish it, from where it stopped, or from the start if it stopped in the first 30 seconds; else the one after it; else the first.
 
@@ -267,6 +273,8 @@ Answers how to play a film or an episode through the stream hub ([D64](../decisi
 ```json
 {"url": "http://192.0.2.10:8080/vod/<token>.mkv", "solution": "ffmpeg", "seek": "player", "duration": 5412}
 ```
+
+A locked film, or an episode of a locked series, plays only with the account's parental PIN in the body, `{"pin": "1234"}`, and answers `pin_required`, `pin_wrong` or `pin_locked` as a locked channel does ([D85](../decisions.md)).
 
 The page plays it with `gSTB.Play(solution + " " + url)`, adding ` position:<seconds>` to start part way through. `duration` is in seconds, 0 if the server does not know it. With `seek` `player`, the link is the file as it is and ends in its extension; the session that it starts carries the player's range requests, so the player seeks in the file itself. The link must be opened within a minute; the session then goes on for six hours after the player stops, so a paused film goes on where it was. A source at its connection limit answers `limit`, as for channels.
 

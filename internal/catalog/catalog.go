@@ -575,6 +575,7 @@ func (r *Refresher) readXtream(ctx context.Context, src source.Settings) (readRe
 			StreamURL:   "live/" + id + "." + format,
 			ArchiveDays: min(st.ArchiveDays, maxArchiveDays),
 			Logo:        logo(st.Icon),
+			Adult:       st.Adult,
 		}
 		if ch.Name == "" {
 			ch.Name = "Channel " + strconv.Itoa(i+1)
@@ -637,8 +638,10 @@ func (r *Refresher) readStalker(ctx context.Context, src source.Settings, id int
 		return res, fmt.Errorf("the portal lists more than %d channels", maxChannels)
 	}
 	names := make(map[string]string, len(genres))
+	censored := map[string]bool{}
 	for _, g := range genres {
 		names[g.ID] = g.Title
+		censored[g.ID] = g.Censored
 	}
 	fields := make([]keyFields, len(channels))
 	for i, ch := range channels {
@@ -656,6 +659,7 @@ func (r *Refresher) readStalker(ctx context.Context, src source.Settings, id int
 			StreamURL:   ch.Cmd,
 			ArchiveDays: min((ch.ArchiveHours+23)/24, maxArchiveDays),
 			Logo:        logo(ch.Logo),
+			Adult:       ch.Censored || censored[ch.GenreID],
 		}
 		if out.Name == "" {
 			out.Name = "Channel " + strconv.Itoa(i+1)

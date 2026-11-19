@@ -65,6 +65,12 @@ export interface Ctx {
   /** playProgramme plays a past programme of a channel full screen, from its source's archive (D81). */
   playProgramme(c: Channel, p: Programme): void;
   pick(title: string, items: PickItem[], chosen: number, done: (index: number) => void): void;
+  /**
+   * unlock asks for the parental PIN before something locked shows, unless
+   * the page keeps it, and checks it with the server (D85); done says
+   * whether it may show.
+   */
+  unlock(what: string, done: (ok: boolean) => void): void;
   /** videoChanged says that the screen wants the video somewhere else, or overlays changed. */
   videoChanged(): void;
 }

@@ -89,6 +89,11 @@ export interface PastProgramme {
   programme: Programme;
 }
 
+/** lockedItem says whether what plays needs the parental PIN: a locked channel's past programme, or a locked film or series (D55, D85). */
+function lockedItem(p: Playing): boolean {
+  return p.programme ? !!p.programme.channel.locked : !!p.title.locked;
+}
+
 /** pastProgramme returns what plays a past programme of a channel. */
 export function pastProgramme(c: Channel, p: Programme): Playing {
   return {
@@ -216,7 +221,11 @@ export class FilmPlayer {
       }
       return { path: 'channels/' + p.programme.channel.id + '/archive', body: body };
     }
-    return { path: p.episode ? 'episodes/' + p.episode.id + '/play' : 'movies/' + p.title.id + '/play', body: { restart: true } };
+    const item: { restart: boolean; pin?: string } = { restart: true };
+    if (pin) {
+      item.pin = pin;
+    }
+    return { path: p.episode ? 'episodes/' + p.episode.id + '/play' : 'movies/' + p.title.id + '/play', body: item };
   }
 
   private start(from: number, pin: string): void {
@@ -225,7 +234,7 @@ export class FilmPlayer {
     if (!p) {
       return;
     }
-    if (p.programme && p.programme.channel.locked && !pin) {
+    if (lockedItem(p) && !pin) {
       pin = keptPIN();
       if (!pin) {
         this.askPIN(p, from, '');

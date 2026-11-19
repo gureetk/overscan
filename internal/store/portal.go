@@ -182,8 +182,8 @@ func (s *Store) ApplyPortalPage(ctx context.Context, categoryID int64, p int, it
 	}
 	upsert, err := tx.PrepareContext(ctx, `
 		INSERT INTO titles (source_id, kind, source_key, category_id, name, year, rating, poster, container, file,
-			added_at, summary, position, generation, missing_since)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+			added_at, summary, adult, position, generation, missing_since)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 			COALESCE((SELECT generation FROM library_reads WHERE source_id = ? AND kind = ?), 0), NULL)
 		ON CONFLICT (source_id, kind, source_key) DO UPDATE SET
 			category_id = excluded.category_id,
@@ -195,6 +195,7 @@ func (s *Store) ApplyPortalPage(ctx context.Context, categoryID int64, p int, it
 			file = CASE WHEN excluded.file <> '' THEN excluded.file ELSE titles.file END,
 			added_at = excluded.added_at,
 			summary = excluded.summary,
+			adult = excluded.adult,
 			position = excluded.position,
 			missing_since = NULL`)
 	if err != nil {
@@ -214,7 +215,7 @@ func (s *Store) ApplyPortalPage(ctx context.Context, categoryID int64, p int, it
 			return fail(err)
 		}
 		if _, err := upsert.ExecContext(ctx, sourceID, it.Kind, t.Key, categoryID, t.Name, max(0, t.Year),
-			min(max(0, t.Rating), 100), t.Poster, t.Container, t.File, unixOrZero(t.AddedAt), string(summary),
+			min(max(0, t.Rating), 100), t.Poster, t.Container, t.File, unixOrZero(t.AddedAt), string(summary), t.Adult,
 			first+i, sourceID, it.Kind); err != nil {
 			return fail(err)
 		}

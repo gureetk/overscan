@@ -59,7 +59,7 @@ const (
 	errBusy         = "busy"   // the server transcodes as many films as it may at once (D73)
 	errSource       = "source" // the source could not be read, or gave no address (D77)
 	errInternal     = "internal"
-	errPINRequired  = "pin_required" // the channel is locked (D55)
+	errPINRequired  = "pin_required" // what it asks for is locked (D55, D85)
 	errPINWrong     = "pin_wrong"
 	errPINLocked    = "pin_locked" // too many wrong PINs; wait
 	errNoArchive    = "no_archive" // the programme does not play from its source's archive (D81)
@@ -97,6 +97,7 @@ func New(st *store.Store, reg *devices.Registry, h *hub.Hub, log *slog.Logger, v
 	mux.HandleFunc("GET "+Prefix+"channels/version", a.authorized(a.channelsVersion))
 	mux.HandleFunc("POST "+Prefix+"channels/{id}/play", a.authorized(a.play))
 	mux.HandleFunc("POST "+Prefix+"channels/{id}/archive", a.authorized(a.playArchive))
+	mux.HandleFunc("POST "+Prefix+"pin", a.authorized(a.checkPIN))
 	mux.HandleFunc("PUT "+Prefix+"channels/{id}/favourite", a.authorized(a.favourite(true)))
 	mux.HandleFunc("DELETE "+Prefix+"channels/{id}/favourite", a.authorized(a.favourite(false)))
 	mux.HandleFunc("GET "+Prefix+"guide", a.authorized(a.guide))

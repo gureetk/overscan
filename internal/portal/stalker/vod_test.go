@@ -550,3 +550,57 @@ func FuzzMediaFromCmd(f *testing.F) {
 		}
 	})
 }
+
+// Once the account has a PIN, Stalker clients do not see locked shelves and
+// titles, which they could not ask for it for, nor get their links (D85).
+func TestLockedTitlesLeftOut(t *testing.T) {
+	h := newHarness(t)
+	panel := newLibraryPanel(t)
+	h.withLibrary(panel)
+	h.approve(macA)
+	token := h.handshake(macA)
+	ctx := context.Background()
+	ids, _ := h.categories("vod", macA, token)
+	all := h.titles("type=vod&action=get_ordered_list&category=*&sortby=name&p=1", macA, token)
+	byName := map[string]vodItem{}
+	for p := 1; p <= 2; p++ {
+		page := h.titles("type=vod&action=get_ordered_list&category=*&sortby=name&p="+strconv.Itoa(p), macA, token)
+		for _, it := range page.Data {
+			byName[it.Name] = it
+		}
+	}
+	long := byName["The Long Field"]
+	id, _ := strconv.ParseInt(long.ID, 10, 64)
+	if _, err := h.store.SetTitlesLocked(ctx, []int64{id}, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.store.SetShelfLocked(ctx, store.KindMovie, "name:Comedy", true); err != nil {
+		t.Fatal(err)
+	}
+	// Without a PIN, locks do nothing.
+	if got := h.titles("type=vod&action=get_ordered_list&category=*&sortby=name&p=1", macA, token); got.TotalItems != all.TotalItems {
+		t.Errorf("without a PIN: %d of %d", got.TotalItems, all.TotalItems)
+	}
+
+	if err := h.store.SetAccountPIN(ctx, 1, "$argon2id$made-up"); err != nil {
+		t.Fatal(err)
+	}
+	if _, titles := h.categories("vod", macA, token); !reflect.DeepEqual(titles, []string{"All", "Drama"}) {
+		t.Errorf("categories %q", titles)
+	}
+	got := h.titles("type=vod&action=get_ordered_list&category=*&sortby=name&p=1", macA, token)
+	for _, it := range got.Data {
+		if it.Name == "The Long Field" || it.CategoryID == ids["Comedy"] {
+			t.Errorf("a locked title listed: %+v", it)
+		}
+	}
+	if got.TotalItems >= all.TotalItems-1 {
+		t.Errorf("%d of %d listed", got.TotalItems, all.TotalItems)
+	}
+	if drama := h.titles("type=vod&action=get_ordered_list&category="+ids["Drama"]+"&p=1", macA, token); strings.Contains(itemNames(drama.Data), "The Long Field") {
+		t.Errorf("Drama lists a locked title: %q", itemNames(drama.Data))
+	}
+	if l := h.link("vod", long.Cmd, "", macA, token); l.Cmd != "" || l.Error != "nothing_to_play" {
+		t.Errorf("a locked film's link: %+v", l)
+	}
+}

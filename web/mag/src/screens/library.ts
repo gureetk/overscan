@@ -7,8 +7,9 @@
 
 import { describe, type LibraryState, type Shelf, type ShelfPage, type TitleKind, type TitleRow } from '../api';
 import { el, Logo, setText, setWidth, show, toggle } from '../dom';
+import { icon } from '../icons';
 import type { Press } from '../keys';
-import { type LibraryModel, thumb } from '../library';
+import { hiddenPoster, type LibraryModel, thumb } from '../library';
 import { ListView } from '../list';
 import { Clock, type Ctx, Footer, type Screen, type VideoArea } from './screen';
 
@@ -29,6 +30,7 @@ type Pane = 'shelves' | 'titles';
 
 interface TitleParts {
   thumb: Logo;
+  lock: HTMLElement;
   name: HTMLElement;
   meta: HTMLElement;
   barBox: HTMLElement;
@@ -132,7 +134,9 @@ export class LibraryScreen implements Screen {
         const barBox = el('span', 'bar', sub);
         const bar = el('span', 'fill acc', barBox);
         const check = el('span', 'badge watched', row, 'Watched');
-        (row as any).parts = { thumb: t, name: name, meta: m, barBox: barBox, bar: bar, check: check };
+        const lock = el('span', 'lock-mark', row);
+        lock.innerHTML = icon('lock', 16, 2);
+        (row as any).parts = { thumb: t, lock: lock, name: name, meta: m, barBox: barBox, bar: bar, check: check };
       },
       function (row, i) {
         self.drawRow(row, i);
@@ -155,7 +159,9 @@ export class LibraryScreen implements Screen {
     if (!t || !parts) {
       return;
     }
-    parts.thumb.set(this.sparse ? '' : thumb(t.poster), ''); // the name is beside it
+    const hidden = hiddenPoster(t);
+    parts.thumb.set(this.sparse || hidden ? '' : thumb(t.poster), ''); // the name is beside it
+    show(parts.lock, !!t.locked);
     setText(parts.name, t.name);
     setText(parts.meta, t.episode ? t.episode + (t.year ? ' · ' + t.year : '') : meta(t));
     show(parts.barBox, !!t.progress);
@@ -400,7 +406,7 @@ export class LibraryScreen implements Screen {
     clearTimeout(this.posterTimer);
     this.posterTimer = setTimeout(function () {
       const t = self.focused();
-      self.poster.set(t && !self.sparse ? t.poster || '' : '', t ? t.name : '');
+      self.poster.set(t && !self.sparse && !hiddenPoster(t) ? t.poster || '' : '', t ? t.name : '');
     }, posterDelayMs);
     this.loadMore();
   }
@@ -417,7 +423,9 @@ export class LibraryScreen implements Screen {
     setText(this.sideName, t.name);
     setText(this.sideMeta, t.episode ? t.episode : meta(t));
     let note = 'OK for the details.';
-    if (t.progress) {
+    if (hiddenPoster(t)) {
+      note = 'Locked. OK, then the PIN, for the details.';
+    } else if (t.progress) {
       note = t.progress + '% watched. OK for the details.';
     } else if (t.watched) {
       note = 'Watched. OK for the details.';
@@ -510,10 +518,26 @@ export class LibraryScreen implements Screen {
   }
 
   private openTitle(): void {
+    const self = this;
     const t = this.focused();
-    if (t) {
-      this.ctx.go('title', { kind: t.kind || this.kind, id: t.id, name: t.name, play: this.shelfId === 'continue' });
+    if (!t) {
+      return;
     }
+    const open = function () {
+      self.ctx.go('title', { kind: t.kind || self.kind, id: t.id, name: t.name, play: self.shelfId === 'continue' });
+    };
+    if (!hiddenPoster(t)) {
+      open();
+      return;
+    }
+    this.ctx.unlock(t.name, function (ok) {
+      if (ok) {
+        // The PIN is kept for a while: the shelf's pictures show again.
+        self.titleList.render();
+        self.focusChanged();
+        open();
+      }
+    });
   }
 
   private sort(): void {

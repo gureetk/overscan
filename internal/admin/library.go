@@ -14,9 +14,9 @@ import (
 )
 
 // The films and series that devices see (D79): the administrator hides,
-// renames and orders their shelves, and hides titles, on the Movies and
-// Series pages and in the API. What the API and the pages do goes through
-// the same functions here.
+// renames, locks (D85) and orders their shelves, and hides and locks
+// titles, on the Movies and Series pages and in the API. What the API and
+// the pages do goes through the same functions here.
 
 const (
 	// pageTitles is how many titles a page of the Movies or Series page
@@ -53,6 +53,16 @@ func (a *Admin) hideShelf(ctx context.Context, kind string, sh store.LibraryShel
 		return err
 	}
 	a.log.Info("a shelf hidden or shown in the admin", "kind", kind, "shelf", sh.Own, "hidden", hidden)
+	return nil
+}
+
+// lockShelf locks a shelf, and every title on it, so that devices need the
+// parental PIN to play them (D85), or unlocks it.
+func (a *Admin) lockShelf(ctx context.Context, kind string, sh store.LibraryShelf, locked bool) error {
+	if err := a.store.SetShelfLocked(ctx, kind, sh.Key, locked); err != nil {
+		return err
+	}
+	a.log.Info("a shelf locked or unlocked in the admin", "kind", kind, "shelf", sh.Own, "locked", locked)
 	return nil
 }
 
@@ -134,6 +144,20 @@ func (a *Admin) hideTitles(ctx context.Context, ids []int64, hidden bool) (int, 
 	return n, nil
 }
 
+// lockTitles locks films or series, or unlocks them, and returns how many
+// there were.
+func (a *Admin) lockTitles(ctx context.Context, ids []int64, locked bool) (int, error) {
+	if len(ids) == 0 {
+		return 0, badEdit(http.StatusBadRequest, "no_titles", "Tick the titles first.")
+	}
+	n, err := a.store.SetTitlesLocked(ctx, ids, locked)
+	if err != nil {
+		return 0, err
+	}
+	a.log.Info("titles locked or unlocked in the admin", "titles", n, "locked", locked)
+	return n, nil
+}
+
 // apiShelf is a shelf in the API.
 type apiShelf struct {
 	ID           int64    `json:"id"`
@@ -144,12 +168,13 @@ type apiShelf struct {
 	HiddenTitles int      `json:"hidden_titles"`
 	Portal       bool     `json:"portal"`
 	Hidden       bool     `json:"hidden"`
+	Locked       bool     `json:"locked"`
 	Placed       bool     `json:"placed"`
 }
 
 func shelfOut(sh store.LibraryShelf) apiShelf {
 	out := apiShelf{ID: sh.ID, Name: sh.Name, Own: sh.Own, Sources: sh.Sources, Titles: sh.Titles,
-		HiddenTitles: sh.HiddenTitles, Portal: sh.Portal, Hidden: sh.Hidden, Placed: sh.Placed}
+		HiddenTitles: sh.HiddenTitles, Portal: sh.Portal, Hidden: sh.Hidden, Locked: sh.Locked, Placed: sh.Placed}
 	if out.Sources == nil {
 		out.Sources = []string{}
 	}
@@ -165,10 +190,14 @@ type apiTitle struct {
 	Source string `json:"source"`
 	Shelf  string `json:"shelf,omitempty"` // its category's name, as its source gives it
 	Hidden bool   `json:"hidden"`
+	Locked bool   `json:"locked"`    // the administrator locked it
+	Adult  bool   `json:"adult"`     // its source marks it for adults
+	PIN    bool   `json:"needs_pin"` // devices need the PIN for it once there is one: it, its shelf or its mark
 }
 
 func titleOut(t store.AdminTitle) apiTitle {
-	return apiTitle{ID: t.ID, Kind: t.Kind, Name: t.Name, Year: t.Year, Source: t.Source, Shelf: t.Shelf, Hidden: t.Hidden}
+	return apiTitle{ID: t.ID, Kind: t.Kind, Name: t.Name, Year: t.Year, Source: t.Source, Shelf: t.Shelf, Hidden: t.Hidden,
+		Locked: t.Own, Adult: t.Adult, PIN: t.Locked}
 }
 
 // apiKind reads the kind in a request's path; false if it answered that
@@ -225,6 +254,13 @@ func (a *Admin) apiChangeShelf(w http.ResponseWriter, r *http.Request, _ store.A
 				return
 			}
 			err = a.hideShelf(ctx, kind, sh, hidden)
+		case "locked":
+			var locked bool
+			if json.Unmarshal(v, &locked) != nil {
+				apiError(w, http.StatusBadRequest, "bad_json", "locked is true or false.")
+				return
+			}
+			err = a.lockShelf(ctx, kind, sh, locked)
 		case "name":
 			var name *string
 			if json.Unmarshal(v, &name) != nil {
@@ -335,12 +371,13 @@ func (a *Admin) apiChangeTitle(w http.ResponseWriter, r *http.Request, _ store.A
 	}
 	var body struct {
 		Hidden *bool `json:"hidden"`
+		Locked *bool `json:"locked"`
 	}
 	if !readJSON(w, r, &body) {
 		return
 	}
-	if body.Hidden == nil {
-		apiError(w, http.StatusBadRequest, "bad_json", "hidden is true or false.")
+	if body.Hidden == nil && body.Locked == nil {
+		apiError(w, http.StatusBadRequest, "bad_json", "Give hidden or locked, true or false.")
 		return
 	}
 	ctx := r.Context()
@@ -351,8 +388,15 @@ func (a *Admin) apiChangeTitle(w http.ResponseWriter, r *http.Request, _ store.A
 		a.apiInternal(w, "cannot look up a title", err)
 		return
 	}
-	if _, err := a.hideTitles(ctx, []int64{id}, *body.Hidden); a.editAnswer(w, err) {
-		return
+	if body.Hidden != nil {
+		if _, err := a.hideTitles(ctx, []int64{id}, *body.Hidden); a.editAnswer(w, err) {
+			return
+		}
+	}
+	if body.Locked != nil {
+		if _, err := a.lockTitles(ctx, []int64{id}, *body.Locked); a.editAnswer(w, err) {
+			return
+		}
 	}
 	t, err := a.store.AdminTitleByID(ctx, id)
 	if err != nil {
