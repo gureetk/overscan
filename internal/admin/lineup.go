@@ -322,15 +322,20 @@ type apiEntry struct {
 	// (D107); the administrator's own edits win over them.
 	Rules []string `json:"rules"`
 	// Backups counts the channels whose streams play when its own cannot
-	// start (D109).
-	Backups int `json:"backups"`
+	// start (D109), and RuleBackups those that merge rules give it, copies
+	// of it that they hide; MergedInto names the channel that a merge rule
+	// makes it a backup of (D113).
+	Backups     int     `json:"backups"`
+	RuleBackups int     `json:"rule_backups"`
+	MergedInto  *string `json:"merged_into"`
 }
 
 func entryBody(e store.LineupEntry) apiEntry {
 	out := apiEntry{ID: e.ID, ChannelID: e.ChannelID, SourceID: e.SourceID, Source: e.Source, Pinned: e.Pinned, Backups: e.Backups,
 		Name: e.Name, ChannelName: e.ChannelName, Renamed: e.Renamed, Moved: e.Moved,
 		Visibility: visibilityNames[e.Visibility], Hidden: e.Hidden, Missing: e.Missing, Locked: e.Locked,
-		GroupLocked: e.GroupLocked, Repair: e.Repair, RepairOwn: e.RepairOwn, Adult: e.Adult, Radio: e.Radio}
+		GroupLocked: e.GroupLocked, Repair: e.Repair, RepairOwn: e.RepairOwn, Adult: e.Adult, Radio: e.Radio,
+		RuleBackups: e.RuleBackups}
 	if e.Number > 0 {
 		out.Number = &e.Number
 	}
@@ -340,12 +345,16 @@ func entryBody(e store.LineupEntry) apiEntry {
 	if e.Category != "" {
 		out.Category = &e.Category
 	}
+	if e.MergedInto != "" {
+		out.MergedInto = &e.MergedInto
+	}
 	out.Rules = []string{}
 	for _, did := range []struct {
 		yes    bool
 		action string
 	}{{e.RuleShown, rules.Include}, {e.RuleHidden, rules.Exclude}, {e.RuleRenamed, rules.Rename}, {e.RuleMoved, rules.Regroup},
-		{e.RuleNumbered, rules.Renumber}, {e.RuleLogo, rules.Logo}, {e.RuleGuide != "", rules.Guide}, {e.RuleShift != 0, rules.Shift}} {
+		{e.RuleNumbered, rules.Renumber}, {e.RuleLogo, rules.Logo}, {e.RuleGuide != "", rules.Guide}, {e.RuleShift != 0, rules.Shift},
+		{e.RuleBackups > 0 || e.MergedInto != "", rules.Merge}} {
 		if did.yes {
 			out.Rules = append(out.Rules, did.action)
 		}

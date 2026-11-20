@@ -3531,6 +3531,14 @@ components:
         backups:
           type: integer
           description: How many backups it has (D109), listed at its `backups` path.
+        rule_backups:
+          type: integer
+          description: >-
+            How many copies of it a merge rule gives it as backups, which play
+            after those picked by hand (D113).
+        merged_into:
+          type: [string, "null"]
+          description: The channel that a merge rule makes it a backup of, by its name in the lineup; null if none (D113).
     RuleMatch:
       type: object
       additionalProperties: false
@@ -3616,9 +3624,21 @@ components:
           minimum: -1440
           maximum: 1440
           description: For `timeshift`, how many minutes later the guide's times show, or earlier below 0; not 0.
+        copies:
+          type: string
+          enum: [guide, name]
+          description: >-
+            For `merge`, what copies of a channel have the same: their guide
+            ID, whatever its case, or their names, without quality words such
+            as HD, case, marks and spaces, after `replace` is replaced by
+            `with` if given.
+        prefer:
+          type: string
+          enum: [SD, HD, FHD, UHD, 4K, 8K, HEVC, H264, H265, 1080p, 720p, 50fps, 60fps]
+          description: For `merge`, a quality word whose copy shows first, before the lineup's order.
     RuleAction:
       type: string
-      enum: [include, exclude, rename, regroup, renumber, logo, guide, timeshift]
+      enum: [include, exclude, rename, regroup, renumber, logo, guide, timeshift, merge]
       description: >-
         `include` shows the channels, even in a hidden group; `exclude` hides
         them; `rename` names them anew or replaces text in their names, from
@@ -3629,9 +3649,13 @@ components:
         logo; `guide` shows on them the guide of the lineup's channel named
         `channel`, or named as they are with `replace` replaced by `with`,
         from their own source if it has one (D108); `timeshift` moves the
-        times of their guide's programmes by `minutes` (D108). Where two
-        rules do the same to a channel, the later one wins; what the
-        administrator set on a channel wins over every rule.
+        times of their guide's programmes by `minutes` (D108); `merge` finds
+        the copies among them by `copies`, shows the first that devices see,
+        of the `prefer` quality if one is given, else the first in the
+        lineup, and hides the others, which play in its place in turn when
+        its stream cannot start, after the backups picked by hand (D113).
+        Where two rules do the same to a channel, the later one wins; what
+        the administrator set on a channel wins over every rule.
     Rule:
       type: object
       required: [id, position, matches, match, action, "off"]
@@ -3645,6 +3669,12 @@ components:
         matches:
           type: integer
           description: How many of the lineup's channels it matches, whether it is on or off.
+        copies_merged:
+          type: integer
+          description: For `merge`, how many copies it merges into other channels; left out when none.
+        channels_merged:
+          type: integer
+          description: For `merge`, how many channels it merges copies into; left out when none.
         match:
           $ref: "#/components/schemas/RuleMatch"
         action:
@@ -3667,6 +3697,11 @@ components:
           type: string
         minutes:
           type: integer
+        copies:
+          type: string
+          enum: [guide, name]
+        prefer:
+          type: string
     Visibility:
       type: string
       enum: [group, shown, hidden]

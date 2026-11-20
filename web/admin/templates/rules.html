@@ -3,7 +3,7 @@
 <div class="page-head">
   <div>
     <h1>Live TV</h1>
-    <p class="lead">Rules change many channels at once: they show, hide, rename, move, number or give a logo to the channels they match, and do so again after every refresh, for new channels too.</p>
+    <p class="lead">Rules change many channels at once: they show, hide, rename, move, number, merge or give a logo to the channels they match, and do so again after every refresh, for new channels too.</p>
   </div>
   <p class="hint"><strong>{{count .Data.Channels}}</strong> {{plural .Data.Channels "channel"}} in the lineup</p>
 </div>
@@ -22,7 +22,7 @@
         <span class="rule-place" aria-hidden="true">{{.Position}}</span>
         <div class="rule-text">
           <strong>{{.Text}}</strong>
-          <span class="muted">{{if .Off}}Off: it does nothing until it is on again. It matches {{count .Matches}} {{plural .Matches "channel"}}.{{else if .Matches}}It matches {{count .Matches}} {{plural .Matches "channel"}}.{{else}}It matches no channel now.{{end}}</span>
+          <span class="muted">{{if .Off}}Off: it does nothing until it is on again. {{end}}{{.Effect}}</span>
         </div>
         {{- if .Off}}<div class="chips"><span class="badge">Off</span></div>{{end}}
         <div class="rule-moves">
@@ -123,7 +123,7 @@
           {{- range .D.Actions}}<option value="{{.}}"{{if eq . $r.Action}} selected{{end}}>{{$.D.ActionName .}}</option>{{end}}
         </select>
       </div>
-      {{- $rename := eq $r.Action "rename"}}{{$guide := eq $r.Action "guide"}}
+      {{- $rename := eq $r.Action "rename"}}{{$guide := eq $r.Action "guide"}}{{$merge := eq $r.Action "merge"}}
       <fieldset class="field if-rename">
         <legend>Rename</legend>
         <div class="segmented">
@@ -185,6 +185,28 @@
         <label for="{{$p}}-logo">Logo's address</label>
         <input id="{{$p}}-logo" name="logo" type="url" maxlength="2048" value="{{$r.Logo}}" placeholder="https://">
       </div>
+      <div class="field if-merge">
+        <label for="{{$p}}-copies">Copies have the same</label>
+        <select id="{{$p}}-copies" name="copies">
+          <option value="guide"{{if ne $r.Copies "name"}} selected{{end}}>Guide ID</option>
+          <option value="name"{{if eq $r.Copies "name"}} selected{{end}}>Name, without HD and such</option>
+        </select>
+      </div>
+      <div class="field if-merge if-merge-name">
+        <label for="{{$p}}-merge-replace">Text to take out of names first</label>
+        <input id="{{$p}}-merge-replace" name="merge_replace" maxlength="200" value="{{if $merge}}{{$r.Replace}}{{end}}" placeholder="Such as (Backup), or /\s*\(alt\)$/">
+      </div>
+      <div class="field if-merge if-merge-name">
+        <label for="{{$p}}-merge-with">Replace it with</label>
+        <input id="{{$p}}-merge-with" name="merge_with" maxlength="200" value="{{if $merge}}{{$r.With}}{{end}}" placeholder="Nothing">
+      </div>
+      <div class="field if-merge">
+        <label for="{{$p}}-prefer">Show first</label>
+        <select id="{{$p}}-prefer" name="prefer">
+          <option value="">The first in the lineup</option>
+          {{- range .D.Qualities}}<option value="{{.}}"{{if and $merge (eq . $r.Prefer)}} selected{{end}}>The first in {{.}}</option>{{end}}
+        </select>
+      </div>
     </div>
     <p class="hint if-rename">A new name replaces the whole name. <em>Replace text</em> changes part of the name, as the rules before it left it; in what replaces a regular expression, <code>$1</code> is its first group.</p>
     <p class="hint if-regroup">A group of that name, made if the lineup has none.</p>
@@ -192,6 +214,7 @@
     <p class="hint if-logo">Devices load the logo from this address, so it must be one that they can reach.</p>
     <p class="hint if-guide">The channel is one of the lineup's, by the name that its source gives it, from the same source if it can be. A channel that shows another's programmes an hour late, such as <em>Harbour News +1</em>, takes the guide of <em>Harbour News</em> with <em>Its name, changed</em>: replace <code>+1</code> with nothing. Another rule then moves its times.</p>
     <p class="hint if-timeshift">The programmes that the channels show in the guide move by this much: 60 minutes later for a channel that shows them an hour late.</p>
+    <p class="hint if-merge">Channels that a source lists more than once, in another quality or as a second feed, become one. Of the channels it acts on, those with the same guide ID, or the same name once words such as HD, FHD and 4K are left out, as you choose, are copies of one channel: the first that devices see shows, and the others are hidden and play in its place, in turn, when its stream cannot start, after the backups you pick yourself. Copies that sources add later join by themselves.</p>
   </fieldset>
   <div class="form-buttons">
     <button type="submit" class="primary">{{if .ID}}Save the rule{{else}}Add the rule{{end}}</button>

@@ -17,9 +17,10 @@ import (
 
 // A lineup's rules (D107), on the Live TV page's Rules view and in the API:
 // ordered rules that match channels and show, hide, rename, regroup, number
-// or give a logo to them, or show another channel's guide on them or move
-// their guide's times (D108), after every refresh. The administrator's own
-// edits of a channel win over them.
+// or give a logo to them, show another channel's guide on them or move
+// their guide's times (D108), or merge their copies into one channel
+// (D113), after every refresh. The administrator's own edits of a channel
+// win over them.
 
 // ruleError turns the store's errors about rules into mistakes that the
 // request can put right.
@@ -107,8 +108,36 @@ func describeRule(r rules.Rule, sources map[int64]string) string {
 			quote(r.With) + "."
 	case rules.Shift:
 		return "Shows the guide of " + what + " " + shiftText(r.Minutes) + "."
+	case rules.Merge:
+		what = "the " + what
+		if len(who) == 0 {
+			what = "the channels"
+		}
+		same := "the same guide ID"
+		if r.Copies == rules.ByName {
+			same = "the same name, without quality words such as HD"
+			switch {
+			case r.Replace != "" && r.With == "":
+				same += ", once " + quote(r.Replace) + " is taken out"
+			case r.Replace != "":
+				same += ", once " + quote(r.Replace) + " is replaced by " + quote(r.With)
+			}
+		}
+		first := "the first in the lineup"
+		if r.Prefer != "" {
+			first = "the first in " + r.Prefer + ", else the first in the lineup,"
+		}
+		return "Merges into one " + what + " that have " + same + ": " + first + " shows, with the others as its backups."
 	}
 	return "Does nothing to " + what + "."
+}
+
+// copiesWord is "copy" or "copies".
+func copiesWord(n int) string {
+	if n == 1 {
+		return "copy"
+	}
+	return "copies"
 }
 
 // shiftText says how far a guide moves, such as "60 minutes later".
@@ -129,6 +158,24 @@ type ruleRow struct {
 	Text  string
 	First bool
 	Last  bool
+}
+
+// Effect says what a rule does now: how many channels it matches, or, for
+// a merge rule that is on, how many copies it merges into how many
+// channels (D113).
+func (r ruleRow) Effect() string { return ruleEffect(r.LineupRule) }
+
+func ruleEffect(r store.LineupRule) string {
+	switch {
+	case r.Action == rules.Merge && !r.Off && r.CopiesMerged == 0:
+		return "It finds no copies now."
+	case r.Action == rules.Merge && !r.Off:
+		return fmt.Sprintf("It merges %s %s into %s %s.", count(r.CopiesMerged), copiesWord(r.CopiesMerged),
+			count(r.ChannelsMerged), plural(r.ChannelsMerged, "channel"))
+	case r.Matches == 0:
+		return "It matches no channel now."
+	}
+	return fmt.Sprintf("It matches %s %s.", count(r.Matches), plural(r.Matches, "channel"))
 }
 
 // rulesData is what the Rules view shows.
@@ -178,6 +225,7 @@ func (rulesData) ActionName(action string) string {
 		rules.Logo:     "Give them a logo",
 		rules.Guide:    "Use another channel's guide",
 		rules.Shift:    "Move their guide's times",
+		rules.Merge:    "Merge copies into one channel",
 	}[action]
 }
 
@@ -261,6 +309,11 @@ func ruleForm(r *http.Request) rules.Rule {
 		rule.Minutes, _ = strconv.Atoi(strings.TrimSpace(r.PostFormValue("minutes")))
 		if r.PostFormValue("when") == "earlier" {
 			rule.Minutes = -rule.Minutes
+		}
+	case rules.Merge:
+		rule.Copies, rule.Prefer = r.PostFormValue("copies"), r.PostFormValue("prefer")
+		if rule.Copies == rules.ByName {
+			rule.Replace, rule.With = r.PostFormValue("merge_replace"), r.PostFormValue("merge_with")
 		}
 	default:
 		if r.PostFormValue("rename") == "replace" {
@@ -359,13 +412,14 @@ func (a *Admin) lineupRule(ctx context.Context, lineup, id int64) (store.LineupR
 	return store.LineupRule{}, store.ErrNotFound
 }
 
-// ruleDone says what a rule saved does now: how many channels it matches.
+// ruleDone says what a rule saved does now: how many channels it matches,
+// or what it merges.
 func (a *Admin) ruleDone(ctx context.Context, lineup, id int64, done string) string {
 	r, err := a.lineupRule(ctx, lineup, id)
 	if err != nil {
 		return done
 	}
-	return fmt.Sprintf("%s It matches %d %s.", done, r.Matches, plural(r.Matches, "channel"))
+	return done + " " + ruleEffect(r)
 }
 
 // rulesDone finishes a change from the Rules view, as lineupDone does
@@ -392,6 +446,10 @@ type apiRule struct {
 	ID       int64 `json:"id"`
 	Position int   `json:"position"`
 	Matches  int   `json:"matches"`
+	// For a merge rule: the copies it merges, and the channels it merges
+	// them into (D113).
+	CopiesMerged   int `json:"copies_merged,omitempty"`
+	ChannelsMerged int `json:"channels_merged,omitempty"`
 	apiRuleBody
 }
 
@@ -408,6 +466,8 @@ type apiRuleBody struct {
 	Logo    string   `json:"logo,omitempty"`
 	Channel string   `json:"channel,omitempty"`
 	Minutes int      `json:"minutes,omitempty"`
+	Copies  string   `json:"copies,omitempty"`
+	Prefer  string   `json:"prefer,omitempty"`
 }
 
 type apiMatch struct {
@@ -419,17 +479,19 @@ type apiMatch struct {
 }
 
 func ruleBody(r store.LineupRule) apiRule {
-	return apiRule{ID: r.ID, Position: r.Position, Matches: r.Matches, apiRuleBody: apiRuleBody{
-		Match: apiMatch{SourceID: r.Match.Source, Group: r.Match.Group, Name: r.Match.Name, Guide: r.Match.Guide,
-			Quality: r.Match.Quality},
-		Action: r.Action, Off: r.Off, Name: r.Name, Replace: r.Replace, With: r.With, Group: r.Group, From: r.From, Logo: r.Logo,
-		Channel: r.Channel, Minutes: r.Minutes}}
+	return apiRule{ID: r.ID, Position: r.Position, Matches: r.Matches, CopiesMerged: r.CopiesMerged, ChannelsMerged: r.ChannelsMerged,
+		apiRuleBody: apiRuleBody{
+			Match: apiMatch{SourceID: r.Match.Source, Group: r.Match.Group, Name: r.Match.Name, Guide: r.Match.Guide,
+				Quality: r.Match.Quality},
+			Action: r.Action, Off: r.Off, Name: r.Name, Replace: r.Replace, With: r.With, Group: r.Group, From: r.From, Logo: r.Logo,
+			Channel: r.Channel, Minutes: r.Minutes, Copies: r.Copies, Prefer: r.Prefer}}
 }
 
 func (b apiRuleBody) rule() rules.Rule {
 	return rules.Rule{Match: rules.Match{Source: b.Match.SourceID, Group: b.Match.Group, Name: b.Match.Name,
 		Guide: b.Match.Guide, Quality: b.Match.Quality}, Action: b.Action, Off: b.Off, Name: b.Name, Replace: b.Replace,
-		With: b.With, Group: b.Group, From: b.From, Logo: b.Logo, Channel: b.Channel, Minutes: b.Minutes}
+		With: b.With, Group: b.Group, From: b.From, Logo: b.Logo, Channel: b.Channel, Minutes: b.Minutes,
+		Copies: b.Copies, Prefer: b.Prefer}
 }
 
 func (a *Admin) apiRules(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {

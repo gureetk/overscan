@@ -46,6 +46,14 @@ func TestCheck(t *testing.T) {
 		{Rule{Action: "timeshift", Minutes: -MaxShift}, ""},
 		{Rule{Action: "timeshift"}, "Shift the guide"},
 		{Rule{Action: "timeshift", Minutes: MaxShift + 1}, "Shift the guide"},
+		{Rule{Action: "merge", Copies: "guide"}, ""},
+		{Rule{Action: "merge", Copies: " Name ", Prefer: "fhd"}, ""},
+		{Rule{Action: "merge", Copies: "name", Replace: `/\s*\(backup\)$/`}, ""},
+		{Rule{Action: "merge"}, "Say what copies have the same"},
+		{Rule{Action: "merge", Copies: "colour"}, "Say what copies have the same"},
+		{Rule{Action: "merge", Copies: "guide", Replace: "HD"}, "found by their names"},
+		{Rule{Action: "merge", Copies: "name", Replace: "/(/"}, "regular expression"},
+		{Rule{Action: "merge", Copies: "guide", Prefer: "shiny"}, "A quality to show first"},
 	} {
 		got, err := Check(tc.rule)
 		var mistake *Error
@@ -178,4 +186,41 @@ func FuzzPattern(f *testing.F) {
 			t.Errorf("%q does not match itself", pattern)
 		}
 	})
+}
+
+// A merge rule finds copies by guide ID, or by name without quality words,
+// changed as it says, and prefers those of a quality (D113).
+func TestMerge(t *testing.T) {
+	byGuide, err := CompileMerge(Rule{Action: Merge, Copies: ByGuide})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a, b := byGuide.Key(Channel{Guide: " granite.one "}), byGuide.Key(Channel{Guide: "Granite.One"}); a != b || a == "" {
+		t.Errorf("by guide: %q and %q", a, b)
+	}
+	if k := byGuide.Key(Channel{Name: "Granite One"}); k != "" {
+		t.Errorf("a channel without a guide ID has the key %q", k)
+	}
+	byName, err := CompileMerge(Rule{Action: Merge, Copies: ByName, Replace: `/\s*\(backup\)$/`, Prefer: "FHD"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "granite one"
+	for _, name := range []string{"Granite One HD", "granite one (FHD)", "GRANITE-ONE", "Granite One 4K (Backup)", "Granite One"} {
+		if k := byName.Key(Channel{Name: name}); k != want {
+			t.Errorf("by name: %q has the key %q, want %q", name, k, want)
+		}
+	}
+	for _, name := range []string{"Granite One 2", "Granite Two HD", "Granite One Backup"} {
+		if k := byName.Key(Channel{Name: name}); k == want {
+			t.Errorf("by name: %q is a copy, and should not be", name)
+		}
+	}
+	if !byName.Prefers(Channel{Name: "Granite One FHD"}) || byName.Prefers(Channel{Name: "Granite One HD"}) {
+		t.Error("prefers the wrong copies")
+	}
+	got, err := Check(Rule{Action: "merge", Copies: "Name", Prefer: "fhd", Name: "dropped", Replace: "x", With: "y"})
+	if err != nil || got.Copies != ByName || got.Prefer != "FHD" || got.Name != "" || got.Replace != "x" || got.With != "y" {
+		t.Errorf("tidied: %+v %v", got, err)
+	}
 }

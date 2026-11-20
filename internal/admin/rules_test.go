@@ -13,6 +13,8 @@ import (
 	"testing"
 
 	"overscan.gureet.ca/internal/rules"
+	"overscan.gureet.ca/internal/source"
+	"overscan.gureet.ca/internal/store"
 )
 
 // rulesOf returns a lineup's rules, as the API lists them.
@@ -265,6 +267,14 @@ func TestDescribeRule(t *testing.T) {
 			"Gives every channel the guide of the channel with the same name, “East” replaced by “West”."},
 		{rules.Rule{Action: rules.Shift, Minutes: 60}, "Shows the guide of every channel 60 minutes later."},
 		{rules.Rule{Action: rules.Shift, Minutes: -1}, "Shows the guide of every channel 1 minute earlier."},
+		{rules.Rule{Action: rules.Merge, Copies: rules.ByGuide},
+			"Merges into one the channels that have the same guide ID: the first in the lineup shows, with the others as its backups."},
+		{rules.Rule{Match: rules.Match{Source: 1}, Action: rules.Merge, Copies: rules.ByName, Replace: "(Backup)", Prefer: "FHD"},
+			"Merges into one the channels from main that have the same name, without quality words such as HD, once “(Backup)” is " +
+				"taken out: the first in FHD, else the first in the lineup, shows, with the others as its backups."},
+		{rules.Rule{Action: rules.Merge, Copies: rules.ByName, Replace: "Alt", With: "Main"},
+			"Merges into one the channels that have the same name, without quality words such as HD, once “Alt” is replaced by " +
+				"“Main”: the first in the lineup shows, with the others as its backups."},
 	} {
 		if got := describeRule(tc.rule, sources); got != tc.want {
 			t.Errorf("%+v:\n got %s\nwant %s", tc.rule, got, tc.want)
@@ -309,5 +319,58 @@ func TestGuideRulesPage(t *testing.T) {
 		if rec := ta.apiDo("POST", "lineup/rules", body, c, h...); rec.Code != http.StatusBadRequest {
 			t.Errorf("%s: status %d", body, rec.Code)
 		}
+	}
+}
+
+// The Rules page's form merges copies of a channel into one, which the
+// channels page and the channel's panel show, as the API does (D113).
+func TestMergeRulesPage(t *testing.T) {
+	ta := newTestAdmin(t)
+	c, h := ta.withLineup()
+	csrf := h[1]
+	hx := []string{"HX-Request", "true"}
+	ctx := context.Background()
+	one, err := ta.st.AddSource(ctx, source.Settings{Name: "one", URL: "http://provider.example/one.m3u", MaxConnections: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var chs []store.CatalogChannel
+	for _, name := range []string{"Alpha HD", "Alpha (Backup)"} {
+		chs = append(chs, store.CatalogChannel{IdentityKey: name, Name: name, Category: "Extra", StreamURL: "http://streams.example/" + name})
+	}
+	if _, err := ta.st.ApplyCatalog(ctx, one, chs, ta.clock); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := ta.do("POST", "/admin/lineup/rules", lineupForm(csrf, "", "action", "merge", "copies", "name", "merge_replace", "(backup)",
+		"prefer", "", "rename", "replace", "replace", "ignored"), c, hx...)
+	mustContain(t, "a merge rule", rec.Body.String(), "Added the rule. It merges 2 copies into 1 channel.",
+		"Merges into one the channels that have the same name, without quality words such as HD, once “(backup)” is taken out:",
+		`<option value="merge" selected>Merge copies into one channel</option>`)
+	list := ta.rulesOf(c, "")
+	if len(list) != 1 || list[0].Copies != "name" || list[0].Replace != "(backup)" || list[0].CopiesMerged != 2 ||
+		list[0].ChannelsMerged != 1 {
+		t.Fatalf("the rules: %+v", list)
+	}
+	got, _ := ta.channels(c, "")
+	if a := got["Alpha"]; a.RuleBackups != 2 || a.Hidden || fmt.Sprint(a.Rules) != "[merge]" {
+		t.Errorf("Alpha: %+v", a)
+	}
+	if hd := got["Alpha HD"]; !hd.Hidden || hd.MergedInto == nil || *hd.MergedInto != "Alpha" || fmt.Sprint(hd.Rules) != "[exclude merge]" {
+		t.Errorf("Alpha HD: %+v", hd)
+	}
+	page := ta.do("GET", "/admin/lineup", nil, c).Body.String()
+	mustContain(t, "the channels page", page, `title="A rule merges 2 copies of it into it, as its backups.">`, `>2 backups</span>`)
+	panel := ta.do("GET", fmt.Sprintf("/admin/lineup/channels/%d/edit", got["Alpha"].ID), nil, c, hx...).Body.String()
+	mustContain(t, "Alpha's panel", panel, "From a rule", "A rule merges 2 copies of this channel into it, which play in turn after any backups picked above:", "Alpha (Backup)")
+
+	// Through the API, by guide ID; a merge rule needs to say how.
+	rec = ta.apiDo("POST", "lineup/rules", `{"action": "merge", "copies": "guide", "prefer": "fhd"}`, c, h...)
+	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"copies": "guide"`) ||
+		!strings.Contains(rec.Body.String(), `"prefer": "FHD"`) {
+		t.Errorf("the API: status %d, %s", rec.Code, rec.Body)
+	}
+	if rec := ta.apiDo("POST", "lineup/rules", `{"action": "merge"}`, c, h...); rec.Code != http.StatusBadRequest {
+		t.Errorf("a merge rule that does not say how: status %d", rec.Code)
 	}
 }

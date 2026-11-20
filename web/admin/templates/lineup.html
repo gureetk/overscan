@@ -320,7 +320,7 @@
     {{- else if not .E.Number}}<span class="badge">No number</span>{{end}}
     {{- if and (eq .Visibility "shown") (not .E.Missing)}}<span class="badge" title="Shown even if its group is hidden">{{template "i-eye"}}Always shown</span>{{end}}
     {{- with .RuleText}}<span class="badge accent" title="{{.}}">{{template "i-rule"}}Rule</span>{{end}}
-    {{- with .E.Backups}}<span class="badge" title="When its stream cannot start, {{if eq . 1}}its backup plays{{else}}one of its {{.}} backups plays{{end}}">{{.}} {{plural . "backup"}}</span>{{end}}
+    {{- with .AllBackups}}<span class="badge" title="When its stream cannot start, {{if eq . 1}}its backup plays{{else}}one of its {{.}} backups plays{{end}}">{{.}} {{plural . "backup"}}</span>{{end}}
     {{- if .E.Locked}}<span class="badge locked" title="It needs the parental PIN to play">{{template "i-lock"}}Locked</span>
     {{- else if and .E.GroupLocked (not .InGroup)}}<span class="badge locked" title="Its group is locked: it needs the parental PIN to play">{{template "i-lock"}}Locked</span>{{end}}
     {{- if .E.Adult}}<span class="badge{{if .E.AdultLocked}} locked{{end}}" title="Its source marks it for adults{{if .E.AdultLocked}}, which Settings locks{{else if .E.AdultHidden}}, which Settings hides from devices{{else}}; Settings can lock or hide such channels{{end}}">{{if .E.AdultLocked}}{{template "i-lock"}}{{else if .E.AdultHidden}}{{template "i-eye-off"}}{{end}}For adults</span>{{end}}
@@ -427,6 +427,20 @@
     </form>
     {{- end}}
     <p class="hint">When this channel's stream cannot start, because its source is at its limit or does not send it, its backups play in their place, the first that can. A backup can be a channel of another source, hidden or not.</p>
+    {{- if .RuleBackups}}
+    <h4>From a rule</h4>
+    <p class="hint">A rule merges {{if eq (len .RuleBackups) 1}}a copy{{else}}{{len .RuleBackups}} copies{{end}} of this channel into it, which {{if eq (len .RuleBackups) 1}}plays{{else}}play in turn{{end}} after any backups picked above:</p>
+    <ol class="backup-list rule-backups">
+      {{- range .RuleBackups}}
+      <li>
+        <div class="backup-text">
+          <strong>{{if .Number}}{{.Number}} · {{end}}{{.Name}}</strong>
+          <span class="muted">{{.Source}}</span>
+        </div>
+      </li>
+      {{- end}}
+    </ol>
+    {{- end}}
   </section>
 </aside>
 {{end}}

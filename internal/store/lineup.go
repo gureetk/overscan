@@ -367,8 +367,11 @@ type LineupEntry struct {
 	RuleGuide string
 	RuleShift time.Duration
 	// Backups counts the channels whose streams the hub tries when its own
-	// cannot start (D109).
-	Backups int
+	// cannot start (D109), and RuleBackups those that merge rules give it,
+	// the copies of its channel (D113). MergedInto names the channel that a
+	// merge rule makes it a backup of, "" if none.
+	Backups, RuleBackups int
+	MergedInto           string
 }
 
 // EntryQuery picks a lineup's entries.
@@ -449,7 +452,11 @@ const entrySelect = `
 			c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultLock + `', c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultHide + `', c.radio,
 			e.rule_name IS NOT NULL, e.rule_group_id IS NOT NULL, e.rule_hidden IS 0, e.rule_hidden IS 1,
 			e.rule_logo IS NOT NULL, e.rule_pinned, COALESCE((SELECT name FROM channels WHERE id = e.rule_guide_id), ''),
-			COALESCE(e.rule_guide_shift, 0), (SELECT count(*) FROM lineup_entry_backups WHERE entry_id = e.id)`
+			COALESCE(e.rule_guide_shift, 0), (SELECT count(*) FROM lineup_entry_backups WHERE entry_id = e.id),
+			(SELECT count(*) FROM lineup_entry_rule_backups WHERE entry_id = e.id),
+			COALESCE((SELECT COALESCE(m.name, m.rule_name, mc.name)
+				FROM lineup_entry_rule_backups rb JOIN lineup_entries m ON m.id = rb.entry_id JOIN channels mc ON mc.id = m.channel_id
+				WHERE rb.channel_id = e.channel_id AND m.lineup_id = e.lineup_id LIMIT 1), '')`
 
 func scanEntry(row rowScanner) (LineupEntry, error) {
 	var e LineupEntry
@@ -459,7 +466,7 @@ func scanEntry(row rowScanner) (LineupEntry, error) {
 		&e.Renamed, &e.GroupID, &e.Group, &e.Moved, &e.Category, &e.Visibility, &e.Hidden, &e.Missing, &e.Logo,
 		&e.Locked, &e.GroupLocked, &e.Repair, &own, &e.Adult, &e.AdultLocked, &e.AdultHidden, &e.Radio,
 		&e.RuleRenamed, &e.RuleMoved, &e.RuleShown, &e.RuleHidden, &e.RuleLogo, &e.RuleNumbered, &e.RuleGuide, &shift,
-		&e.Backups)
+		&e.Backups, &e.RuleBackups, &e.MergedInto)
 	if own.Valid {
 		e.RepairOwn = &own.Bool
 	}

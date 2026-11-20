@@ -1,6 +1,6 @@
 # A lineup's rules
 
-A rule changes many channels of a lineup at once: it shows, hides, renames, moves, numbers or gives a logo to the channels that it matches, gives them another channel's guide, or moves their guide's times. Rules run again after every refresh of a source, so they keep up with the channels that a provider adds, renames or moves ([D107](decisions.md)). The administrator keeps them on the *Live TV* page's *Rules* tab, for the lineup that the page shows; the admin API's `lineup/rules` paths do the same ([api/admin.yaml](api/admin.yaml)).
+A rule changes many channels of a lineup at once: it shows, hides, renames, moves, numbers or gives a logo to the channels that it matches, gives them another channel's guide, moves their guide's times, or merges the copies of a channel into one. Rules run again after every refresh of a source, so they keep up with the channels that a provider adds, renames or moves ([D107](decisions.md)). The administrator keeps them on the *Live TV* page's *Rules* tab, for the lineup that the page shows; the admin API's `lineup/rules` paths do the same ([api/admin.yaml](api/admin.yaml)).
 
 Rules sit beside the edits made by hand on the *Channels* tab ([D47](decisions.md)), and never change them: a name, a group, a visibility or a number set on a channel by hand wins over every rule. The *Channels* tab marks a channel that a rule changes with *Rule*, and says what the rules do to it.
 
@@ -41,6 +41,7 @@ Since rules match what the source says, one rule's renaming or regrouping never 
 | `logo` | Give them a logo | Gives them the logo at an http or https address, which devices then load: it must be one that they can reach. |
 | `guide` | Use another channel's guide | Shows on them the guide of the lineup's channel with the name it gives (`channel`), or with the name that replacing text in their own makes (`replace` and `with`, as for `rename`), whatever its case. The other channel is one of the same source if there is one; it shows its own guide, never what a rule gives it ([D108](decisions.md)). A channel that none is named as keeps its own guide. |
 | `timeshift` | Move their guide's times | Shows their guide's programmes a number of minutes later, or earlier, up to a day either way (`minutes`, below 0 for earlier). |
+| `merge` | Merge copies into one channel | Finds the copies of a channel among them, which a source lists more than once, in another quality or as a second feed: those with the same guide ID (`copies: guide`), or the same name once the words of the quality list, case, marks and spaces are left out (`copies: name`), after replacing text as `rename` does if it gives some. Of each set of copies, the first that devices see shows: the first in a quality (`prefer`) if it gives one, else the first in the lineup. The others are hidden, and play in its place, in turn, when its stream cannot start, after the backups picked by hand, five at most ([D113](decisions.md)). A copy that its source no longer lists, or whose source is off, is no one's. |
 
 ## Order
 
@@ -56,6 +57,7 @@ A lineup has at most 200 rules. A copy of a lineup starts with a copy of its rul
 - **Only the HD copies:** *Hide them* with the category `Harbour*`, then *Show them* with the same category and the quality *HD*.
 - **A guide for the +1 channels:** *Use another channel's guide* with the name `* +1`, by *Its name, changed*: replace `+1` with nothing, so that *Harbour News +1* shows the guide of *Harbour News*. Then *Move their guide's times* with the same name, 60 minutes later.
 - **A copy without a guide:** *Use another channel's guide* with the name `Harbour News (Backup)`, from the channel named *Harbour News*.
+- **One channel for its copies:** *Merge copies into one channel*, the copies having the same *Guide ID*, makes *Harbour News HD*, *Harbour News FHD* and *Harbour News* from a second source one channel, which plays the next copy when one does not start. Where copies have no guide ID, choose *Name, without HD and such*, and take a mark such as `(Backup)` out of names first. *Show first: The first in FHD* puts the FHD copy in the lineup.
 
 The guide that a rule gives or moves is the one that devices see everywhere: on the box, in the Stalker and Xtream APIs, in the playlists' guides, in the guide's search, for recordings set from the guide, and for past programmes played from an archive.
 
