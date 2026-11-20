@@ -1,6 +1,6 @@
 # Compatibility with other apps
 
-Besides the MAG box's own page, Overscan serves apps of two kinds: MAG emulators, which load the portal's page as a box does, and Stalker clients, which bring their own interface and call the Stalker API. This page says how to connect three apps that the plan names, StbEmu, OTT Navigator and TiviMate, what each gets from Overscan, and what each did when it was tried.
+Besides the MAG box's own page, Overscan serves apps of two kinds: MAG emulators, which load the portal's page as a box does, and Stalker clients, which bring their own interface and call the Stalker API. This page says how to connect three apps that the plan names, StbEmu, OTT Navigator and TiviMate, what each gets from Overscan, and what each did when it was tried. Players that read a playlist or sign in with a login, such as VLC, Kodi and TiviMate, have a section of their own.
 
 An entry says which version of the app was tried, on what kind of device, and against which version of Overscan, in general terms. Until someone tries an app, its column says *Not tried yet*: nothing here is assumed to work because the protocol notes say it should. Reports are welcome, as issues: say what the app showed, and add what the admin's *Capture log* lists, which is what the app asked for that Overscan does not answer, with values that could identify a device or an account already taken out.
 
@@ -46,6 +46,28 @@ It gets no messages, since what a portal sends a client for one is not known fro
 | Favourites | Not tried yet | Not tried yet | Not tried yet |
 | An ended account | Not tried yet | Not tried yet | Not tried yet |
 | What the capture log shows | Not applicable: it uses the page | Not tried yet | Not tried yet |
+
+## Players that use the outputs
+
+Players other than the boxes reach Overscan through an account's playlist and guide, or its Xtream login, both off until turned on, on the admin's *Accounts* page ([outputs.md](outputs.md), D103, D104). They are not devices: nothing needs approving, and the account's login or its playlist's token lets them in.
+
+| | VLC | Kodi | TiviMate | OTT Navigator |
+|---|---|---|---|---|
+| What it uses | The account's M3U playlist | The account's playlist and XMLTV guide, through its PVR IPTV Simple Client add-on | The account's Xtream login, or its playlist | The account's Xtream login |
+| Address to give it | `http://<server>:8080/playlist/<token>.m3u` | The playlist's, and `http://<server>:8080/epg/<token>.xml.gz` as the guide's if the add-on does not take it from the playlist | `http://<server>:8080`, the username and the password, as an *Xtream Codes* playlist; or the playlist's address | The server's address, the username and the password, as an Xtream provider |
+
+Each gets the channels that the account's lineup shows, in its order, without the locked ones once the account has a parental PIN; a playlist holds channels only, and an Xtream login gives films and series too. Every stream plays through Overscan, counted against the account's limit and its source's.
+
+| | VLC | Kodi | TiviMate | OTT Navigator |
+|---|---|---|---|---|
+| Version tried | Not tried yet | Not tried yet | Not tried yet | Not tried yet |
+| Channels and groups, in the lineup's order | Not tried yet | Not tried yet | Not tried yet | Not tried yet |
+| Playing a channel, and changing channels | Not tried yet | Not tried yet | Not tried yet | Not tried yet |
+| The guide, at the right times | Not tried yet | Not tried yet | Not tried yet | Not tried yet |
+| Past programmes | Not tried yet | Not tried yet | Not tried yet | Not tried yet |
+| Films and series | Not applicable: a playlist holds channels only | Not applicable: the same | Not tried yet | Not tried yet |
+| The account's limit | Not tried yet | Not tried yet | Not tried yet | Not tried yet |
+| Live channels made H.264 | Not tried yet | Not tried yet | Not tried yet | Not tried yet |
 
 ## Trying an app
 
