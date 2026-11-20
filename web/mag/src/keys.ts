@@ -30,6 +30,7 @@ export type Key =
   | 'green'
   | 'yellow'
   | 'blue'
+  | 'record'
   | 'menu'
   | 'tv'
   | 'guide'
@@ -102,6 +103,8 @@ export function keyOf(e: KeyboardEvent): Press | null {
         return press('forward');
       case 71: // Alt+G
         return press('audio');
+      case 87: // Alt+W
+        return press('record');
     }
     return null;
   }

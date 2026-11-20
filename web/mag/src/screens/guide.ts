@@ -8,14 +8,13 @@
 // green key records a programme that has not ended, or calls its
 // recording off, and the grid marks those to be recorded.
 
-import { type Channel, describe, type Programme } from '../api';
+import type { Channel, Programme } from '../api';
 import { el, Logo, setClass, setHTML, setText, show, toggle } from '../dom';
 import type { Press } from '../keys';
 import { indexOf } from '../lineup';
-import { keptPIN } from '../pin';
-import { label } from '../player';
 import { recordingNow } from '../recordings';
-import { clock, date, day, now, span, startOfDay } from '../time';
+import { clock, date, day, now, onDay, span, startOfDay } from '../time';
+import { record, recordable, recordText } from './record';
 import { Clock, type Ctx, escape, Footer, type Screen, type VideoArea } from './screen';
 
 /** The grid shows rows channels and spanSec seconds across widthRem. */
@@ -361,8 +360,8 @@ export class GuideScreen implements Screen {
     const favourite = !!c && this.ctx.lineup.isFavourite(c.id);
     const p = this.focused();
     const left = [{ key: 'red', text: favourite ? 'Remove Favourite' : 'Favourite' }];
-    if (c && p && this.ctx.recordings.on && p.stop > now()) {
-      left.push({ key: 'green', text: this.ctx.recordings.find(c.id, p.start) ? 'Cancel Recording' : 'Record' });
+    if (c && p && recordable(this.ctx, p)) {
+      left.push({ key: 'green', text: recordText(this.ctx, c, p) });
     }
     left.push({ key: 'blue', text: 'Search' });
     this.footer.set(
@@ -409,6 +408,7 @@ export class GuideScreen implements Screen {
         return true;
       }
       case 'green':
+      case 'record':
         this.record();
         return true;
       case 'yellow':
@@ -514,53 +514,16 @@ export class GuideScreen implements Screen {
 
   /**
    * record records the programme in focus, which has not ended, or calls
-   * its recording off. A locked channel's needs the PIN.
+   * its recording off.
    */
   private record(): void {
     const self = this;
     const c = this.focusedChannel();
-    const p = this.focused();
-    const recordings = this.ctx.recordings;
-    if (!c || !p) {
-      return;
-    }
-    if (!recordings.on) {
-      this.ctx.toast(describe({ status: 409, code: 'recording_off', retryAfter: 0 }));
-      return;
-    }
-    if (p.stop <= now()) {
-      this.ctx.toast(p.title + ' has ended, so it cannot be recorded.');
-      return;
-    }
-    const r = recordings.find(c.id, p.start);
-    if (r) {
-      recordings.cancel(r, function (err) {
-        self.ctx.toast(err ? "Couldn't cancel the recording. " + describe(err) : 'Cancelled the recording of ' + p.title + '.');
+    if (c) {
+      record(this.ctx, c, this.focused(), function () {
         self.render();
       });
-      return;
     }
-    const schedule = function (pin: string) {
-      recordings.record(c.id, p.start, pin, function (err) {
-        if (err) {
-          self.ctx.toast("Couldn't record " + p.title + '. ' + describe(err));
-        } else if (p.start <= now()) {
-          self.ctx.toast('Recording ' + p.title + ' until ' + clock(p.stop) + '. It will be on Movies.');
-        } else {
-          self.ctx.toast(p.title + ' will be recorded at ' + clock(p.start) + ' ' + onDay(p.start) + '. It will be on Movies.');
-        }
-        self.render();
-      });
-    };
-    if (c.locked) {
-      this.ctx.unlock(label(c), function (ok) {
-        if (ok) {
-          schedule(keptPIN());
-        }
-      });
-      return;
-    }
-    schedule('');
   }
 
   private chooseGroup(): void {
@@ -642,12 +605,6 @@ export class GuideScreen implements Screen {
 /** inArchive says whether a programme has ended and plays from its channel's archive at t (D81). */
 export function inArchive(c: Channel, p: Programme, t: number): boolean {
   return !!c.archive && p.stop <= t && p.start > t - c.archive * 86400;
-}
-
-/** onDay says which day a time is on, after a clock time: today, tomorrow, or on Fri 4. */
-function onDay(sec: number): string {
-  const d = day(sec);
-  return d === 'Today' || d === 'Tomorrow' || d === 'Yesterday' ? d.toLowerCase() : 'on ' + d;
 }
 
 /** daysBack returns how many days back the guide reaches on a channel: a day, or as far as its archive. */

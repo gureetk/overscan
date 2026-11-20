@@ -10,7 +10,9 @@ import { icon, star } from '../icons';
 import type { Press } from '../keys';
 import { indexOf, isUHD } from '../lineup';
 import { ListView } from '../list';
+import { recordingNow } from '../recordings';
 import { clock, duration, now, progress, span } from '../time';
+import { record, recordable, recordText } from './record';
 import { Clock, type Ctx, escape, Footer, type Screen, type VideoArea } from './screen';
 
 /** The rows the lists show: groups of 2.5625rem, channels of 4rem. */
@@ -197,6 +199,10 @@ export class LiveScreen implements Screen {
     this.syncGroupList();
     this.setPane('channels');
     this.drawFooter();
+    const self = this;
+    this.ctx.recordings.load(function () {
+      self.drawSide();
+    });
   }
 
   leave(): void {
@@ -325,6 +331,7 @@ export class LiveScreen implements Screen {
   }
 
   private drawSide(): void {
+    this.drawFooter();
     const c = this.focused();
     const t = now();
     const playing = this.ctx.player.channel;
@@ -358,7 +365,9 @@ export class LiveScreen implements Screen {
     show(this.nowLine, !!p);
     show(this.barBox, !!p);
     if (p) {
-      setText(this.nowText, span(p.start, p.stop) + ' · ' + duration(p.stop - t) + ' left');
+      const rec = this.ctx.recordings.find(c.id, p.start);
+      const recText = rec ? (recordingNow(rec, t) ? ' · Recording' : ' · To be recorded') : '';
+      setText(this.nowText, span(p.start, p.stop) + ' · ' + duration(p.stop - t) + ' left' + recText);
       setText(this.title, p.title);
       setWidth(this.bar, progress(p.start, p.stop, t));
       setText(this.description, p.description || p.subtitle || '');
@@ -433,6 +442,10 @@ export class LiveScreen implements Screen {
         }
         return true;
       }
+      case 'green':
+      case 'record':
+        this.recordNow();
+        return true;
       case 'yellow':
         this.sort();
         return true;
@@ -490,13 +503,27 @@ export class LiveScreen implements Screen {
     this.drawFooter();
   }
 
+  /** recordNow records what is on now on the channel in focus, or calls its recording off. */
+  private recordNow(): void {
+    const self = this;
+    const c = this.focused();
+    if (c && this.pane === 'channels') {
+      record(this.ctx, c, this.ctx.guide.at(c.id, now()), function () {
+        self.drawSide();
+      });
+    }
+  }
+
   private drawFooter(): void {
+    const colours = [{ key: 'red', text: 'Favourite' }];
+    const c = this.focused();
+    const p = c ? this.ctx.guide.at(c.id, now()) : null;
+    if (c && p && this.pane === 'channels' && recordable(this.ctx, p)) {
+      colours.push({ key: 'green', text: recordText(this.ctx, c, p) });
+    }
+    colours.push({ key: 'yellow', text: this.ctx.lineup.byName ? 'Sort by Number' : 'Sort by Name' }, { key: 'blue', text: 'Search' });
     this.footer.set(
-      [
-        { key: 'red', text: 'Favourite' },
-        { key: 'yellow', text: this.ctx.lineup.byName ? 'Sort by Number' : 'Sort by Name' },
-        { key: 'blue', text: 'Search' },
-      ],
+      colours,
       this.pane === 'groups'
         ? [
             { key: 'OK', text: 'Open' },
