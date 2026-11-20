@@ -81,6 +81,13 @@ tags:
       The boxes and players that use Overscan (D23). A new one waits until the
       administrator approves it: a box running Overscan's page by the
       six-digit code it shows (D39), a Stalker client by its MAC address.
+  - name: themes
+    description: >-
+      How the boxes that run Overscan's page look (D97). A theme is a small
+      JSON file of named values, which Overscan checks before it installs
+      it; the theme guide in Overscan's docs says what one holds. The
+      household may have a theme, and a profile one of its own; a box shows
+      its profile's, else the household's, else Overscan's own.
   - name: messages
     description: >-
       Short messages to the household's boxes that run Overscan's page
@@ -473,6 +480,124 @@ paths:
         "415":
           $ref: "#/components/responses/NotJSON"
 
+  /themes:
+    get:
+      tags: [themes]
+      operationId: listThemes
+      summary: List the installed themes, and the household's
+      responses:
+        "200":
+          description: The themes, by name, and the household's, 0 for Overscan's own.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [household, themes]
+                properties:
+                  household:
+                    type: integer
+                  themes:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Theme"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    post:
+      tags: [themes]
+      operationId: installTheme
+      summary: Install a theme
+      description: >-
+        The body is the theme file itself, of at most 16 KB, which the
+        theme guide (`docs/themes.md`) describes. A theme with the name of
+        one installed already, whatever its case, replaces it (200); a new
+        one answers 201.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ThemeFile"
+      responses:
+        "200":
+          $ref: "#/components/responses/Theme"
+        "201":
+          $ref: "#/components/responses/Theme"
+        "400":
+          description: The file does not check out (`bad_theme`); the message says why.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+
+  /themes/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    delete:
+      tags: [themes]
+      operationId: removeTheme
+      summary: Remove a theme
+      description: What showed it shows the household's theme, or Overscan's own, instead.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "204":
+          description: Removed.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NoSuchTheme"
+
+  /theme:
+    put:
+      tags: [themes]
+      operationId: setTheme
+      summary: Choose the household's theme
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [theme_id]
+              properties:
+                theme_id:
+                  type: integer
+                  minimum: 0
+                  description: An installed theme, or 0 for Overscan's own.
+      responses:
+        "200":
+          description: The themes, as listed.
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NoSuchTheme"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+
   /messages:
     get:
       tags: [messages]
@@ -662,6 +787,10 @@ paths:
                 pin:
                   type: string
                   pattern: "^([0-9]{4,8})?$"
+                theme_id:
+                  type: integer
+                  minimum: 0
+                  description: A theme of its own, or 0 for the household's (D97).
       responses:
         "200":
           $ref: "#/components/responses/Profile"
@@ -2065,6 +2194,56 @@ components:
           oneOf:
             - $ref: "#/components/schemas/PlaybackCheck"
             - type: "null"
+    Theme:
+      type: object
+      required: [id, name, uses, file]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        uses:
+          type: array
+          items:
+            type: string
+          description: The names of the accounts and profiles that chose it.
+        file:
+          type: string
+          description: The theme file, as Overscan keeps it.
+    ThemeFile:
+      type: object
+      required: [overscan_theme, name, background, text]
+      properties:
+        overscan_theme:
+          type: integer
+          const: 1
+        name:
+          type: string
+          maxLength: 40
+        background:
+          type: string
+          pattern: "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+        text:
+          type: string
+          pattern: "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+        accent:
+          type: string
+          pattern: "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+        focus:
+          type: string
+          pattern: "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+        focus_text:
+          type: string
+          pattern: "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+        font:
+          type: string
+          enum: ["Instrument Sans", "Sans"]
+        corners:
+          type: string
+          enum: [round, small, square]
+        brand:
+          type: string
+          maxLength: 24
     Message:
       type: object
       required: [id, text, every_box, mac, sent_at, expires_at, boxes, read]
@@ -2094,8 +2273,11 @@ components:
           description: How many of them read it.
     Profile:
       type: object
-      required: [id, name, first, pin, devices]
+      required: [id, name, first, pin, devices, theme_id]
       properties:
+        theme_id:
+          type: integer
+          description: Its own theme, or 0 for the household's.
         id:
           type: integer
         name:
@@ -2997,6 +3179,18 @@ components:
                 type: boolean
     NoSuchDevice:
       description: There is no device with that MAC address (`no_such_device`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Theme:
+      description: The theme.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Theme"
+    NoSuchTheme:
+      description: There is no such theme (`no_such_theme`).
       content:
         application/json:
           schema:

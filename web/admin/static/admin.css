@@ -1101,6 +1101,17 @@ button.big { height: 3rem; padding: 0 1.5rem; font-size: 0.9375rem; }
 .profile-more form { margin: 0; }
 .add-profile { max-width: 34rem; }
 
+/* Themes (D97). */
+.themes { margin: 0.75rem 0; padding: 0; list-style: none; }
+.themes li { display: flex; align-items: center; gap: 0.75rem; padding: 0.625rem 0; border-top: 1px solid var(--line); }
+.themes li:last-child { border-bottom: 1px solid var(--line); }
+.theme-swatch { flex: none; width: 3rem; height: 2rem; border-radius: 6px; box-shadow: 0 0 0 1px var(--line); }
+.theme-text { flex: 1 1 auto; min-width: 0; }
+.theme-text strong { display: block; overflow-wrap: anywhere; }
+.theme-text .muted { display: block; font-size: 0.84375rem; }
+.themes form { margin: 0; }
+.theme-upload input[type="file"] { flex: 1 1 12rem; min-width: 0; height: auto; padding: 0.4rem 0.5rem; }
+
 /* Messages (D96). */
 .message-form { display: flex; flex-direction: column; gap: 0.5rem; max-width: 34rem; margin: 0.75rem 0 1rem; }
 .message-form textarea { width: 100%; min-height: 4.75rem; resize: vertical; }

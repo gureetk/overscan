@@ -371,7 +371,10 @@ export class App {
       });
     };
     this.settings.load(next);
-    this.profiles.load(next);
+    this.profiles.load(function () {
+      self.applyTheme(self.profiles.theme);
+      next();
+    });
   }
 
   private loadLineup(done: () => void): void {
@@ -647,8 +650,33 @@ export class App {
     this.loadLineup(function () {});
   }
 
+  /**
+   * applyTheme loads the stylesheet of the box's theme after the page's
+   * own, which it overrides, or takes it away for Overscan's own (D97).
+   */
+  private applyTheme(path: string): void {
+    let link = document.getElementById('theme') as HTMLLinkElement | null;
+    if (!path) {
+      if (link && link.parentNode) {
+        link.parentNode.removeChild(link);
+      }
+      return;
+    }
+    if (link && link.getAttribute('href') === path) {
+      return;
+    }
+    if (!link) {
+      link = document.createElement('link');
+      link.id = 'theme';
+      link.rel = 'stylesheet';
+      document.getElementsByTagName('head')[0]!.appendChild(link);
+    }
+    link.setAttribute('href', path);
+  }
+
   /** profilesChanged redraws what shows the profiles, after they changed. */
   private profilesChanged(): void {
+    this.applyTheme(this.profiles.theme);
     for (const name in this.screens) {
       const s = this.screens[name] as any;
       if (s.profilesChanged) {

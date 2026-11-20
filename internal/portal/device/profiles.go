@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"overscan.gureet.ca/internal/store"
+	"overscan.gureet.ca/internal/theme"
 )
 
 // Profiles (D94): who watches on the box. The box plays as one of its
@@ -22,10 +23,12 @@ type profileView struct {
 }
 
 // profilesResponse is the account's profiles, and the one the box plays
-// as.
+// as, with the stylesheet of that profile's theme, beside the page, if it
+// has one other than Overscan's own (D97).
 type profilesResponse struct {
 	Profile  int64         `json:"profile"`
 	Profiles []profileView `json:"profiles"`
+	Theme    string        `json:"theme,omitempty"`
 }
 
 // profilesOf returns what GET profiles answers for d.
@@ -37,6 +40,13 @@ func (a *API) profilesOf(r *http.Request, d store.Device) (profilesResponse, err
 	resp := profilesResponse{Profile: d.ProfileID, Profiles: make([]profileView, len(list))}
 	for i, p := range list {
 		resp.Profiles[i] = profileView{ID: p.ID, Name: p.Name, PIN: p.PINHash != ""}
+	}
+	th, ok, err := a.store.ProfileTheme(r.Context(), d.ProfileID)
+	if err != nil {
+		return profilesResponse{}, err
+	}
+	if ok {
+		resp.Theme = theme.Path(th.ID, th.Data)
 	}
 	return resp, nil
 }

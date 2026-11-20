@@ -307,6 +307,8 @@ export interface Profile {
 export interface Profiles {
   profile: number;
   profiles: Profile[];
+  /** The stylesheet of that profile's theme, beside the page, if it is not Overscan's own (D97). */
+  theme?: string;
 }
 
 /** A clip of the playback check (D70). */

@@ -286,6 +286,67 @@
     </div>
   </section>
 
+  <section class="panel" id="themes" aria-labelledby="themes-title">
+    <div class="panel-title"><span class="tile-icon accent">{{template "i-palette"}}</span><h2 id="themes-title">Themes</h2></div>
+    <p>How the boxes that run Overscan's page look: their colours, corners and font, and the name beside the mark. A theme is a small file, which Overscan checks before it installs it; the theme guide in Overscan's docs says what one holds.</p>
+    <form method="post" action="/admin/settings/themes/choose" hx-post="/admin/settings/themes/choose" hx-trigger="change" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" class="switch-row with-select">
+      <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+      <div>
+        <label for="household-theme">The household's theme</label>
+        <noscript><button class="small" type="submit">Save</button></noscript>
+      </div>
+      <select id="household-theme" name="theme">
+        <option value="0">Overscan</option>
+        {{- range .Data.Themes}}
+        <option value="{{.ID}}"{{if eq .ID $.Data.HouseholdTheme}} selected{{end}}>{{.Name}}</option>
+        {{- end}}
+      </select>
+    </form>
+    {{- if and .Data.Themes (gt (len .Data.Profiles) 1)}}
+    {{- range .Data.Profiles}}
+    <form method="post" action="/admin/settings/themes/choose" hx-post="/admin/settings/themes/choose" hx-trigger="change" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" class="switch-row with-select">
+      <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+      <input type="hidden" name="profile" value="{{.ID}}">
+      <div>
+        <label for="profile-theme-{{.ID}}">Profile: {{.Name}}</label>
+        <noscript><button class="small" type="submit">Save</button></noscript>
+      </div>
+      <select id="profile-theme-{{.ID}}" name="theme">
+        <option value="0">The household's</option>
+        {{- $p := .}}
+        {{- range $.Data.Themes}}
+        <option value="{{.ID}}"{{if eq .ID $p.ThemeID}} selected{{end}}>{{.Name}}</option>
+        {{- end}}
+      </select>
+    </form>
+    {{- end}}
+    {{- end}}
+    {{- if .Data.Themes}}
+    <ul class="themes">
+      {{- range .Data.Themes}}
+      <li>
+        <svg class="theme-swatch" viewBox="0 0 48 32" aria-hidden="true" focusable="false"><rect width="48" height="32" rx="6" fill="{{.Ground}}"/><rect x="6" y="7" width="18" height="18" rx="3" fill="{{.Focus}}"/><rect x="29" y="9" width="13" height="3" rx="1.5" fill="{{.Text}}"/><rect x="29" y="17" width="13" height="3" rx="1.5" fill="{{.Accent}}"/></svg>
+        <div class="theme-text">
+          <strong>{{.Name}}</strong>
+          <span class="muted">{{if .UsedBy}}Chosen for {{.UsedBy}}{{else}}Not chosen{{end}}{{with .Brand}} · shows “{{.}}” beside the mark{{end}}</span>
+        </div>
+        <a class="button quiet small" href="/admin/themes/{{.ID}}.json" download>Download</a>
+        <form method="post" action="/admin/settings/themes/{{.ID}}/remove" hx-post="/admin/settings/themes/{{.ID}}/remove" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" hx-confirm="Remove the theme {{.Name}}? What shows it shows the household's theme, or Overscan's own, instead.">
+          <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+          <button type="submit" class="small quiet danger">Remove</button>
+        </form>
+      </li>
+      {{- end}}
+    </ul>
+    {{- end}}
+    <form method="post" action="/admin/settings/themes" enctype="multipart/form-data" hx-post="/admin/settings/themes" hx-encoding="multipart/form-data" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" class="row-form theme-upload">
+      <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+      <input type="file" name="file" accept=".json,application/json" aria-label="Theme file" required>
+      <button type="submit">Install</button>
+    </form>
+    <p class="hint">Installing a theme with the name of one installed already replaces it.</p>
+  </section>
+
   <section class="panel" aria-labelledby="server-title">
     <div class="panel-title"><span class="tile-icon">{{template "i-sources"}}</span><h2 id="server-title">This server</h2></div>
     <dl class="facts-list">

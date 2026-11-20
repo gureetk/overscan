@@ -4,15 +4,18 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"overscan.gureet.ca/internal/config"
 	"overscan.gureet.ca/internal/hub"
+	"overscan.gureet.ca/internal/theme"
 )
 
 func magServer(t *testing.T) (*Server, *bytes.Buffer) {
@@ -113,5 +116,62 @@ func TestMAGPageRequestsAreLoggedOncePerBox(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "from=192.0.2.20") || !strings.Contains(logs.String(), "from=192.0.2.21") {
 		t.Errorf("logs:\n%s", logs)
+	}
+}
+
+// An installed theme's stylesheet is served beside the page, under a name
+// that changes with the theme and the page, and only under that name
+// (D97).
+func TestThemeStylesheetsAreServed(t *testing.T) {
+	s, _ := magServer(t)
+	st := s.services.Store
+	parsed, err := theme.Parse([]byte(`{"overscan_theme": 1, "name": "Evergreen", "background": "#0e1512", "text": "#eef4f0", "brand": "The Den"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	th, _, err := st.InstallTheme(context.Background(), parsed.Name, parsed.JSON(), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := theme.Path(th.ID, th.Data)
+	for _, prefix := range magPaths {
+		rec := serve(s, prefix+name, "")
+		if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "text/css; charset=utf-8" {
+			t.Fatalf("%s: status %d, type %q", prefix+name, rec.Code, rec.Header().Get("Content-Type"))
+		}
+		if cc := rec.Header().Get("Cache-Control"); cc != "public, max-age=31536000, immutable" || rec.Header().Get("X-Content-Type-Options") != "nosniff" {
+			t.Errorf("%s: Cache-Control %q", prefix+name, cc)
+		}
+		css := rec.Body.String()
+		if !strings.Contains(css, "#0e1512") || strings.Contains(css, "#0b0b0d") || !strings.Contains(css, `content: "The Den";`) {
+			t.Errorf("%s: the stylesheet is not the theme's", prefix+name)
+		}
+	}
+
+	// Another name for it, or for a theme that is not there, is not found.
+	other := strings.Replace(name, ".", ".0", 1)[:len(name)]
+	for _, bad := range []string{other, theme.Path(th.ID+1, th.Data), "theme-0.0123456789.css", "theme-1.css"} {
+		if rec := serve(s, "/c/"+bad, ""); rec.Code != http.StatusNotFound {
+			t.Errorf("%s: status %d", bad, rec.Code)
+		}
+	}
+	r := httptest.NewRequest(http.MethodPost, "/c/"+name, nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, r)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST: status %d", rec.Code)
+	}
+
+	// A changed theme has a new name, and the old one is gone.
+	parsed.Text = "#ffffff"
+	changed, _, err := st.InstallTheme(context.Background(), parsed.Name, parsed.JSON(), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := serve(s, "/c/"+name, ""); rec.Code != http.StatusNotFound {
+		t.Errorf("the old name: status %d", rec.Code)
+	}
+	if rec := serve(s, "/c/"+theme.Path(changed.ID, changed.Data), ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "#ffffff") {
+		t.Errorf("the new name: status %d", rec.Code)
 	}
 }
