@@ -120,6 +120,8 @@ func (a *Admin) Handler() http.Handler {
 	mux.Handle("POST /admin/lineup/groups/{id}/{action}", a.page(a.lineupRoute(a.groupAction)))
 	mux.Handle("POST /admin/lineup/categories", a.page(a.lineupRoute(a.moveCategoryForm)))
 	mux.Handle("POST /admin/lineups/{action}", a.page(a.lineupRoute(a.lineupsAction)))
+	mux.Handle("GET /admin/lineups/export", a.page(a.exportLineupsForm))
+	mux.Handle("POST /admin/lineups/import", a.pageWithin(maxUploadBytes, a.lineupRoute(a.importLineupsForm)))
 	mux.Handle("GET /admin/lineup/rules", a.page(a.lineupRoute(a.rulesPage)))
 	mux.Handle("POST /admin/lineup/rules", a.page(a.lineupRoute(a.rulesAction)))
 	mux.Handle("POST /admin/lineup/rules/{id}", a.page(a.lineupRoute(a.rulesAction)))

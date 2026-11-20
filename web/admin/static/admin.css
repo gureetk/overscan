@@ -788,6 +788,9 @@ h2.with-dot .count { margin-left: 0; }
 .lineup-bar .hint { margin: 0; }
 .lineups-menu { margin-left: auto; }
 details.lineups-menu > .menu { left: auto; right: 0; min-width: 22rem; max-width: min(28rem, calc(100vw - 2rem)); }
+.lineup-file { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--line); }
+.lineup-file .row-form { align-self: stretch; }
+.lineup-file input[type="file"] { min-width: 0; height: auto; padding: 0.4rem 0.5rem; }
 
 /* A channel's backups (D109), in its panel. */
 .channel-panel .backups { padding: 1rem 1.25rem 1.25rem; border-top: 1px solid var(--line); }

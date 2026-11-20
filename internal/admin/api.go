@@ -90,6 +90,8 @@ func (a *Admin) apiRoutes() []apiRoute {
 		{method: "POST", path: "lineups", fn: a.apiLineupRoute(a.apiCopyLineup)},
 		{method: "PATCH", path: "lineups/{id}", fn: a.apiChangeLineup},
 		{method: "DELETE", path: "lineups/{id}", fn: a.apiRemoveLineup},
+		{method: "GET", path: "lineups/file", fn: a.apiExportLineups},
+		{method: "POST", path: "lineups/file", fn: a.apiImportLineups},
 		{method: "GET", path: "lineup/groups", fn: a.apiLineupRoute(a.apiGroups)},
 		{method: "POST", path: "lineup/groups", fn: a.apiLineupRoute(a.apiCreateGroup)},
 		{method: "PATCH", path: "lineup/groups/{id}", fn: a.apiLineupRoute(a.apiChangeGroup)},

@@ -102,6 +102,7 @@ clients are expected to work and are tracked in a compatibility matrix,
 | [docs/api/device.md](docs/api/device.md) | The device API that Overscan's MAG page uses |
 | [docs/themes.md](docs/themes.md) | Themes for the boxes: what a theme file holds, and installing one |
 | [docs/rules.md](docs/rules.md) | A lineup's rules: what they match, what they do, and in what order |
+| [docs/lineup-file.md](docs/lineup-file.md) | Lineup files: exporting every lineup, and importing them on this server or another |
 | [docs/compatibility.md](docs/compatibility.md) | What StbEmu, OTT Navigator and TiviMate get from Overscan, and what they did when tried |
 | [docs/api/admin.yaml](docs/api/admin.yaml) | The admin's JSON API, as an OpenAPI 3.1 description |
 | [web/admin/README.md](web/admin/README.md) | The admin's pages and the files they are built from |

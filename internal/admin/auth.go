@@ -49,6 +49,12 @@ type signedInFn func(http.ResponseWriter, *http.Request, store.AdminSession)
 // sign-in page. A request that is meant to change something must carry the
 // session's CSRF token.
 func (a *Admin) page(fn signedInFn) http.Handler {
+	return a.pageWithin(maxFormBytes, fn)
+}
+
+// pageWithin is page for a form that sends up to limit bytes, such as one
+// that sends a file.
+func (a *Admin) pageWithin(limit int64, fn signedInFn) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s, ok := a.authenticate(r)
 		if !ok {
@@ -56,7 +62,7 @@ func (a *Admin) page(fn signedInFn) http.Handler {
 			return
 		}
 		if !safeMethod(r.Method) {
-			r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
 			if !validCSRF(r, s) {
 				a.message(w, r, http.StatusForbidden, "This form has expired",
 					"The page that sent it is out of date. Go back, reload it and try again.", &s)
