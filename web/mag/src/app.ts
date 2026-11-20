@@ -24,6 +24,7 @@ import { HomeScreen } from './screens/home';
 import { LibraryScreen } from './screens/library';
 import { LiveScreen } from './screens/live';
 import { RadioScreen } from './screens/radio';
+import { RecordingsScreen } from './screens/recordings';
 import { type MessageArg, MessageScreen } from './screens/message';
 import type { Ctx, Screen, ScreenName } from './screens/screen';
 import { SearchScreen } from './screens/search';
@@ -251,6 +252,7 @@ export class App {
       episodes: new EpisodesScreen(screensBox, this.ctx),
       film: new FilmScreen(screensBox, this.ctx),
       check: new CheckScreen(screensBox, this.ctx),
+      recordings: new RecordingsScreen(screensBox, this.ctx),
     };
     for (const name in this.screens) {
       show(this.screens[name]!.el, false);

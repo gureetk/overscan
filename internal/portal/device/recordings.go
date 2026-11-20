@@ -32,6 +32,8 @@ func (a *API) UseRecorder(r Recorder) { a.recorder = r }
 // entry's ID; Start and Stop are Unix seconds.
 // UntilStopped says that it runs until it is stopped, at the latest until
 // Stop (D98).
+// Size is the bytes of the file of one that is done or that failed after
+// it began (D100).
 type recording struct {
 	ID           int64  `json:"id"`
 	Channel      int64  `json:"channel"`
@@ -41,17 +43,27 @@ type recording struct {
 	UntilStopped bool   `json:"until_stopped,omitempty"`
 	State        string `json:"state"`
 	Error        string `json:"error,omitempty"`
+	Size         int64  `json:"size,omitempty"`
 }
 
 func recordingOf(r store.Recording) recording {
 	return recording{ID: r.ID, Channel: r.EntryID, Title: r.Title, Start: r.Start.Unix(), Stop: r.Stop.Unix(),
-		UntilStopped: r.UntilStopped, State: r.State, Error: r.Error}
+		UntilStopped: r.UntilStopped, State: r.State, Error: r.Error, Size: r.Size}
 }
+
+// What GET recordings lists of the recordings that ended (D100): those
+// that began in the last day, done or failed, at most recentCount of them.
+const (
+	recentFor   = 24 * time.Hour
+	recentCount = 10
+)
 
 // recordings answers GET recordings: whether the server records; how a
 // recording started on a channel ends for a box that keeps the household's
 // setting, and the most hours one that runs until stopped may run (D99);
-// and the household's recordings that are scheduled or under way, by start.
+// the household's recordings that are scheduled or under way, by start;
+// and those of the last day that are done or failed, the latest first
+// (D100).
 func (a *API) recordings(w http.ResponseWriter, r *http.Request, d store.Device) {
 	ctx := r.Context()
 	gb, err := a.store.RecordingsCap(ctx)
@@ -74,16 +86,25 @@ func (a *API) recordings(w http.ResponseWriter, r *http.Request, d store.Device)
 		a.internalError(w, "list recordings", err)
 		return
 	}
+	ended, err := a.store.EndedRecordings(ctx, d.AccountID, a.now().Add(-recentFor), recentCount)
+	if err != nil {
+		a.internalError(w, "list recordings", err)
+		return
+	}
 	out := struct {
 		On         bool        `json:"on"`
 		Until      string      `json:"until"`
 		MaxHours   int         `json:"max_hours"`
 		Recordings []recording `json:"recordings"`
-	}{On: gb > 0 && a.recorder != nil, Until: until, MaxHours: hours, Recordings: []recording{}}
+		Recent     []recording `json:"recent"`
+	}{On: gb > 0 && a.recorder != nil, Until: until, MaxHours: hours, Recordings: []recording{}, Recent: []recording{}}
 	for _, rec := range list {
 		if rec.AccountID == d.AccountID {
 			out.Recordings = append(out.Recordings, recordingOf(rec))
 		}
+	}
+	for _, rec := range ended {
+		out.Recent = append(out.Recent, recordingOf(rec))
 	}
 	writeJSON(w, http.StatusOK, out)
 }

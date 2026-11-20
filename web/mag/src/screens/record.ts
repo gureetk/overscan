@@ -97,7 +97,7 @@ export function recordChannel(ctx: Ctx, c: Channel, done: () => void): void {
 }
 
 /** stop stops a recording under way, which keeps what it recorded, or calls off one to come. */
-function stop(ctx: Ctx, r: Recording, done: () => void): void {
+export function stop(ctx: Ctx, r: Recording, done: () => void): void {
   const running = recordingNow(r, now());
   ctx.recordings.cancel(r, function (err) {
     if (err) {

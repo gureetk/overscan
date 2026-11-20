@@ -33,6 +33,7 @@ export type ScreenName =
   | 'film'
   | 'check'
   | 'radio'
+  | 'recordings'
   | 'message';
 
 /**

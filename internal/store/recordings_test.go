@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -163,5 +164,46 @@ func TestRecordNow(t *testing.T) {
 	}
 	if _, err := st.ActiveRecording(ctx, 7, now); !errors.Is(err, ErrNotFound) {
 		t.Errorf("after it was made: %v", err)
+	}
+}
+
+// TestEndedRecordings checks the list of an account's recordings of the
+// last day that are done or failed, the latest first (D100).
+func TestEndedRecordings(t *testing.T) {
+	st := openTest(t, newPath(t))
+	ctx := context.Background()
+	now := time.Unix(1_800_000_000, 0)
+	add := func(account int64, title string, ago time.Duration, state string) {
+		t.Helper()
+		r, err := st.ScheduleRecording(ctx, Recording{AccountID: account, EntryID: 7, Channel: "one", Title: title,
+			Start: now.Add(-ago), Stop: now.Add(-ago + time.Hour), CreatedAt: now.Add(-ago)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if state != RecordingScheduled {
+			if err := st.SetRecordingState(ctx, r.ID, state, "", title+".ts", 188, ""); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	add(1, "Done", 3*time.Hour, RecordingDone)
+	add(1, "Failed", 2*time.Hour, RecordingFailed)
+	add(1, "Called off", time.Hour, RecordingCancelled)
+	add(1, "Old", 30*time.Hour, RecordingDone)
+	add(1, "Under way", 10*time.Minute, RecordingRecording)
+	add(2, "Another account's", 20*time.Minute, RecordingDone)
+	got, err := st.EndedRecordings(ctx, 1, now.Add(-24*time.Hour), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var titles []string
+	for _, r := range got {
+		titles = append(titles, r.Title)
+	}
+	if strings.Join(titles, ",") != "Failed,Done" {
+		t.Errorf("ended %v", titles)
+	}
+	if got, _ := st.EndedRecordings(ctx, 1, now.Add(-24*time.Hour), 1); len(got) != 1 || got[0].Title != "Failed" {
+		t.Errorf("at most one: %+v", got)
 	}
 }

@@ -2,10 +2,11 @@
 
 // Home: Simple, six big buttons on a plain background, or With a Picture, a
 // picture behind the last channel watched, smaller buttons and the
-// favourite channels (D52). The box's settings choose. A seventh button,
-// Radio, shows when the sources list radio stations (D87). When the account
-// has two profiles or more, the head names the one watching, and the
-// yellow key switches to another (D94).
+// favourite channels (D52). The box's settings choose. A button for Radio
+// shows when the sources list radio stations (D87), and one for Recordings
+// while the server records (D100). When the account has two profiles or
+// more, the head names the one watching, and the yellow key switches to
+// another (D94).
 
 import type { Channel } from '../api';
 import { el, Logo, setClass, setText, setWidth, show } from '../dom';
@@ -67,6 +68,7 @@ export class HomeScreen implements Screen {
       { name: 'Radio', icon: 'radio', line: '', open: () => ctx.go('radio'), when: () => ctx.lineup.stations.length > 0 },
       { name: 'Movies', icon: 'movies', line: 'Films from your sources', open: () => ctx.go('movies') },
       { name: 'Series', icon: 'series', line: 'Series from your sources', open: () => ctx.go('series') },
+      { name: 'Recordings', icon: 'record', line: '', open: () => ctx.go('recordings'), when: () => ctx.recordings.on },
       { name: 'Search', icon: 'search', line: 'Channels, programmes and films', short: 'Channels, guide, films', open: () => ctx.go('search') },
       { name: 'Settings', icon: 'settings', line: 'This box, appearance, about', open: () => ctx.go('settings') },
     ];
@@ -150,6 +152,24 @@ export class HomeScreen implements Screen {
     }
   }
 
+  /** recordingsLine says on the Recordings button how many record now and are to come. */
+  private recordingsLine(): void {
+    const t = now();
+    const going = this.ctx.recordings.underWay(t).length;
+    const coming = this.ctx.recordings.toCome(t).length;
+    const tile = this.tiles[5]!;
+    if (going && coming) {
+      tile.line = going + ' recording now, ' + coming + ' to come';
+      tile.short = going + ' now, ' + coming + ' to come';
+    } else if (going) {
+      tile.line = tile.short = going + ' recording now';
+    } else if (coming) {
+      tile.line = tile.short = coming + ' to come';
+    } else {
+      tile.line = tile.short = 'Under way and to come';
+    }
+  }
+
   private withPicture(): boolean {
     return this.ctx.settings.current.home === 'picture';
   }
@@ -166,7 +186,7 @@ export class HomeScreen implements Screen {
     return out;
   }
 
-  /** columns returns how many big buttons a row of Simple holds: four when there are seven. */
+  /** columns returns how many big buttons a row of Simple holds: four when there are seven or eight. */
   private columns(n: number): number {
     return n > 6 ? 4 : 3;
   }
@@ -175,6 +195,10 @@ export class HomeScreen implements Screen {
     this.focusRow = 0;
     this.render();
     this.wantGuide();
+    const self = this;
+    this.ctx.recordings.load(function () {
+      self.render();
+    });
   }
 
   leave(): void {}
@@ -206,6 +230,7 @@ export class HomeScreen implements Screen {
     this.tiles[0]!.line = last ? 'Last watched: ' + label(last) : count + (count === 1 ? ' channel' : ' channels');
     const stations = this.ctx.lineup.stations.length;
     this.tiles[2]!.line = stations + (stations === 1 ? ' station' : ' stations');
+    this.recordingsLine();
     const shown = this.shown();
     this.focusTile = Math.min(this.focusTile, shown.length - 1);
     this.renderProfile();
@@ -267,7 +292,7 @@ export class HomeScreen implements Screen {
       show(l.barBox, false);
       setText(l.next, '');
     }
-    setClass(this.smallRow, 'small-tiles' + (shown.length > 6 ? ' seven' : ''));
+    setClass(this.smallRow, 'small-tiles' + (shown.length > 7 ? ' eight' : shown.length > 6 ? ' seven' : ''));
     for (let i = 0; i < this.smallTiles.length; i++) {
       const at = shown.indexOf(i);
       show(this.smallTiles[i]!, at >= 0);

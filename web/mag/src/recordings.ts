@@ -2,8 +2,9 @@
 
 // The household's recordings to come and under way (D89, D98), which the
 // guide, Live TV and full screen mark, and which the green key or REC
-// starts, stops or calls off. The server records them; those made play
-// from Movies.
+// starts, stops or calls off; and those of the last day that ended, which
+// the Recordings screen lists with them (D100). The server records them;
+// those made play from Movies.
 
 import type { Callback, Client } from './api';
 
@@ -22,6 +23,8 @@ export interface Recording {
   until_stopped?: boolean;
   state: 'scheduled' | 'recording' | 'done' | 'failed' | 'cancelled';
   error?: string;
+  /** The bytes of its file, for one that is done or failed after it began (D100). */
+  size?: number;
 }
 
 /** active says whether a recording is to come or under way. */
@@ -45,6 +48,8 @@ interface RecordingList {
   /** The most hours that a recording which runs until it is stopped may run. */
   max_hours?: number;
   recordings: Recording[];
+  /** The household's recordings of the last day that are done or failed, the latest first (D100). */
+  recent?: Recording[];
 }
 
 /** How long a list read from the server is kept, in milliseconds. */
@@ -57,6 +62,8 @@ export class Recordings {
   until: 'programme' | 'stopped' = 'programme';
   /** The most hours that a recording which runs until it is stopped may run. */
   maxHours = 4;
+  /** The household's recordings of the last day that are done or failed, the latest first (D100). */
+  recent: Recording[] = [];
   private client: Client;
   private list: Recording[] = [];
   private readAt = 0;
@@ -84,6 +91,7 @@ export class Recordings {
       self.until = data.until === 'stopped' ? 'stopped' : 'programme';
       self.maxHours = data.max_hours || 4;
       self.list = data.recordings || [];
+      self.recent = data.recent || [];
       done();
     });
   }
@@ -108,6 +116,20 @@ export class Recordings {
       }
     }
     return over;
+  }
+
+  /** underWay returns the recordings under way at t, the earliest first. */
+  underWay(t: number): Recording[] {
+    return this.list.filter(function (r) {
+      return active(r) && recordingNow(r, t);
+    });
+  }
+
+  /** toCome returns the recordings that have not begun at t, the soonest first. */
+  toCome(t: number): Recording[] {
+    return this.list.filter(function (r) {
+      return active(r) && !recordingNow(r, t);
+    });
   }
 
   /** onChannel returns the recording of channel id that is under way at t, if any. */

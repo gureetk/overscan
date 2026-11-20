@@ -2,7 +2,7 @@
 
 Overscan's own MAG page talks to the server through the device API, a JSON API under `/api/device/v1/` built for the box ([plan](../plan.md), section 9). The page and the server ship together, so the API changes with them. It is not meant for other clients: third-party players have the Stalker API.
 
-Version 0, in M1, covers what the first page needs: a session, the channel list, and playing a channel. M2 adds what the page's new interface needs ([D52](../decisions.md)): the guide, favourites, what the box watched, search, and the box's own settings. M3 adds films and series ([D63](../decisions.md) to [D65](../decisions.md)), plays through ffmpeg those whose sound the box cannot play ([D68](../decisions.md)), checks what each box plays ([D70](../decisions.md)), and has Jellyfin transcode the video it cannot play ([D71](../decisions.md)). M4 adds past programmes from their sources' archives ([D81](../decisions.md), [D84](../decisions.md)), locks on films and series ([D85](../decisions.md)), radio stations ([D87](../decisions.md)), and recordings ([D89](../decisions.md)). M5 adds profiles ([D94](../decisions.md)), an account's end date ([D95](../decisions.md)), messages from the administrator ([D96](../decisions.md)), themes ([D97](../decisions.md)), recording a channel from now on ([D98](../decisions.md)), and each box's choice of how such a recording ends ([D99](../decisions.md)).
+Version 0, in M1, covers what the first page needs: a session, the channel list, and playing a channel. M2 adds what the page's new interface needs ([D52](../decisions.md)): the guide, favourites, what the box watched, search, and the box's own settings. M3 adds films and series ([D63](../decisions.md) to [D65](../decisions.md)), plays through ffmpeg those whose sound the box cannot play ([D68](../decisions.md)), checks what each box plays ([D70](../decisions.md)), and has Jellyfin transcode the video it cannot play ([D71](../decisions.md)). M4 adds past programmes from their sources' archives ([D81](../decisions.md), [D84](../decisions.md)), locks on films and series ([D85](../decisions.md)), radio stations ([D87](../decisions.md)), and recordings ([D89](../decisions.md)). M5 adds profiles ([D94](../decisions.md)), an account's end date ([D95](../decisions.md)), messages from the administrator ([D96](../decisions.md)), themes ([D97](../decisions.md)), recording a channel from now on ([D98](../decisions.md)), each box's choice of how such a recording ends ([D99](../decisions.md)), and the recordings that ended in the last day ([D100](../decisions.md)).
 
 ## Conventions
 
@@ -170,12 +170,14 @@ Answers whether the server records, and the account's recordings that are to com
 ```json
 {"on": true, "until": "programme", "max_hours": 4, "recordings": [
   {"id": 4, "channel": 17, "title": "Evening News", "start": 1796414400, "stop": 1796416200, "state": "scheduled"}
+], "recent": [
+  {"id": 3, "channel": 17, "title": "Morning News", "start": 1796371200, "stop": 1796373000, "state": "done", "size": 812345678}
 ]}
 ```
 
 `until` says how a recording that a box starts on a channel ends for a box that keeps the household's setting, `programme` or `stopped`, and `max_hours` the most hours that one which runs until it is stopped may run, as the admin's `recordings_until` and `recordings_max_hours` say ([D99](../decisions.md)).
 
-`channel` is the lineup entry's `id`, as in the channel list, and `start` and `stop` are the programme's, in Unix seconds, as the guide gives them. `state` is `scheduled` until the recording begins, a minute before `start`, and `recording` until it ends, two minutes after `stop`. A channel recorded from now on has, as `start`, when it began, and as `stop`, the end of the programme it records; with `"until_stopped": true`, it runs until it is stopped, at the latest until `stop`, and ends there ([D98](../decisions.md)). Recordings that are done are films of the folder source that reads the recordings folder, on the box's Movies.
+`channel` is the lineup entry's `id`, as in the channel list, and `start` and `stop` are the programme's, in Unix seconds, as the guide gives them. `state` is `scheduled` until the recording begins, a minute before `start`, and `recording` until it ends, two minutes after `stop`. A channel recorded from now on has, as `start`, when it began, and as `stop`, the end of the programme it records; with `"until_stopped": true`, it runs until it is stopped, at the latest until `stop`, and ends there ([D98](../decisions.md)). Recordings that are done are films of the folder source that reads the recordings folder, on the box's Movies. `recent` lists the account's recordings that began in the last day and are `done` or `failed`, the latest first, at most 10, with `size`, the bytes of the file that each made ([D100](../decisions.md)); a recording that failed says why in `error`.
 
 ### `POST /api/device/v1/recordings`
 
