@@ -213,6 +213,29 @@ func (s *Store) RecentRecordings(ctx context.Context, limit int) ([]Recording, e
 	return s.recordings(ctx, `start DESC, id DESC`, limit, []string{RecordingDone, RecordingFailed, RecordingCancelled})
 }
 
+// EndedRecordings returns an account's recordings that began at since or
+// later and are done or failed, the latest first, at most limit of them
+// (D100).
+func (s *Store) EndedRecordings(ctx context.Context, accountID int64, since time.Time, limit int) ([]Recording, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+recordingColumns+` FROM recordings
+		WHERE account_id = ? AND state IN (?, ?) AND start >= ?
+		ORDER BY start DESC, id DESC LIMIT ?`,
+		accountID, RecordingDone, RecordingFailed, since.Unix(), limit)
+	if err != nil {
+		return nil, fmt.Errorf("store: an account's ended recordings: %w", err)
+	}
+	defer rows.Close()
+	var out []Recording
+	for rows.Next() {
+		r, err := scanRecording(rows)
+		if err != nil {
+			return nil, fmt.Errorf("store: an account's ended recordings: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) recordings(ctx context.Context, order string, limit int, states []string) ([]Recording, error) {
 	q := `SELECT ` + recordingColumns + ` FROM recordings`
 	args := []any{}

@@ -328,3 +328,45 @@ func TestRecordingChoiceOfTheBox(t *testing.T) {
 		t.Errorf("as the household's again: %+v", got)
 	}
 }
+
+// TestRecordingsOfTheLastDay checks that GET recordings lists the
+// recordings of the last day that are done or failed, with their size
+// (D100).
+func TestRecordingsOfTheLastDay(t *testing.T) {
+	h := newHarness(t)
+	ids := h.addGuide()
+	h.approve(macA)
+	token := h.session(macA).Token
+	ctx := context.Background()
+	if err := h.store.SetRecordingsCap(ctx, 10); err != nil {
+		t.Fatal(err)
+	}
+	h.api.UseRecorder(&fakeRecorder{})
+	var made recording
+	if code := h.call("POST", Prefix+"recordings", token, fmt.Sprintf(`{"channel":%d,"now":true}`, ids["Channel 1"]), &made); code != http.StatusOK {
+		t.Fatalf("record: %d", code)
+	}
+	type list struct {
+		Recordings []recording `json:"recordings"`
+		Recent     []recording `json:"recent"`
+	}
+	var got list
+	if h.call("GET", Prefix+"recordings", token, "", &got); len(got.Recordings) != 1 || got.Recent == nil || len(got.Recent) != 0 {
+		t.Errorf("under way: %+v", got)
+	}
+	if err := h.store.SetRecordingState(ctx, made.ID, store.RecordingDone, "", "m.ts", 1880, ""); err != nil {
+		t.Fatal(err)
+	}
+	got = list{}
+	h.call("GET", Prefix+"recordings", token, "", &got)
+	if len(got.Recordings) != 0 || len(got.Recent) != 1 || got.Recent[0].ID != made.ID || got.Recent[0].Size != 1880 ||
+		got.Recent[0].State != store.RecordingDone {
+		t.Errorf("done: %+v", got)
+	}
+	// A day later, it is no longer listed.
+	h.now = h.now.Add(25 * time.Hour)
+	got = list{}
+	if h.call("GET", Prefix+"recordings", token, "", &got); len(got.Recent) != 0 {
+		t.Errorf("a day later: %+v", got.Recent)
+	}
+}
