@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Settings: this box, who watches on it while the account has two profiles
-// or more (D94), how the page looks on it, the parental controls, reloading
-// the page, and what it is. Appearance is a page of its own.
+// or more (D94), how the page looks on it, how a recording started on a
+// channel ends while the server records (D99), the parental controls,
+// reloading the page, and what it is. Appearance is a page of its own.
 
 import type { Settings } from '../api';
 import { el, setHTML, setText, show } from '../dom';
 import { arrows, icon } from '../icons';
 import type { Press } from '../keys';
-import { accentChoices, type Choice, clockChoices, cycle, groupsChoices, homeChoices, label, numbersChoices, pictureChoices, pictureURL } from '../settings';
+import { accentChoices, type Choice, clockChoices, cycle, groupsChoices, homeChoices, label, numbersChoices, pictureChoices, pictureURL, recordChoices } from '../settings';
 import { clock, date, fullDate, now } from '../time';
 import { Clock, type Ctx, escape, type Screen, type VideoArea } from './screen';
 
@@ -158,6 +159,32 @@ export class SettingsScreen implements Screen {
         },
       },
       {
+        icon: 'record',
+        label: 'Recording Stops',
+        value: () => label(recordChoices, ctx.settings.current.record),
+        when: () => ctx.recordings.on,
+        info: () => {
+          const hours = ctx.recordings.maxHours;
+          const household = ctx.recordings.until === 'stopped' ? 'When I Stop It' : 'When the Programme Ends';
+          return {
+            icon: 'record',
+            title: 'Recording Stops',
+            text:
+              'When a recording that you start on a channel, with the green key or REC, stops. When the Programme Ends stops it at the end of the programme in the guide; a channel without a guide records until you stop it. When I Stop It records until you press the key again, for ' +
+              hours +
+              (hours === 1 ? ' hour' : ' hours') +
+              ' at most. Household Default does as the server is set for every box. Stopping a recording early always keeps what it recorded.',
+            facts: [
+              ['Household default', household],
+              ['Longest recording', hours + (hours === 1 ? ' hour' : ' hours')],
+            ],
+          };
+        },
+        change: (delta: number) => {
+          ctx.settings.set('record', cycle(recordChoices, ctx.settings.current.record, delta));
+        },
+      },
+      {
         icon: 'parental',
         label: 'Parental Controls',
         value: () => {
@@ -266,6 +293,12 @@ export class SettingsScreen implements Screen {
     }
     this.keepFocus = false;
     this.ctx.check.load();
+    const self = this;
+    this.ctx.recordings.load(function () {
+      if (!self.appearance) {
+        self.draw();
+      }
+    });
     this.draw();
   }
 

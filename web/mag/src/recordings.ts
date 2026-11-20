@@ -40,6 +40,10 @@ export function recordingNow(r: Recording, t: number): boolean {
 
 interface RecordingList {
   on: boolean;
+  /** How a recording started on a channel ends on a box that keeps the household's setting (D99). */
+  until?: 'programme' | 'stopped';
+  /** The most hours that a recording which runs until it is stopped may run. */
+  max_hours?: number;
   recordings: Recording[];
 }
 
@@ -49,6 +53,10 @@ const keepMs = 60 * 1000;
 export class Recordings {
   /** The server records: the administrator gave recordings room. */
   on = false;
+  /** How a recording started on a channel ends for a box that keeps the household's setting (D99). */
+  until: 'programme' | 'stopped' = 'programme';
+  /** The most hours that a recording which runs until it is stopped may run. */
+  maxHours = 4;
   private client: Client;
   private list: Recording[] = [];
   private readAt = 0;
@@ -73,6 +81,8 @@ export class Recordings {
       }
       self.readAt = new Date().getTime();
       self.on = !!data.on;
+      self.until = data.until === 'stopped' ? 'stopped' : 'programme';
+      self.maxHours = data.max_hours || 4;
       self.list = data.recordings || [];
       done();
     });

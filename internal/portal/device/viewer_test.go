@@ -116,14 +116,14 @@ func TestSettings(t *testing.T) {
 	if code := h.call("GET", Prefix+"settings", token, "", &got); code != http.StatusOK || got != defaultSettings {
 		t.Errorf("defaults: %d %+v", code, got)
 	}
-	want := settings{Home: "picture", Picture: "dusk", Accent: "blue", Clock: "24", Numbers: "groups", Groups: "ok"}
-	if code := h.call("PATCH", Prefix+"settings", token, `{"home":"picture","accent":"blue","numbers":"groups","groups":"ok"}`, &got); code != http.StatusOK || got != want {
+	want := settings{Home: "picture", Picture: "dusk", Accent: "blue", Clock: "24", Numbers: "groups", Groups: "ok", Record: "stopped"}
+	if code := h.call("PATCH", Prefix+"settings", token, `{"home":"picture","accent":"blue","numbers":"groups","groups":"ok","record":"stopped"}`, &got); code != http.StatusOK || got != want {
 		t.Errorf("patch: %d %+v", code, got)
 	}
 	if h.call("GET", Prefix+"settings", token, "", &got); got != want {
 		t.Errorf("after the patch: %+v", got)
 	}
-	for _, body := range []string{`{"home":"tv"}`, `{"accent":"red"}`, `{"clock":"25"}`, `{"picture":"../x"}`, `{"numbers":"letters"}`, `{"groups":"never"}`, `{"volume":1}`, `[]`, `x`} {
+	for _, body := range []string{`{"home":"tv"}`, `{"accent":"red"}`, `{"clock":"25"}`, `{"picture":"../x"}`, `{"numbers":"letters"}`, `{"groups":"never"}`, `{"record":"later"}`, `{"record":""}`, `{"volume":1}`, `[]`, `x`} {
 		var e struct{ Error string }
 		if code := h.call("PATCH", Prefix+"settings", token, body, &e); code != http.StatusBadRequest || e.Error != "bad_request" {
 			t.Errorf("%s: %d %s", body, code, e.Error)
@@ -144,7 +144,7 @@ func TestSettings(t *testing.T) {
 	if err := h.store.SetDeviceSettings(context.Background(), d.ID, `{"home":"picture","picture":"dusk","accent":"blue","clock":"12"}`); err != nil {
 		t.Fatal(err)
 	}
-	old := settings{Home: "picture", Picture: "dusk", Accent: "blue", Clock: "12", Numbers: "lineup", Groups: "preview"}
+	old := settings{Home: "picture", Picture: "dusk", Accent: "blue", Clock: "12", Numbers: "lineup", Groups: "preview", Record: "household"}
 	if h.call("GET", Prefix+"settings", other, "", &got); got != old {
 		t.Errorf("older settings: %+v", got)
 	}

@@ -293,6 +293,12 @@ export interface Settings {
   numbers: 'lineup' | 'favourites' | 'groups';
   /** preview: Live TV shows a group's channels as the focus rests on it; ok: only on OK or Right (D62). */
   groups: 'preview' | 'ok';
+  /**
+   * How a recording that the box starts on a channel ends (D99): household,
+   * as the household's setting says; programme, at the end of the programme
+   * the guide shows; or stopped, when it is stopped.
+   */
+  record: 'household' | 'programme' | 'stopped';
 }
 
 /** A profile of the box's account (D94): who watches, with their own favourites and resume points. */

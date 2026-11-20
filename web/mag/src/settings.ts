@@ -2,7 +2,8 @@
 
 // The box's own settings, which the server keeps (D52): Home's look and
 // picture, the accent colour, the clock, how the lists number channels
-// (D56) and when Live TV shows a group's channels (D62).
+// (D56), when Live TV shows a group's channels (D62), and how a recording
+// started on a channel ends (D99).
 
 import names from 'assets';
 import type { Client, Settings } from './api';
@@ -43,6 +44,13 @@ export const groupsChoices: Choice[] = [
   { value: 'ok', label: 'Open with OK' },
 ];
 
+/** How a recording that the box starts on a channel ends (D99). */
+export const recordChoices: Choice[] = [
+  { value: 'household', label: 'Household Default' },
+  { value: 'programme', label: 'When the Programme Ends' },
+  { value: 'stopped', label: 'When I Stop It' },
+];
+
 /** The page's own pictures for Home, the first the one a new box gets. */
 export const pictureChoices: Choice[] = [
   { value: 'dusk', label: 'Dusk' },
@@ -51,7 +59,7 @@ export const pictureChoices: Choice[] = [
   { value: 'dunes', label: 'Dunes' },
 ];
 
-export const defaults: Settings = { home: 'simple', picture: 'dusk', accent: 'teal', clock: '24', numbers: 'lineup', groups: 'preview' };
+export const defaults: Settings = { home: 'simple', picture: 'dusk', accent: 'teal', clock: '24', numbers: 'lineup', groups: 'preview', record: 'household' };
 
 /** pictureURL returns the address of a picture for Home, the first for a name the page does not know. */
 export function pictureURL(name: string): string {
@@ -88,6 +96,7 @@ export class SettingsModel {
     clock: defaults.clock,
     numbers: defaults.numbers,
     groups: defaults.groups,
+    record: defaults.record,
   };
   private client: Client;
   private saveTimer = 0;

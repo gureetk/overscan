@@ -243,3 +243,88 @@ func TestRecordingNow(t *testing.T) {
 		t.Errorf("no channel: %d %s", code, e)
 	}
 }
+
+// TestRecordingChoiceOfTheBox checks that a box's own choice of how a
+// recording it starts on a channel ends wins over the household's, and that
+// a box that keeps the household's follows it (D99).
+func TestRecordingChoiceOfTheBox(t *testing.T) {
+	h := newHarness(t)
+	ids := h.addGuide()
+	h.approve(macA)
+	h.approve(macB)
+	own, keeps := h.session(macA).Token, h.session(macB).Token
+	ctx := context.Background()
+	if err := h.store.SetRecordingsCap(ctx, 10); err != nil {
+		t.Fatal(err)
+	}
+	h.api.UseRecorder(&fakeRecorder{})
+	now := h.now.Unix()
+	start := func(token string, ch int64) recording {
+		t.Helper()
+		var got recording
+		if code := h.call("POST", Prefix+"recordings", token, fmt.Sprintf(`{"channel":%d,"now":true}`, ch), &got); code != http.StatusOK {
+			t.Fatalf("channel %d: %d", ch, code)
+		}
+		// Called off at once, so that the channel can record again.
+		if err := h.store.SetRecordingState(ctx, got.ID, store.RecordingCancelled, "", "", 0, ""); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	choose := func(token, choice string) {
+		t.Helper()
+		var s settings
+		if code := h.call("PATCH", Prefix+"settings", token, `{"record":"`+choice+`"}`, &s); code != http.StatusOK || s.Record != choice {
+			t.Fatalf("choose %s: %d %+v", choice, code, s)
+		}
+	}
+	household := func() (string, int) {
+		t.Helper()
+		var list struct {
+			Until    string `json:"until"`
+			MaxHours int    `json:"max_hours"`
+		}
+		h.call("GET", Prefix+"recordings", keeps, "", &list)
+		return list.Until, list.MaxHours
+	}
+
+	// At first, every box keeps the household's: to the programme's end.
+	if until, hours := household(); until != store.RecordUntilProgramme || hours != store.DefaultRecordingHours {
+		t.Errorf("the household's: %s, %d hours", until, hours)
+	}
+	if got := start(keeps, ids["Channel 1"]); got.UntilStopped || got.Stop != now+60 {
+		t.Errorf("as the household's: %+v", got)
+	}
+	// A box that chooses until stopped records past the programme.
+	choose(own, store.RecordUntilStopped)
+	if got := start(own, ids["Channel 1"]); !got.UntilStopped || got.Stop != now+4*3600 || got.Title != "Match" {
+		t.Errorf("the box's until stopped: %+v", got)
+	}
+	if got := start(keeps, ids["Channel 1"]); got.UntilStopped {
+		t.Errorf("the other box: %+v", got)
+	}
+
+	// With the household's until stopped, a box can still stop at the
+	// programme's end; the household's hours stay the limit for the others.
+	if err := h.store.SetRecordUntil(ctx, store.RecordUntilStopped); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.store.SetRecordingHours(ctx, 3); err != nil {
+		t.Fatal(err)
+	}
+	if until, hours := household(); until != store.RecordUntilStopped || hours != 3 {
+		t.Errorf("the household's: %s, %d hours", until, hours)
+	}
+	choose(own, store.RecordUntilProgramme)
+	if got := start(own, ids["Channel 0"]); got.UntilStopped || got.Title != "P2" {
+		t.Errorf("the box's programme's end: %+v", got)
+	}
+	if got := start(keeps, ids["Channel 0"]); !got.UntilStopped || got.Stop != now+3*3600 {
+		t.Errorf("the household's until stopped: %+v", got)
+	}
+	// Back to the household's.
+	choose(own, "household")
+	if got := start(own, ids["Channel 0"]); !got.UntilStopped {
+		t.Errorf("as the household's again: %+v", got)
+	}
+}

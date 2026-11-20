@@ -500,7 +500,7 @@ Each phase ends with a pre-release of v0.4.0 (`v0.4.0-alpha.N`), as M4's did wit
 - Compatibility matrix for third-party Stalker clients (OTT Navigator, TiviMate) and MAG emulators (StbEmu), from tests with those apps. **So far:** [`compatibility.md`](compatibility.md) says how to connect each app and what Overscan gives it; what each does waits for tests with the apps.
 - The milestone's hardening: the security checklist on what is new (text and themes from the admin shown on boxes above all), docs, and an upgrade test from v0.3.0.
 *Done when:* two profiles on one box keep their own favourites and resume points, and the box switches between them; an account past its end date is refused on the box and in Stalker clients, which see the date; a message from the admin shows on the box; a theme installed in the admin changes the box's look for the household or for one profile; with the shared tuner on, two boxes on one channel, or a box and a recording of that channel, use one connection to the source; and a compatibility matrix says what OTT Navigator, TiviMate and StbEmu do with Overscan. A household that adds no profile, sets no end date, sends no message and installs no theme sees nothing change.
-*Status:* built, in pre-releases of v0.4.0 from 20 November 2026: the shared tuner (alpha.1), profiles (alpha.2), the end date (alpha.3), messages (alpha.4), themes (alpha.5), and the review with the docs (alpha.6); then, from the first box tests, recording from Live TV and full screen (alpha.7), and recording a channel from now on, with or without a guide, until its programme ends or until it is stopped (alpha.8, D98). The compatibility matrix waits for tests with the apps, and v0.4.0 for tests on the box.
+*Status:* built, in pre-releases of v0.4.0 from 20 November 2026: the shared tuner (alpha.1), profiles (alpha.2), the end date (alpha.3), messages (alpha.4), themes (alpha.5), and the review with the docs (alpha.6); then, from the first box tests, recording from Live TV and full screen (alpha.7), and recording a channel from now on, with or without a guide, until its programme ends or until it is stopped (alpha.8, D98); then each box's own choice of how such a recording ends, with the household's as the default (D99). The compatibility matrix waits for tests with the apps, and v0.4.0 for tests on the box.
 
 ### M6: The household IPTV hub (L)
 The all-in-one stage: every player in the house gets a curated lineup through the protocol it speaks. Details in section 21.
@@ -659,6 +659,7 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 - Messages from the administrator reach the boxes that run Overscan's page, with the lineup's version; Stalker clients get none yet (D96).
 - Themes are files of named values that Overscan checks, for the household or a profile, from which the server rewrites the page's stylesheet (D97).
 - A box records the channel it shows from now on, with or without a guide: to the end of the programme, or until it is stopped, for at most a few hours; stopping keeps what it recorded (D98).
+- Each box chooses how a recording it starts on a channel ends; the household's setting is the default (D99).
 
 **Open**
 

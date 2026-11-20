@@ -57,7 +57,7 @@ func (a *API) favourite(on bool) func(http.ResponseWriter, *http.Request, store.
 }
 
 // settings is how Overscan's page looks and acts on a device (D52, D56,
-// D62).
+// D62, D99).
 type settings struct {
 	Home    string `json:"home"`    // simple, or picture for a picture behind the home screen
 	Picture string `json:"picture"` // which of the page's pictures, when home is picture
@@ -65,10 +65,19 @@ type settings struct {
 	Clock   string `json:"clock"`   // 24 or 12
 	Numbers string `json:"numbers"` // lineup, favourites (they count from 1) or groups (each counts from 1)
 	Groups  string `json:"groups"`  // preview, Live TV shows a group's channels as the focus rests on it, or ok, only on OK or Right
+	// Record is how a recording that the box starts on a channel ends:
+	// household, as the household's setting says, or the box's own choice,
+	// programme or stopped (D99).
+	Record string `json:"record"`
 }
 
+// recordHousehold is the box's choice to end the recordings it starts on a
+// channel as the household's setting says (D99).
+const recordHousehold = "household"
+
 // defaultSettings are a device's settings until it changes them.
-var defaultSettings = settings{Home: "simple", Picture: "dusk", Accent: "teal", Clock: "24", Numbers: "lineup", Groups: "preview"}
+var defaultSettings = settings{Home: "simple", Picture: "dusk", Accent: "teal", Clock: "24", Numbers: "lineup", Groups: "preview",
+	Record: recordHousehold}
 
 // pictureName is the form of a picture's name; the page knows which exist,
 // and shows its first for one it does not have.
@@ -81,7 +90,8 @@ func (s settings) valid() bool {
 		(s.Accent == "teal" || s.Accent == "white" || s.Accent == "blue" || s.Accent == "orange") &&
 		(s.Clock == "24" || s.Clock == "12") &&
 		(s.Numbers == "lineup" || s.Numbers == "favourites" || s.Numbers == "groups") &&
-		(s.Groups == "preview" || s.Groups == "ok")
+		(s.Groups == "preview" || s.Groups == "ok") &&
+		(s.Record == recordHousehold || s.Record == store.RecordUntilProgramme || s.Record == store.RecordUntilStopped)
 }
 
 // deviceSettings returns d's settings, with the defaults for any it has not
