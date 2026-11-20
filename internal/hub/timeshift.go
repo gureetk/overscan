@@ -617,8 +617,10 @@ func (h *Hub) serveShift(w http.ResponseWriter, r *http.Request, s *session) {
 		h.log.Info("a box plays its channel from its timeshift buffer", "channel", s.channel,
 			"behind", behind.Round(time.Second), "kept", b.kept().Round(time.Second), "device", s.deviceID)
 	}
-	rc := http.NewResponseController(w)
-	b.copyTo(ctx, w, func() { _ = rc.Flush() }, off)
+	dst := h.shiftSink(ctx, w, s)
+	defer dst.close()
+	b.copyTo(ctx, dst, dst.flush, off)
+	dst.finish()
 }
 
 // shiftRefusal says why a request of a timeshift buffer gets no stream.

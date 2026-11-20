@@ -66,6 +66,7 @@ func (h *Hub) candidates(entry store.PlayableEntry) []store.PlayableEntry {
 // backups it does what it always did.
 func (h *Hub) openChannel(w http.ResponseWriter, r *http.Request, c claims, token string, entry store.PlayableEntry, continuous bool) {
 	tries := h.candidates(entry)
+	profile := h.outputProfile(r.Context(), c.deviceID)
 	for i, try := range tries {
 		more := i < len(tries)-1
 		passOver := func(why string) {
@@ -84,6 +85,7 @@ func (h *Hub) openChannel(w http.ResponseWriter, r *http.Request, c claims, toke
 			s, err := h.openShared(r.Context(), c, token, try)
 			switch {
 			case err == nil:
+				s.profile = profile
 				playing()
 				h.serveShift(w, r, s)
 				return
@@ -98,7 +100,7 @@ func (h *Hub) openChannel(w http.ResponseWriter, r *http.Request, c claims, toke
 			}
 		}
 		opening := &session{token: token, channelID: try.ChannelID, sourceID: try.SourceID,
-			channel: entry.Name, streamURL: try.StreamURL, repair: try.Repair, repairHLS: try.RepairHLS}
+			channel: entry.Name, streamURL: try.StreamURL, repair: try.Repair, repairHLS: try.RepairHLS, profile: profile}
 		opening.account, opening.accountLimit = h.viewer(r.Context(), c.deviceID)
 		if h.source(try.SourceID).Resolves {
 			if !h.roomFor(try.SourceID, c.deviceID) {

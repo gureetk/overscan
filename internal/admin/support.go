@@ -421,6 +421,12 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 		return "", err
 	}
 	fmt.Fprintf(&b, "Channels with backups in the household's lineup: %d\n", withBackups)
+	profileAccounts, profileDevices, err := a.store.OutputProfilesInUse(ctx)
+	if err != nil {
+		return "", err
+	}
+	fmt.Fprintf(&b, "Output profiles that transcode live channels: accounts: %d; devices of their own: %d\n",
+		profileAccounts, profileDevices)
 	fmt.Fprintf(&b, "Outputs for players: on: %v; anywhere: %v; playlists on: %d; Xtream logins on: %d\n",
 		outputsOn, anywhere, playlists, xtreams)
 	fmt.Fprintf(&b, "Profiles: %d, %d with a PIN to switch to them\n", len(profiles), withPIN)

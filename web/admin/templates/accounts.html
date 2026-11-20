@@ -40,7 +40,7 @@
         <span class="tile-icon{{if .IsEnded}} bad{{end}}">{{template "i-user"}}</span>
         <div class="profile-text">
           <strong>{{.Name}}</strong>
-          <span class="muted">{{.Devices}} {{plural .Devices "device"}} · {{.Profiles}} {{plural .Profiles "profile"}} · {{if .MaxStreams}}up to {{.MaxStreams}} {{plural .MaxStreams "stream"}} at once{{else}}any number of streams at once{{end}}{{if gt (len $.Data.Lineups) 1}} · sees {{.LineupName}}{{end}}</span>
+          <span class="muted">{{.Devices}} {{plural .Devices "device"}} · {{.Profiles}} {{plural .Profiles "profile"}} · {{if .MaxStreams}}up to {{.MaxStreams}} {{plural .MaxStreams "stream"}} at once{{else}}any number of streams at once{{end}}{{if gt (len $.Data.Lineups) 1}} · sees {{.LineupName}}{{end}}{{with .LiveText}} · {{.}}{{end}}</span>
         </div>
         <div class="chips">
           {{- if .Username}}<span class="badge" title="Players sign in as {{.Username}}">Login</span>{{end}}
@@ -81,6 +81,17 @@
             <noscript><button type="submit">Save</button></noscript>
           </form>
           <p class="hint">What its devices and players play at once, whatever their sources. A device that starts another stream at the limit stops its own first; another device of the account is told that the account plays as many streams as it may. Each source's own limit still holds.</p>
+
+          <h3>Live streams</h3>
+          <form method="post" action="/admin/accounts/{{.ID}}/live" hx-post="/admin/accounts/{{.ID}}/live" hx-trigger="change" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="row-form">
+            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+            {{- $profile := .OutputProfile}}
+            <select name="output_profile" aria-label="How {{.Name}}'s devices and players get live channels">
+              {{- range $.Data.OutputProfiles}}<option value="{{.Name}}"{{if eq .Name $profile}} selected{{end}}>{{.Label}}</option>{{end}}
+            </select>
+            <noscript><button type="submit">Save</button></noscript>
+          </form>
+          <p class="hint">How its devices and players get live channels: as each source sends them, or made H.264 by this server, for a device that cannot play what a source sends, or a network too slow for it. A device's own choice, on the Devices page, comes first. Each stream that this server transcodes counts against the number at a time on the Settings page.{{with $.Data.TranscodeNote}} {{.}}{{end}}</p>
 
           <h3>End date</h3>
           <form method="post" action="/admin/accounts/{{.ID}}/expiry" hx-post="/admin/accounts/{{.ID}}/expiry" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="row-form">

@@ -36,6 +36,8 @@ A person who should have a lineup of their own, a limit of their own or their ow
 
 Each channel plays through Overscan as one continuous MPEG-TS stream, never from the source's own address, which keeps its login on the server. With an Xtream login, a player that asks for HLS gets it for channels whose source sends HLS. Films and episodes play as their files are, and the player can seek in them.
 
+A player that cannot play what a source sends, or a network too slow for it, can get live channels made H.264 at up to 720p or 1080p, with AAC sound: choose it under *Live streams* on the account's card, and turn on *Transcoding* in *Settings*, whose number at a time each such stream counts against. Transcoding takes a strong processor; without it, or when the number at a time is reached, channels play as their sources send them.
+
 ## Limits
 
 - **The account's limit.** *Streams at once* on the account's card caps what its boxes, Stalker clients and players play together. A player that changes channel stops its own stream first; another player of the account is refused while the account is at its limit. Overscan tells players apart by their address and their user agent, so two players on one address with the same user agent count as one.
