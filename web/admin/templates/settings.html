@@ -194,7 +194,7 @@
       <div class="switch-row with-select">
         <div>
           <label for="recordings-until">A recording started on a channel</label>
-          <p id="recordings-until-text">Green or REC in Live TV or full screen records the channel from then on. While the guide shows a programme on it, the recording can stop at the programme's end, or run until it is stopped.</p>
+          <p id="recordings-until-text">Green or REC in Live TV or full screen records the channel from then on. While the guide shows a programme on it, the recording can stop at the programme's end, or run until it is stopped. This is every box's default; a box can choose otherwise in its Settings, under Recording Stops.</p>
         </div>
         <select id="recordings-until" name="until" aria-describedby="recordings-until-text">
           <option value="programme"{{if eq .Data.RecordUntil "programme"}} selected{{end}}>Stops when its programme ends</option>

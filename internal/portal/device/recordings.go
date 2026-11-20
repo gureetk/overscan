@@ -48,13 +48,25 @@ func recordingOf(r store.Recording) recording {
 		UntilStopped: r.UntilStopped, State: r.State, Error: r.Error}
 }
 
-// recordings answers GET recordings: whether the server records, and the
-// household's recordings that are scheduled or under way, by start.
+// recordings answers GET recordings: whether the server records; how a
+// recording started on a channel ends for a box that keeps the household's
+// setting, and the most hours one that runs until stopped may run (D99);
+// and the household's recordings that are scheduled or under way, by start.
 func (a *API) recordings(w http.ResponseWriter, r *http.Request, d store.Device) {
 	ctx := r.Context()
 	gb, err := a.store.RecordingsCap(ctx)
 	if err != nil {
 		a.internalError(w, "read the recordings' room", err)
+		return
+	}
+	until, err := a.store.RecordUntil(ctx)
+	if err != nil {
+		a.internalError(w, "read how long recordings run", err)
+		return
+	}
+	hours, err := a.store.RecordingHours(ctx)
+	if err != nil {
+		a.internalError(w, "read how long recordings run", err)
 		return
 	}
 	list, err := a.store.Recordings(ctx, 0, store.RecordingScheduled, store.RecordingRecording)
@@ -64,8 +76,10 @@ func (a *API) recordings(w http.ResponseWriter, r *http.Request, d store.Device)
 	}
 	out := struct {
 		On         bool        `json:"on"`
+		Until      string      `json:"until"`
+		MaxHours   int         `json:"max_hours"`
 		Recordings []recording `json:"recordings"`
-	}{On: gb > 0 && a.recorder != nil, Recordings: []recording{}}
+	}{On: gb > 0 && a.recorder != nil, Until: until, MaxHours: hours, Recordings: []recording{}}
 	for _, rec := range list {
 		if rec.AccountID == d.AccountID {
 			out.Recordings = append(out.Recordings, recordingOf(rec))
@@ -201,11 +215,26 @@ func (a *API) roomForOneMore(w http.ResponseWriter, ctx context.Context, account
 	return true
 }
 
+// recordUntil returns how a recording that box d starts on a channel ends,
+// store.RecordUntilProgramme or store.RecordUntilStopped: as the box chose,
+// or as the household's setting says for a box that keeps it (D99).
+func (a *API) recordUntil(r *http.Request, d store.Device) (string, error) {
+	s, err := a.deviceSettings(r, d)
+	if err != nil {
+		return "", err
+	}
+	if s.Record == store.RecordUntilProgramme || s.Record == store.RecordUntilStopped {
+		return s.Record, nil
+	}
+	return a.store.RecordUntil(r.Context())
+}
+
 // recordNow records a channel from now on (D98): until the end of the
-// programme that the guide shows on it, unless the household records until
-// stopped; with no programme, until it is stopped. One that runs until
-// stopped ends after the household's most hours. A channel that records
-// already gives the recording it has.
+// programme that the guide shows on it, unless the box, or the household
+// for a box that keeps its setting, records until stopped (D99); with no
+// programme, until it is stopped. One that runs until stopped ends after
+// the household's most hours. A channel that records already gives the
+// recording it has.
 func (a *API) recordNow(w http.ResponseWriter, r *http.Request, d store.Device, acct store.Account, entry store.PlayableEntry, req recordRequest) {
 	ctx := r.Context()
 	if entry.Locked && acct.PINHash != "" && !a.pinOK(w, r, d, acct, req.PIN) {
@@ -222,7 +251,7 @@ func (a *API) recordNow(w http.ResponseWriter, r *http.Request, d store.Device, 
 	if !a.roomForOneMore(w, ctx, acct.ID) {
 		return
 	}
-	until, err := a.store.RecordUntil(ctx)
+	until, err := a.recordUntil(r, d)
 	if err != nil {
 		a.internalError(w, "read how long recordings run", err)
 		return
