@@ -31,6 +31,7 @@ type LineupInfo struct {
 	Lineup
 	Accounts []string // the names of the accounts that see it, by name
 	Shown    int      // the channels it shows
+	Rules    int      // its rules (D107), on or off
 }
 
 // Lineups returns every lineup, the first made first.
@@ -39,7 +40,8 @@ func (s *Store) Lineups(ctx context.Context) ([]LineupInfo, error) {
 		SELECT l.id, l.name, l.created_at,
 			COALESCE((SELECT group_concat(name, char(31)) FROM (
 				SELECT a.name FROM accounts a WHERE a.lineup_id = l.id ORDER BY a.name COLLATE NOCASE)), ''),
-			(SELECT count(*)`+lineupEntryJoins+` WHERE e.lineup_id = l.id AND `+shownEntry+`)
+			(SELECT count(*)`+lineupEntryJoins+` WHERE e.lineup_id = l.id AND `+shownEntry+`),
+			(SELECT count(*) FROM lineup_rules r WHERE r.lineup_id = l.id)
 		FROM lineups l ORDER BY l.id`)
 	if err != nil {
 		return nil, fmt.Errorf("store: lineups: %w", err)
@@ -49,7 +51,7 @@ func (s *Store) Lineups(ctx context.Context) ([]LineupInfo, error) {
 	for rows.Next() {
 		var l LineupInfo
 		var created, accounts string
-		if err := rows.Scan(&l.ID, &l.Name, &created, &accounts, &l.Shown); err != nil {
+		if err := rows.Scan(&l.ID, &l.Name, &created, &accounts, &l.Shown, &l.Rules); err != nil {
 			return nil, fmt.Errorf("store: lineups: %w", err)
 		}
 		if l.CreatedAt, err = parseTime(created); err != nil {
@@ -93,6 +95,9 @@ func numberEverywhere(ctx context.Context, tx *sql.Tx, sourceID int64) error {
 		if err := numberChannels(ctx, tx, lineupID, sourceID, true); err != nil {
 			return err
 		}
+		if err := applyRules(ctx, tx, lineupID); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -106,9 +111,9 @@ func lineupNameError(err error) error {
 }
 
 // CopyLineup makes a lineup named name as a copy of another: its groups,
-// with their names, marks and the categories they hold, and its entries,
-// with their numbers, pins, names, groups, visibility and locks. It
-// returns the new lineup's ID.
+// with their names, marks and the categories they hold, its entries, with
+// their numbers, pins, names, groups, visibility and locks, and its rules,
+// which then run on it. It returns the new lineup's ID.
 func (s *Store) CopyLineup(ctx context.Context, from int64, name string) (int64, error) {
 	fail := func(err error) (int64, error) { return 0, fmt.Errorf("store: copy lineup %d: %w", from, err) }
 	var id int64
@@ -152,7 +157,13 @@ func (s *Store) CopyLineup(ctx context.Context, from int64, name string) (int64,
 				return err
 			}
 		}
-		return nil
+		// Its rules too, which then run on it (D107).
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO lineup_rules (lineup_id, position, spec)
+			SELECT ?1, position, spec FROM lineup_rules WHERE lineup_id = ?2`, id, from); err != nil {
+			return err
+		}
+		return applyRules(ctx, tx, id)
 	})
 	if errors.Is(err, ErrLineupExists) || errors.Is(err, ErrTooManyLineups) || errors.Is(err, ErrNotFound) {
 		return 0, err

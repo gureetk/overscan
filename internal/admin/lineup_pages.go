@@ -83,6 +83,14 @@ func (lv lineupView) URL(page int) template.URL {
 	return "/admin/lineup"
 }
 
+// RulesURL returns the address of the lineup's rules (D107).
+func (lv lineupView) RulesURL() template.URL {
+	if lv.Lineup != 0 {
+		return template.URL("/admin/lineup/rules?lineup=" + strconv.FormatInt(lv.Lineup, 10))
+	}
+	return "/admin/lineup/rules"
+}
+
 // GroupURL returns the address of a group's channels; -1 for all.
 func (lv lineupView) GroupURL(id int64) template.URL {
 	to := lineupView{Lineup: lv.Lineup, Page: 1}
@@ -226,6 +234,36 @@ func (r entryRow) RepairChoice() string {
 
 // Visibility names the entry's visibility as the forms do.
 func (r entryRow) Visibility() string { return visibilityNames[r.E.Visibility] }
+
+// RuleText says what the lineup's rules do to the entry (D107), leaving out
+// what the administrator's own edits undo; "" if nothing.
+func (r entryRow) RuleText() string {
+	e := r.E
+	var did []string
+	switch {
+	case e.Visibility != store.AsGroup:
+	case e.RuleHidden:
+		did = append(did, "hides it")
+	case e.RuleShown:
+		did = append(did, "shows it, whatever its group")
+	}
+	if e.RuleRenamed && !e.Renamed {
+		did = append(did, "names it")
+	}
+	if e.RuleMoved && !e.Moved {
+		did = append(did, "moves it to its group")
+	}
+	if e.RuleNumbered {
+		did = append(did, "numbers it")
+	}
+	if e.RuleLogo {
+		did = append(did, "gives it its logo")
+	}
+	if len(did) == 0 {
+		return ""
+	}
+	return "A rule " + andList(did) + "."
+}
 
 // lineupData reads what the page shows; with rows false, only what a row
 // needs.

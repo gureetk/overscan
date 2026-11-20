@@ -67,9 +67,10 @@ type CatalogChanges struct {
 // channels, in order, at the given time. It all happens in one transaction:
 // listed channels are added or updated, unlisted ones are marked missing,
 // channels missing for longer than MissingGrace are removed with their lineup
-// entries, new categories join a group of every lineup (D47, D106), and new
+// entries, new categories join a group of every lineup (D47, D106), new
 // channels join every lineup, under the number they want when that is free
-// and after the highest number otherwise (D40).
+// and after the highest number otherwise (D40), and every lineup's rules run
+// (D107).
 func (s *Store) ApplyCatalog(ctx context.Context, sourceID int64, channels []CatalogChannel, at time.Time) (CatalogChanges, error) {
 	var ch CatalogChanges
 	fail := func(err error) (CatalogChanges, error) {
@@ -230,6 +231,9 @@ func (s *Store) ApplyCatalog(ctx context.Context, sourceID int64, channels []Cat
 		if err := numberChannels(ctx, tx, lineupID, sourceID, false); err != nil {
 			return fail(err)
 		}
+		if err := applyRules(ctx, tx, lineupID); err != nil {
+			return fail(err)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fail(err)
@@ -268,14 +272,14 @@ func numberChannels(ctx context.Context, tx *sql.Tx, lineupID, sourceID int64, r
 	if renumber {
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE lineup_entries SET number = NULL
-			WHERE lineup_id = ? AND pinned = 0 AND channel_id IN (
+			WHERE lineup_id = ? AND pinned = 0 AND rule_pinned = 0 AND channel_id IN (
 				SELECT id FROM channels WHERE source_id = ? AND missing_since IS NOT NULL)`,
 			lineupID, sourceID); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE lineup_entries SET number = number + ?
-			WHERE lineup_id = ? AND pinned = 0 AND number IS NOT NULL AND channel_id IN (
+			WHERE lineup_id = ? AND pinned = 0 AND rule_pinned = 0 AND number IS NOT NULL AND channel_id IN (
 				SELECT id FROM channels WHERE source_id = ? AND missing_since IS NULL)`,
 			renumberOffset, lineupID, sourceID); err != nil {
 			return err
@@ -291,7 +295,7 @@ func numberChannels(ctx context.Context, tx *sql.Tx, lineupID, sourceID int64, r
 	held := map[int]holder{}
 	highest := 0
 	rows, err := tx.QueryContext(ctx, `
-		SELECT e.id, e.number, c.missing_since IS NOT NULL, e.pinned
+		SELECT e.id, e.number, c.missing_since IS NOT NULL, e.pinned OR e.rule_pinned
 		FROM lineup_entries e JOIN channels c ON c.id = e.channel_id
 		WHERE e.lineup_id = ? AND e.number < ?`,
 		lineupID, renumberOffset)
@@ -323,7 +327,7 @@ func numberChannels(ctx context.Context, tx *sql.Tx, lineupID, sourceID int64, r
 		SELECT c.id, COALESCE(e.id, 0), c.number, c.position
 		FROM channels c
 		LEFT JOIN lineup_entries e ON e.channel_id = c.id AND e.lineup_id = ?
-		WHERE c.source_id = ? AND c.missing_since IS NULL AND COALESCE(e.pinned, 0) = 0
+		WHERE c.source_id = ? AND c.missing_since IS NULL AND COALESCE(e.pinned, 0) = 0 AND COALESCE(e.rule_pinned, 0) = 0
 			AND (? OR e.id IS NULL OR e.number IS NULL)
 		ORDER BY c.position`,
 		lineupID, sourceID, renumber)
@@ -461,7 +465,7 @@ func groupCategories(ctx context.Context, tx *sql.Tx, lineupID, sourceID int64) 
 
 // removeEmptyGroups removes the groups of a lineup that Overscan made, that
 // the administrator has not changed, and that hold no category that exists
-// and no channel moved there.
+// and no channel moved there, by hand or by a rule.
 func removeEmptyGroups(ctx context.Context, tx *sql.Tx, lineupID int64) error {
 	_, err := tx.ExecContext(ctx, `
 		DELETE FROM lineup_groups
@@ -470,7 +474,8 @@ func removeEmptyGroups(ctx context.Context, tx *sql.Tx, lineupID int64) error {
 				SELECT 1 FROM lineup_categories m
 				JOIN categories k ON k.source_id = m.source_id AND k.kind = 'live' AND k.name = m.category
 				WHERE m.group_id = lineup_groups.id)
-			AND NOT EXISTS (SELECT 1 FROM lineup_entries e WHERE e.group_id = lineup_groups.id)`,
+			AND NOT EXISTS (SELECT 1 FROM lineup_entries e WHERE e.group_id = lineup_groups.id)
+			AND NOT EXISTS (SELECT 1 FROM lineup_entries e WHERE e.rule_group_id = lineup_groups.id)`,
 		lineupID)
 	return err
 }
@@ -501,15 +506,16 @@ type LineupChannel struct {
 }
 
 // lineupEntryJoins joins a lineup entry e to its channel c, the channel's
-// source s, its category k and the entry's group g: the one the entry names,
-// else its category's (D47).
+// source s, its category k and the entry's group g: the one the
+// administrator moved it to, else the one a rule moved it to (D107), else
+// its category's (D47).
 const lineupEntryJoins = `
 		FROM lineup_entries e
 		JOIN channels c ON c.id = e.channel_id
 		JOIN sources s ON s.id = c.source_id
 		LEFT JOIN categories k ON k.id = c.category_id
 		LEFT JOIN lineup_categories m ON m.lineup_id = e.lineup_id AND m.source_id = c.source_id AND m.category = k.name
-		LEFT JOIN lineup_groups g ON g.id = COALESCE(e.group_id, m.group_id)`
+		LEFT JOIN lineup_groups g ON g.id = COALESCE(e.group_id, e.rule_group_id, m.group_id)`
 
 // archiveDaysSQL is the days back that devices can play a channel's past
 // programmes from its source's archive (D81, D82, D84): those its source
@@ -523,18 +529,26 @@ const archiveDaysSQL = `(CASE WHEN s.type IN ('` + source.TypeXtream + `', '` + 
 // the setting says to lock (D86).
 const lockedEntry = `(e.locked = 1 OR COALESCE(g.locked, 0) = 1 OR c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultLock + `')`
 
+// entryName is an entry's name: the administrator's, else a rule's (D107),
+// else its channel's; entryLogo its logo's address: a rule's, else its
+// channel's, "" if none.
+const (
+	entryName = `COALESCE(e.name, e.rule_name, c.name)`
+	entryLogo = `COALESCE(e.rule_logo, c.logo)`
+)
+
 // shownEntry is true of an entry that devices see: numbered, not hidden on
-// its own or by its group, for a channel that its source still lists, from
+// its own, by a rule (D107) or by its group, for a channel that its source still lists, from
 // an enabled source, and not one that its source marks for adults, which
 // the setting says to hide (D86).
-const shownEntry = `e.number IS NOT NULL AND COALESCE(e.hidden, g.hidden, 0) = 0
+const shownEntry = `e.number IS NOT NULL AND COALESCE(e.hidden, e.rule_hidden, g.hidden, 0) = 0
 		AND c.missing_since IS NULL AND s.enabled = 1
 		AND NOT (c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultHide + `')`
 
 // LineupChannels returns what a lineup shows, by number.
 func (s *Store) LineupChannels(ctx context.Context, lineupID int64) ([]LineupChannel, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT e.id, c.id, e.number, COALESCE(e.name, c.name), c.logo, COALESCE(g.id, 0), COALESCE(g.name, ''),
+		SELECT e.id, c.id, e.number, `+entryName+`, `+entryLogo+`, COALESCE(g.id, 0), COALESCE(g.name, ''),
 			c.xmltv_id, `+archiveDaysSQL+`, `+lockedEntry+`, c.radio`+lineupEntryJoins+`
 		WHERE e.lineup_id = ? AND `+shownEntry+`
 		ORDER BY e.number`,
@@ -592,7 +606,7 @@ func (s *Store) PlayableEntry(ctx context.Context, entryID int64) (PlayableEntry
 	var sealed, sourceSealed []byte
 	var sourceName, sourceType string
 	err := s.db.QueryRowContext(ctx, `
-		SELECT e.id, e.lineup_id, c.id, c.source_id, COALESCE(e.name, c.name), c.stream_url, c.stream_secret,
+		SELECT e.id, e.lineup_id, c.id, c.source_id, `+entryName+`, c.stream_url, c.stream_secret,
 			s.name, s.type, (SELECT secret FROM source_secrets WHERE source_id = s.id), `+lockedEntry+`, COALESCE(c.repair, `+repairDefaultSQL+`), `+repairHLSSQL+`, c.radio`+
 		lineupEntryJoins+`
 		WHERE e.id = ? AND `+shownEntry,

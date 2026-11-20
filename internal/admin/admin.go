@@ -119,6 +119,10 @@ func (a *Admin) Handler() http.Handler {
 	mux.Handle("POST /admin/lineup/groups/{id}/{action}", a.page(a.lineupRoute(a.groupAction)))
 	mux.Handle("POST /admin/lineup/categories", a.page(a.lineupRoute(a.moveCategoryForm)))
 	mux.Handle("POST /admin/lineups/{action}", a.page(a.lineupRoute(a.lineupsAction)))
+	mux.Handle("GET /admin/lineup/rules", a.page(a.lineupRoute(a.rulesPage)))
+	mux.Handle("POST /admin/lineup/rules", a.page(a.lineupRoute(a.rulesAction)))
+	mux.Handle("POST /admin/lineup/rules/{id}", a.page(a.lineupRoute(a.rulesAction)))
+	mux.Handle("POST /admin/lineup/rules/{id}/{action}", a.page(a.lineupRoute(a.rulesAction)))
 	for _, k := range []struct{ path, kind string }{{"movies", store.KindMovie}, {"series", store.KindSeries}} {
 		mux.Handle("GET /admin/"+k.path, a.page(a.libraryPage(k.kind)))
 		mux.Handle("POST /admin/"+k.path+"/shelves/{id}/{action}", a.page(a.shelfAction(k.kind)))
@@ -184,15 +188,21 @@ type view struct {
 
 // pageNames are the pages in admin/templates, each of which defines
 // "content" for the layout.
-var pageNames = []string{"sign-in", "home", "password", "message", "devices", "accounts", "lineup", "library", "sources", "capture", "settings"}
+var pageNames = []string{"sign-in", "home", "password", "message", "devices", "accounts", "lineup", "rules", "library", "sources", "capture", "settings"}
+
+// pageParts are the parts in admin/templates that pages share, by page.
+var pageParts = map[string][]string{"lineup": {"lineup-nav"}, "rules": {"lineup-nav"}}
 
 func (a *Admin) parsePages() map[string]*template.Template {
 	funcs := template.FuncMap{"asset": a.assetPath, "csrfHeaders": csrfHeaders, "ago": ago, "dict": dict, "count": count, "plural": plural, "initial": initial, "size": sizeText,
 		"sub": func(a, b int) int { return a - b }}
 	pages := map[string]*template.Template{}
 	for _, name := range pageNames {
-		pages[name] = template.Must(template.New(name).Funcs(funcs).ParseFS(web.Admin,
-			"admin/templates/layout.html", "admin/templates/"+name+".html"))
+		files := []string{"admin/templates/layout.html", "admin/templates/" + name + ".html"}
+		for _, part := range pageParts[name] {
+			files = append(files, "admin/templates/"+part+".html")
+		}
+		pages[name] = template.Must(template.New(name).Funcs(funcs).ParseFS(web.Admin, files...))
 	}
 	return pages
 }

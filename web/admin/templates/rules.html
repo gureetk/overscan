@@ -1,0 +1,168 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+{{define "content"}}
+<div class="page-head">
+  <div>
+    <h1>Live TV</h1>
+    <p class="lead">Rules change many channels at once: they show, hide, rename, move, number or give a logo to the channels they match, and do so again after every refresh, for new channels too.</p>
+  </div>
+  <p class="hint"><strong>{{count .Data.Channels}}</strong> {{plural .Data.Channels "channel"}} in the lineup</p>
+</div>
+<div id="rules-main">
+<div class="lineup-bar">
+  {{- template "lineup-nav" (dict "D" .Data "Tab" "rules")}}
+</div>
+{{template "alerts" .}}
+<section class="card" id="rules" aria-labelledby="rules-title">
+  <h2 id="rules-title">Rules <span class="count quiet">{{len .Data.Rules}}</span></h2>
+  {{- if .Data.Rules}}
+  <ol class="rules">
+    {{- range .Data.Rules}}
+    <li id="rule-{{.ID}}" class="rule{{if .Off}} is-off{{end}}">
+      <div class="rule-head">
+        <span class="rule-place" aria-hidden="true">{{.Position}}</span>
+        <div class="rule-text">
+          <strong>{{.Text}}</strong>
+          <span class="muted">{{if .Off}}Off: it does nothing until it is on again. It matches {{count .Matches}} {{plural .Matches "channel"}}.{{else if .Matches}}It matches {{count .Matches}} {{plural .Matches "channel"}}.{{else}}It matches no channel now.{{end}}</span>
+        </div>
+        {{- if .Off}}<div class="chips"><span class="badge">Off</span></div>{{end}}
+        <div class="rule-moves">
+          {{- if not .First}}
+          <form method="post" action="/admin/lineup/rules/{{.ID}}/up" hx-post="/admin/lineup/rules/{{.ID}}/up" hx-target="#rules-main" hx-select="#rules-main" hx-swap="outerHTML">
+            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+            <input type="hidden" name="back" value="{{$.Data.View.Back}}">
+            <button type="submit" class="quiet icon" aria-label="Move rule {{.Position}} up" title="Move up">{{template "i-chevron-up"}}</button>
+          </form>
+          {{- end}}
+          {{- if not .Last}}
+          <form method="post" action="/admin/lineup/rules/{{.ID}}/down" hx-post="/admin/lineup/rules/{{.ID}}/down" hx-target="#rules-main" hx-select="#rules-main" hx-swap="outerHTML">
+            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+            <input type="hidden" name="back" value="{{$.Data.View.Back}}">
+            <button type="submit" class="quiet icon" aria-label="Move rule {{.Position}} down" title="Move down">{{template "i-chevron-down"}}</button>
+          </form>
+          {{- end}}
+        </div>
+      </div>
+      <details class="profile-edit rule-edit"{{if $.Data.IsOpen .ID}} open{{end}}>
+        <summary class="button quiet small">Change</summary>
+        {{- template "rule-form" (dict "R" ($.Data.FormRule .ID .Rule) "ID" .ID "Pre" (printf "r%d" .ID) "D" $.Data "CSRF" $.Session.CSRFToken)}}
+        <div class="profile-more">
+          <form method="post" action="/admin/lineup/rules/{{.ID}}/{{if .Off}}on{{else}}off{{end}}" hx-post="/admin/lineup/rules/{{.ID}}/{{if .Off}}on{{else}}off{{end}}" hx-target="#rules-main" hx-select="#rules-main" hx-swap="outerHTML">
+            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+            <input type="hidden" name="back" value="{{$.Data.View.Back}}">
+            <button type="submit">{{if .Off}}Turn it on{{else}}Turn it off{{end}}</button>
+          </form>
+          <form method="post" action="/admin/lineup/rules/{{.ID}}/remove" hx-post="/admin/lineup/rules/{{.ID}}/remove" hx-target="#rules-main" hx-select="#rules-main" hx-swap="outerHTML" hx-confirm="Remove rule {{.Position}}? What it does to channels is undone.">
+            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+            <input type="hidden" name="back" value="{{$.Data.View.Back}}">
+            <button type="submit" class="danger">Remove the rule</button>
+          </form>
+        </div>
+      </details>
+    </li>
+    {{- end}}
+  </ol>
+  <p class="hint">Rules run from the first to the last. Where two do the same to a channel, such as naming it, the later one wins. What you set on a channel yourself, on the Channels page, wins over every rule.</p>
+  {{- else}}
+  <p class="empty">No rules yet. A rule keeps working as sources change: it can hide every channel whose name holds <em>Backup</em>, say, or number a category's channels from 100.</p>
+  {{- end}}
+</section>
+<section class="card" id="new-rule" aria-labelledby="new-rule-title">
+  <h2 id="new-rule-title">Add a rule</h2>
+  {{- template "rule-form" (dict "R" .Data.NewRule "ID" 0 "Pre" "new" "D" .Data "CSRF" .Session.CSRFToken)}}
+</section>
+</div>
+{{end}}
+
+{{/* A rule's form: .R is the rule, .ID its ID (0 for a new one), .Pre what
+     its fields' IDs start with, .D the page's data. */}}
+{{define "rule-form"}}
+{{- $r := .R}}{{$p := .Pre}}
+<form method="post" action="/admin/lineup/rules{{if .ID}}/{{.ID}}{{end}}" hx-post="/admin/lineup/rules{{if .ID}}/{{.ID}}{{end}}" hx-target="#rules-main" hx-select="#rules-main" hx-swap="outerHTML" class="rule-form">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <input type="hidden" name="back" value="{{.D.View.Back}}">
+  {{- if $r.Off}}<input type="hidden" name="off" value="1">{{end}}
+  <fieldset class="rule-part">
+    <legend>The channels it acts on</legend>
+    <div class="form-grid">
+      <div class="field">
+        <label for="{{$p}}-source">Source</label>
+        <select id="{{$p}}-source" name="source">
+          <option value="0">Any source</option>
+          {{- range .D.Sources}}<option value="{{.ID}}"{{if eq .ID $r.Match.Source}} selected{{end}}>{{.Name}}</option>{{end}}
+        </select>
+      </div>
+      <div class="field">
+        <label for="{{$p}}-group">Category in its source</label>
+        <input id="{{$p}}-group" name="group" maxlength="200" value="{{$r.Match.Group}}" placeholder="Any">
+      </div>
+      <div class="field">
+        <label for="{{$p}}-name">Name in its source</label>
+        <input id="{{$p}}-name" name="name" maxlength="200" value="{{$r.Match.Name}}" placeholder="Any">
+      </div>
+      <div class="field">
+        <label for="{{$p}}-guide">Guide ID</label>
+        <input id="{{$p}}-guide" name="guide" maxlength="200" value="{{$r.Match.Guide}}" placeholder="Any">
+      </div>
+      <div class="field">
+        <label for="{{$p}}-quality">Quality in its name</label>
+        <select id="{{$p}}-quality" name="quality">
+          <option value="">Any</option>
+          {{- range .D.Qualities}}<option{{if eq . $r.Match.Quality}} selected{{end}}>{{.}}</option>{{end}}
+        </select>
+      </div>
+    </div>
+    <p class="hint">It acts on the channels that match everything filled in. In a pattern, <code>*</code> stands for any characters and <code>?</code> for one, so <code>Sport*</code> matches names that start with Sport; case does not count. Between slashes, such as <code>/\+1$/</code> for names that end in +1, a pattern is a regular expression, which can match anywhere.</p>
+  </fieldset>
+  <fieldset class="rule-part">
+    <legend>What it does</legend>
+    <div class="form-grid">
+      <div class="field">
+        <label for="{{$p}}-action">Action</label>
+        <select id="{{$p}}-action" name="action" class="rule-action" required>
+          {{- if not $r.Action}}<option value="">Choose…</option>{{end}}
+          {{- range .D.Actions}}<option value="{{.}}"{{if eq . $r.Action}} selected{{end}}>{{$.D.ActionName .}}</option>{{end}}
+        </select>
+      </div>
+      <fieldset class="field if-rename">
+        <legend>Rename</legend>
+        <div class="segmented">
+          <label><input type="radio" name="rename" value="name"{{if not $r.Replace}} checked{{end}}><span>A new name</span></label>
+          <label><input type="radio" name="rename" value="replace"{{if $r.Replace}} checked{{end}}><span>Replace text</span></label>
+        </div>
+      </fieldset>
+      <div class="field if-rename if-name">
+        <label for="{{$p}}-new-name">New name</label>
+        <input id="{{$p}}-new-name" name="new_name" maxlength="200" value="{{$r.Name}}">
+      </div>
+      <div class="field if-rename if-replace">
+        <label for="{{$p}}-replace">Text to replace</label>
+        <input id="{{$p}}-replace" name="replace" maxlength="200" value="{{$r.Replace}}" placeholder="Such as HD, or /\s*\(.*\)$/">
+      </div>
+      <div class="field if-rename if-replace">
+        <label for="{{$p}}-with">Replace it with</label>
+        <input id="{{$p}}-with" name="with" maxlength="200" value="{{$r.With}}" placeholder="Nothing">
+      </div>
+      <div class="field if-regroup">
+        <label for="{{$p}}-to-group">Group</label>
+        <input id="{{$p}}-to-group" name="to_group" maxlength="100" value="{{$r.Group}}" list="{{$p}}-groups">
+        <datalist id="{{$p}}-groups">{{range .D.Groups}}<option value="{{.Name}}">{{end}}</datalist>
+      </div>
+      <div class="field if-renumber">
+        <label for="{{$p}}-from">First number</label>
+        <input id="{{$p}}-from" name="from" class="num-input" type="number" min="1" max="999999" value="{{if $r.From}}{{$r.From}}{{end}}">
+      </div>
+      <div class="field if-logo">
+        <label for="{{$p}}-logo">Logo's address</label>
+        <input id="{{$p}}-logo" name="logo" type="url" maxlength="2048" value="{{$r.Logo}}" placeholder="https://">
+      </div>
+    </div>
+    <p class="hint if-rename">A new name replaces the whole name. <em>Replace text</em> changes part of the name, as the rules before it left it; in what replaces a regular expression, <code>$1</code> is its first group.</p>
+    <p class="hint if-regroup">A group of that name, made if the lineup has none.</p>
+    <p class="hint if-renumber">The channels it matches are numbered in a row from this number, in their order, and keep their numbers as others come. Numbers you pinned yourself are skipped, and channels that held the others get new numbers after the highest.</p>
+    <p class="hint if-logo">Devices load the logo from this address, so it must be one that they can reach.</p>
+  </fieldset>
+  <div class="form-buttons">
+    <button type="submit" class="primary">{{if .ID}}Save the rule{{else}}Add the rule{{end}}</button>
+  </div>
+</form>
+{{- end}}

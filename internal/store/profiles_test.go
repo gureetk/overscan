@@ -29,7 +29,15 @@ func TestProfilesMigration(t *testing.T) {
 	old.UseKey(secrets.NewRandomBox())
 	ids := addSources(t, old, xtreamSource("main"))
 	at := time.Date(2026, 12, 4, 10, 0, 0, 0, time.UTC)
-	if _, err := old.ApplyCatalog(ctx, ids["main"], []CatalogChannel{{IdentityKey: "a", Name: "Alpha", StreamURL: "http://provider.example/a"}}, at); err != nil {
+	// A channel and its entry, as schema 30 kept them: the store's code
+	// of today writes columns that it did not have.
+	if _, err := old.db.ExecContext(ctx, `
+		INSERT INTO channels (source_id, identity_key, name, stream_url, position, listed_at)
+		VALUES (?, 'a', 'Alpha', '', 1, '2026-12-04T10:00:00Z')`, ids["main"]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := old.db.ExecContext(ctx, `
+		INSERT INTO lineup_entries (lineup_id, channel_id, number) SELECT 1, id, 1 FROM channels`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := old.ApplyLibrary(ctx, ids["main"], KindMovie, filmCategories, films, at); err != nil {

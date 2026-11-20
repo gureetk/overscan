@@ -82,9 +82,9 @@ func (s *Store) LineupGroups(ctx context.Context, lineupID int64) ([]LineupGroup
 
 	rows, err = s.db.QueryContext(ctx, `
 		SELECT COALESCE(g.id, 0), count(*),
-			COALESCE(sum(e.number IS NOT NULL AND COALESCE(e.hidden, g.hidden, 0) = 0
+			COALESCE(sum(e.number IS NOT NULL AND COALESCE(e.hidden, e.rule_hidden, g.hidden, 0) = 0
 				AND NOT (c.adult = 1 AND `+adultMarksSQL+` = '`+AdultHide+`')), 0),
-			COALESCE(min(CASE WHEN COALESCE(e.hidden, g.hidden, 0) = 0 THEN e.number END), 0)`+lineupEntryJoins+`
+			COALESCE(min(CASE WHEN COALESCE(e.hidden, e.rule_hidden, g.hidden, 0) = 0 THEN e.number END), 0)`+lineupEntryJoins+`
 		WHERE e.lineup_id = ? AND c.missing_since IS NULL AND s.enabled = 1
 		GROUP BY COALESCE(g.id, 0)`,
 		lineupID)
@@ -268,7 +268,9 @@ func (s *Store) MergeLineupGroup(ctx context.Context, lineupID, from, into int64
 				return err
 			}
 		}
-		return nil
+		// A rule that moves channels to the merged group makes it again
+		// (D107).
+		return applyRules(ctx, tx, lineupID)
 	})
 }
 
@@ -285,7 +287,7 @@ func (s *Store) DeleteLineupGroup(ctx context.Context, lineupID, groupID int64) 
 			SELECT (SELECT count(*) FROM lineup_categories m
 					JOIN categories k ON k.source_id = m.source_id AND k.kind = 'live' AND k.name = m.category
 					WHERE m.group_id = ?1)
-				+ (SELECT count(*) FROM lineup_entries WHERE group_id = ?1)`,
+				+ (SELECT count(*) FROM lineup_entries WHERE group_id = ?1 OR rule_group_id = ?1)`,
 			groupID).Scan(&n); err != nil {
 			return err
 		}
@@ -354,6 +356,11 @@ type LineupEntry struct {
 	// channels.
 	Adult, AdultLocked, AdultHidden bool
 	Radio                           bool // its source lists it as a radio station (D87)
+
+	// What the lineup's rules did to it (D107): renamed it, moved it to a
+	// group, showed it (RuleShown), hid it (RuleHidden), gave it a logo or
+	// numbered it.
+	RuleRenamed, RuleMoved, RuleShown, RuleHidden, RuleLogo, RuleNumbered bool
 }
 
 // EntryQuery picks a lineup's entries.
@@ -380,7 +387,7 @@ func (s *Store) LineupEntries(ctx context.Context, lineupID int64, q EntryQuery)
 		args = append(args, *q.NotGroup)
 	}
 	if q.Text != "" {
-		where += ` AND COALESCE(e.name, c.name) LIKE ? ESCAPE '\'`
+		where += ` AND ` + entryName + ` LIKE ? ESCAPE '\'`
 		args = append(args, "%"+likeEscaper.Replace(q.Text)+"%")
 	}
 	var total int
@@ -392,7 +399,7 @@ func (s *Store) LineupEntries(ctx context.Context, lineupID int64, q EntryQuery)
 		limit = -1
 	}
 	rows, err := s.db.QueryContext(ctx, entrySelect+lineupEntryJoins+where+`
-		ORDER BY e.number IS NULL, e.number, COALESCE(e.name, c.name), e.id
+		ORDER BY e.number IS NULL, e.number, `+entryName+`, e.id
 		LIMIT ? OFFSET ?`, append(args, limit, max(q.Offset, 0))...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("store: entries of lineup %d: %w", lineupID, err)
@@ -425,20 +432,23 @@ func (s *Store) LineupEntry(ctx context.Context, lineupID, entryID int64) (Lineu
 }
 
 const entrySelect = `
-		SELECT e.id, c.id, c.source_id, s.name, COALESCE(e.number, 0), e.pinned, COALESCE(e.name, c.name), c.name,
+		SELECT e.id, c.id, c.source_id, s.name, COALESCE(e.number, 0), e.pinned, ` + entryName + `, c.name,
 			e.name IS NOT NULL, COALESCE(g.id, 0), COALESCE(g.name, ''), e.group_id IS NOT NULL, COALESCE(k.name, ''),
 			CASE e.hidden WHEN 0 THEN 1 WHEN 1 THEN 2 ELSE 0 END,
-			e.number IS NULL OR COALESCE(e.hidden, g.hidden, 0) = 1 OR c.missing_since IS NOT NULL,
-			c.missing_since IS NOT NULL, c.logo, e.locked, COALESCE(g.locked, 0),
+			e.number IS NULL OR COALESCE(e.hidden, e.rule_hidden, g.hidden, 0) = 1 OR c.missing_since IS NOT NULL,
+			c.missing_since IS NOT NULL, ` + entryLogo + `, e.locked, COALESCE(g.locked, 0),
 			COALESCE(c.repair, ` + repairDefaultSQL + `), c.repair, c.adult,
-			c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultLock + `', c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultHide + `', c.radio`
+			c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultLock + `', c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultHide + `', c.radio,
+			e.rule_name IS NOT NULL, e.rule_group_id IS NOT NULL, e.rule_hidden IS 0, e.rule_hidden IS 1,
+			e.rule_logo IS NOT NULL, e.rule_pinned`
 
 func scanEntry(row rowScanner) (LineupEntry, error) {
 	var e LineupEntry
 	var own sql.NullBool
 	err := row.Scan(&e.ID, &e.ChannelID, &e.SourceID, &e.Source, &e.Number, &e.Pinned, &e.Name, &e.ChannelName,
 		&e.Renamed, &e.GroupID, &e.Group, &e.Moved, &e.Category, &e.Visibility, &e.Hidden, &e.Missing, &e.Logo,
-		&e.Locked, &e.GroupLocked, &e.Repair, &own, &e.Adult, &e.AdultLocked, &e.AdultHidden, &e.Radio)
+		&e.Locked, &e.GroupLocked, &e.Repair, &own, &e.Adult, &e.AdultLocked, &e.AdultHidden, &e.Radio,
+		&e.RuleRenamed, &e.RuleMoved, &e.RuleShown, &e.RuleHidden, &e.RuleLogo, &e.RuleNumbered)
 	if own.Valid {
 		e.RepairOwn = &own.Bool
 	}
@@ -575,7 +585,13 @@ func (s *Store) SetEntriesRepair(ctx context.Context, lineupID int64, entryIDs [
 // number takes the pinned entry's old number, or, if it had none, goes after
 // the highest.
 func (s *Store) PinEntryNumber(ctx context.Context, lineupID, entryID int64, number int) error {
-	return s.inTx(ctx, func(tx *sql.Tx) error { return pinNumber(ctx, tx, lineupID, entryID, number) })
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := pinNumber(ctx, tx, lineupID, entryID, number); err != nil {
+			return err
+		}
+		// The rules number the others again around it (D107).
+		return applyRules(ctx, tx, lineupID)
+	})
 }
 
 func pinNumber(ctx context.Context, tx *sql.Tx, lineupID, entryID int64, number int) error {
@@ -615,7 +631,7 @@ func pinNumber(ctx context.Context, tx *sql.Tx, lineupID, entryID int64, number 
 			return err
 		}
 	}
-	_, err = tx.ExecContext(ctx, "UPDATE lineup_entries SET number = ?, pinned = 1 WHERE id = ?", number, entryID)
+	_, err = tx.ExecContext(ctx, "UPDATE lineup_entries SET number = ?, pinned = 1, rule_pinned = 0 WHERE id = ?", number, entryID)
 	return err
 }
 
@@ -624,6 +640,16 @@ func pinNumber(ctx context.Context, tx *sql.Tx, lineupID, entryID int64, number 
 // the number it has, unpinned.
 func (s *Store) ResetEntryNumber(ctx context.Context, lineupID, entryID int64) error {
 	return s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := resetNumber(ctx, tx, lineupID, entryID); err != nil {
+			return err
+		}
+		// A rule may number it now (D107).
+		return applyRules(ctx, tx, lineupID)
+	})
+}
+
+func resetNumber(ctx context.Context, tx *sql.Tx, lineupID, entryID int64) error {
+	{
 		var cur sql.NullInt64
 		var pinned, missing bool
 		var own, position int
@@ -669,7 +695,7 @@ func (s *Store) ResetEntryNumber(ctx context.Context, lineupID, entryID int64) e
 		}
 		_, err = tx.ExecContext(ctx, "UPDATE lineup_entries SET number = ? WHERE id = ?", wants, entryID)
 		return err
-	})
+	}
 }
 
 // NumberGroupFrom pins the numbers of the channels that devices see in a
@@ -710,7 +736,7 @@ func (s *Store) NumberGroupFrom(ctx context.Context, lineupID, groupID int64, fr
 			}
 		}
 		n = len(ids)
-		return nil
+		return applyRules(ctx, tx, lineupID)
 	})
 	return n, err
 }

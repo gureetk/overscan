@@ -175,7 +175,7 @@ func (s *Store) SearchProgrammes(ctx context.Context, lineupID int64, query stri
 // for Overscan's own. It returns ErrNotFound for an entry that devices do
 // not see.
 func (s *Store) EntryLogo(ctx context.Context, entryID int64) (logo, userAgent string, err error) {
-	err = s.db.QueryRowContext(ctx, "SELECT c.logo, s.user_agent"+lineupEntryJoins+" WHERE e.id = ? AND "+shownEntry,
+	err = s.db.QueryRowContext(ctx, "SELECT "+entryLogo+", s.user_agent"+lineupEntryJoins+" WHERE e.id = ? AND "+shownEntry,
 		entryID).Scan(&logo, &userAgent)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", ErrNotFound

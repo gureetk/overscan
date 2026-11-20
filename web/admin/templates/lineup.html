@@ -9,16 +9,7 @@
 </div>
 <div id="lineup-main">
 <div class="lineup-bar">
-  {{- if gt (len .Data.Lineups) 1}}
-  <form method="get" action="/admin/lineup" class="lineup-pick">
-    <label for="lineup-pick">Lineup</label>
-    <select id="lineup-pick" name="lineup" data-autosubmit>
-      {{- range .Data.Lineups}}<option value="{{.ID}}"{{if eq .ID $.Data.Current.ID}} selected{{end}}>{{.Name}}</option>{{end}}
-    </select>
-    <button type="submit" class="small js-hide">Show</button>
-  </form>
-  <p class="hint">{{if .Data.Current.Accounts}}Seen by {{.Data.SeenBy}}.{{else}}No account sees it yet: choose it for one on the <a href="/admin/accounts">Accounts</a> page.{{end}}</p>
-  {{- end}}
+  {{- template "lineup-nav" (dict "D" .Data "Tab" "channels")}}
   <details class="popover lineups-menu">
     <summary class="button small quiet">Lineups</summary>
     <div class="menu form-menu">
@@ -307,17 +298,18 @@
   <td class="num">{{if .E.Number}}{{.E.Number}}{{else}}–{{end}}{{if .E.Pinned}}<span class="pin" title="Pinned: renumbering never moves it">{{template "i-pin"}}<span class="sr">pinned</span></span>{{end}}</td>
   <td class="name">
     <a class="entry-link" href="{{.View.EditURL .E.ID}}" hx-get="{{.View.PanelURL .E.ID}}" hx-target="#channel-panel" hx-swap="outerHTML" hx-push-url="{{.View.EditURL .E.ID}}">{{.E.Name}}</a>
-    {{- if .E.Renamed}}<div class="note">From its source: {{.E.ChannelName}}</div>{{else if and .E.Moved .InGroup}}<div class="note">Moved here</div>{{end}}
+    {{- if or .E.Renamed .E.RuleRenamed}}<div class="note">From its source: {{.E.ChannelName}}</div>{{else if and (or .E.Moved .E.RuleMoved) .InGroup}}<div class="note">Moved here{{if not .E.Moved}} by a rule{{end}}</div>{{end}}
   </td>
   {{- if not .InGroup}}
-  <td class="group">{{if .E.Group}}{{.E.Group}}{{else}}<span class="muted">None</span>{{end}}{{if .E.Moved}}<div class="note">Moved here</div>{{end}}</td>
+  <td class="group">{{if .E.Group}}{{.E.Group}}{{else}}<span class="muted">None</span>{{end}}{{if or .E.Moved .E.RuleMoved}}<div class="note">Moved here{{if not .E.Moved}} by a rule{{end}}</div>{{end}}</td>
   {{- end}}
   <td class="state"><div class="chips">
     {{- if .E.Radio}}<span class="badge" title="Its source lists it as a radio station: boxes play it on their Radio screen">{{template "i-radio"}}Radio</span>{{end}}
     {{- if .E.Missing}}<span class="badge bad" title="Its source no longer lists it. Overscan keeps it, with its edits, for a week in case it comes back.">{{template "i-alert"}}Missing</span>
-    {{- else if .E.Hidden}}<span class="badge">{{template "i-eye-off"}}{{if eq .Visibility "hidden"}}Hidden{{else}}Hidden with its group{{end}}</span>
+    {{- else if .E.Hidden}}<span class="badge">{{template "i-eye-off"}}{{if or (eq .Visibility "hidden") .E.RuleHidden}}Hidden{{else}}Hidden with its group{{end}}</span>
     {{- else if not .E.Number}}<span class="badge">No number</span>{{end}}
     {{- if and (eq .Visibility "shown") (not .E.Missing)}}<span class="badge" title="Shown even if its group is hidden">{{template "i-eye"}}Always shown</span>{{end}}
+    {{- with .RuleText}}<span class="badge accent" title="{{.}}">{{template "i-rule"}}Rule</span>{{end}}
     {{- if .E.Locked}}<span class="badge locked" title="It needs the parental PIN to play">{{template "i-lock"}}Locked</span>
     {{- else if and .E.GroupLocked (not .InGroup)}}<span class="badge locked" title="Its group is locked: it needs the parental PIN to play">{{template "i-lock"}}Locked</span>{{end}}
     {{- if .E.Adult}}<span class="badge{{if .E.AdultLocked}} locked{{end}}" title="Its source marks it for adults{{if .E.AdultLocked}}, which Settings locks{{else if .E.AdultHidden}}, which Settings hides from devices{{else}}; Settings can lock or hide such channels{{end}}">{{if .E.AdultLocked}}{{template "i-lock"}}{{else if .E.AdultHidden}}{{template "i-eye-off"}}{{end}}For adults</span>{{end}}
@@ -339,6 +331,7 @@
       <p class="eyebrow">Channel{{if .E.Number}} {{.E.Number}}{{end}}</p>
       <h2 id="panel-title">{{.E.Name}}</h2>
       <p class="note">From {{.E.Source}}, as {{.E.ChannelName}}{{if .E.Category}}, in its category {{.E.Category}}{{end}}</p>
+      {{- with .RuleText}}<p class="note">{{.}} What you set here wins over the rules.</p>{{end}}
     </div>
     <a class="button quiet icon" href="{{.View.URL 0}}" hx-get="{{.View.URL 0}}" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" hx-push-url="true" aria-label="Close" title="Close">{{template "i-close"}}</a>
   </div>

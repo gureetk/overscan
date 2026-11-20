@@ -232,10 +232,11 @@ type apiLineup struct {
 	CreatedAt time.Time `json:"created_at"`
 	Accounts  []string  `json:"accounts"`
 	Shown     int       `json:"shown"`
+	Rules     int       `json:"rules"`
 }
 
 func lineupBody(l store.LineupInfo) apiLineup {
-	return apiLineup{ID: l.ID, Name: l.Name, CreatedAt: l.CreatedAt.UTC(), Accounts: l.Accounts, Shown: l.Shown}
+	return apiLineup{ID: l.ID, Name: l.Name, CreatedAt: l.CreatedAt.UTC(), Accounts: l.Accounts, Shown: l.Shown, Rules: l.Rules}
 }
 
 func (a *Admin) apiLineups(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
