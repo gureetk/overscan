@@ -35,6 +35,16 @@
       {{- end}}
       {{- end}}
       <p class="hint">A lineup is what an account's devices and players see of live TV. A copy starts with this lineup's channels, groups, numbers and edits, and then has its own; a source's new channels join every lineup. Each account chooses its lineup on the Accounts page.</p>
+      <div class="lineup-file">
+        <a class="button small" href="/admin/lineups/export" download>{{template "i-download"}}Export every lineup</a>
+        <form method="post" action="/admin/lineups/import" enctype="multipart/form-data" hx-post="/admin/lineups/import" hx-encoding="multipart/form-data" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" class="row-form">
+          <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+          <input type="hidden" name="back" value="{{.Data.View.Back}}">
+          <input type="file" name="file" accept=".yaml,.yml,application/yaml,text/yaml" aria-label="Lineup file" required>
+          <button type="submit">Import</button>
+        </form>
+      </div>
+      <p class="hint">The file keeps what was changed in each lineup, and its rules, to keep or to take to another server. Importing one adds its lineups as new ones, and changes none that are here.</p>
     </div>
   </details>
 </div>

@@ -58,3 +58,7 @@ A lineup has at most 200 rules. A copy of a lineup starts with a copy of its rul
 - **A copy without a guide:** *Use another channel's guide* with the name `Harbour News (Backup)`, from the channel named *Harbour News*.
 
 The guide that a rule gives or moves is the one that devices see everywhere: on the box, in the Stalker and Xtream APIs, in the playlists' guides, in the guide's search, for recordings set from the guide, and for past programmes played from an archive.
+
+## Keeping rules
+
+*Live TV* → *Lineups* → *Export every lineup* writes every lineup's rules to a file, with what was changed by hand, and importing the file adds its lineups, rules and all, on this server or another ([lineup-file.md](lineup-file.md)).

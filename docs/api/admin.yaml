@@ -1343,6 +1343,82 @@ paths:
           $ref: "#/components/responses/NoSuchLineup"
         "409":
           $ref: "#/components/responses/LineupConflict"
+  /lineups/file:
+    get:
+      tags: [lineups]
+      operationId: exportLineups
+      summary: Export every lineup
+      description: >-
+        One YAML file that holds, for each lineup, the groups made or changed in it with the categories they hold,
+        its channels changed by hand with their backups, and its rules (D112). Sources are named, and channels
+        known by their source and the key that their source gives them. The file holds no address, login or token.
+        `docs/lineup-file.md` describes it.
+      responses:
+        "200":
+          description: The file.
+          headers:
+            Content-Disposition:
+              description: Names the file `overscan-lineups-<date>.yaml`.
+              schema:
+                type: string
+          content:
+            application/yaml:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    post:
+      tags: [lineups]
+      operationId: importLineups
+      summary: Import the lineups of a file
+      description: >-
+        Adds every lineup of the file as a new lineup, all of them or none, and changes no lineup that is there.
+        Each starts as a lineup made anew, with every channel numbered as usual, then takes the file's groups,
+        channels, backups and rules. What names a source or a channel that this server lacks is left out, and
+        counted in `left_out`. A lineup whose name another has gets a number after it. No account sees the new
+        lineups until one is given them. A file has at most 2 MB (413), and a server at most 20 lineups
+        (`too_many_lineups`, 409).
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        description: A file that `GET /lineups/file` made, or one written as `docs/lineup-file.md` says.
+        content:
+          application/yaml:
+            schema:
+              type: string
+      responses:
+        "201":
+          description: The lineups added.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [lineups]
+                properties:
+                  lineups:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/LineupImport"
+        "400":
+          description: The file is not a lineup file, is of a later version, or holds a mistake, which the message names (`bad_file`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "409":
+          $ref: "#/components/responses/LineupConflict"
+        "413":
+          description: The file is larger than 2 MB (`bad_file`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /lineups/{id}:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -2956,6 +3032,36 @@ components:
         rules:
           type: integer
           description: How many rules it has (D107), on or off.
+    LineupImport:
+      type: object
+      required: [id, name, groups, channels, rules, left_out]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          description: The file's name for it, with a number after it if another lineup has that name.
+        groups:
+          type: integer
+          description: The groups it took from the file.
+        channels:
+          type: integer
+          description: The channels changed by hand that it took from the file.
+        rules:
+          type: integer
+        left_out:
+          type: object
+          description: What it left out, since this server has no such source or channel.
+          required: [categories, channels, backups, rules]
+          properties:
+            categories:
+              type: integer
+            channels:
+              type: integer
+            backups:
+              type: integer
+            rules:
+              type: integer
     Credentials:
       type: object
       additionalProperties: false

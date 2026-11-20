@@ -72,9 +72,11 @@ type Rule struct {
 // Match says which channels a rule acts on: those that meet every
 // condition it has. A rule without any matches every channel.
 type Match struct {
-	// Source is the ID of the channel's source; 0 for any. Exports name
-	// the source instead.
-	Source int64 `json:"source,omitempty" yaml:"-"`
+	// Source is the ID of the channel's source; 0 for any. A lineup file
+	// names the source instead, in SourceName, since IDs mean nothing on
+	// another server (D112).
+	Source     int64  `json:"source,omitempty" yaml:"-"`
+	SourceName string `json:"-" yaml:"source,omitempty"`
 	// Group is a pattern for the channel's category in its source, Name
 	// one for its name in its source, and Guide one for its guide ID.
 	Group string `json:"group,omitempty" yaml:"group,omitempty"`
