@@ -578,6 +578,7 @@ type TitleListing struct {
 	CategoryID int64  // its category's ID, 0 if none
 	Summary    TitleSummary
 	Details    *TitleDetails // nil until a device opened it
+	Container  string        // a film's file extension, "" if not known
 }
 
 // TitlePage returns a page of the films or of the series that devices see:
@@ -624,7 +625,7 @@ func (s *Store) TitlePage(ctx context.Context, kind string, shelfID int64, text,
 		sort = "t.name COLLATE NOCASE, t.id"
 	}
 	out, err := s.listings(ctx, what, `SELECT `+titleRowColumns+`, COALESCE(c.name, ''), COALESCE(t.category_id, 0),
-		t.summary, t.details`+from+where+` ORDER BY `+sort+` LIMIT ? OFFSET ?`,
+		t.summary, t.details, t.container`+from+where+` ORDER BY `+sort+` LIMIT ? OFFSET ?`,
 		append(args, max(0, limit), max(0, offset))...)
 	if err != nil {
 		return nil, 0, err

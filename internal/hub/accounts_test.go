@@ -142,3 +142,85 @@ func TestAccountLimitOnSharedTuner(t *testing.T) {
 		t.Errorf("RoomForChannel: %v", err)
 	}
 }
+
+// Players of the outputs count against their account's limit, and what
+// they play stops when the administrator stops them: by account and
+// output, leaving the others (D104).
+func TestStopPlayers(t *testing.T) {
+	h := newHarness(t, 0)
+	sam, _ := h.accountDevices("Sam", 0)
+	viaPlaylist := h.hub.Player(store.HouseholdAccount, "m3u", "192.0.2.10", "Kodi/21.1 (fictional)")
+	viaLogin := h.hub.Player(store.HouseholdAccount, "xtream", "192.0.2.10", "Kodi/21.1 (fictional)")
+	samPlayer := h.hub.Player(sam, "xtream", "192.0.2.11", "VLC/3.0 (fictional)")
+	if viaPlaylist == viaLogin || !IsPlayer(viaPlaylist) || !IsPlayer(samPlayer) {
+		t.Fatalf("players %d, %d, %d", viaPlaylist, viaLogin, samPlayer)
+	}
+	for _, p := range []int64{viaPlaylist, viaLogin, samPlayer} {
+		resp := h.play(h.link(p, "live/1"))
+		defer resp.Body.Close()
+	}
+	if n := h.hub.AccountStreams(store.HouseholdAccount); n != 2 {
+		t.Errorf("the household's streams: %d, want 2", n)
+	}
+	if n := h.hub.AccountStreams(sam); n != 1 {
+		t.Errorf("Sam's streams: %d, want 1", n)
+	}
+	n := h.hub.StopPlayers(func(p Player) bool { return p.AccountID == store.HouseholdAccount && p.Output == "xtream" },
+		"the account's login changed")
+	if n != 1 {
+		t.Errorf("stopped %d streams, want 1", n)
+	}
+	if n := h.hub.AccountStreams(store.HouseholdAccount); n != 1 {
+		t.Errorf("the household's streams after: %d, want 1", n)
+	}
+	if n := h.hub.AccountStreams(sam); n != 1 {
+		t.Errorf("Sam's streams after: %d, want 1", n)
+	}
+	if !strings.Contains(h.logs.String(), `reason="the account's login changed"`) {
+		t.Errorf("the log does not say why:\n%s", h.logs.String())
+	}
+}
+
+// IsToken tells the hub's tokens from anything else, such as a username in
+// an output's path that shares the hub's /live/ prefix.
+func TestIsToken(t *testing.T) {
+	h := newHarness(t, 0)
+	link := h.hub.Link(1, h.entries["live/1"])
+	token := strings.TrimSuffix(strings.TrimPrefix(link, "/live/"), ".ts")
+	if !h.hub.IsToken(token) {
+		t.Errorf("IsToken(%q) = false", token)
+	}
+	for _, s := range []string{"", "alex", token[:len(token)-1], strings.Repeat("A", len(token))} {
+		if h.hub.IsToken(s) {
+			t.Errorf("IsToken(%q) = true", s)
+		}
+	}
+}
+
+// A player whose account ends is stopped within a sweep (D105).
+func TestPlayersOfAnEndedAccount(t *testing.T) {
+	h := newHarness(t, 0)
+	ctx := context.Background()
+	sam, _ := h.accountDevices("Sam", 0)
+	player := h.hub.Player(sam, "xtream", "192.0.2.11", "VLC/3.0 (fictional)")
+	household := h.hub.Player(store.HouseholdAccount, "m3u", "192.0.2.10", "Kodi/21.1 (fictional)")
+	for _, p := range []int64{player, household} {
+		resp := h.play(h.link(p, "live/1"))
+		defer resp.Body.Close()
+	}
+	h.hub.stopEndedPlayers(ctx)
+	if n := len(h.hub.Streams()); n != 2 {
+		t.Fatalf("streams before Sam's end: %d", n)
+	}
+	if err := h.hub.store.SetAccountExpiry(ctx, sam, h.hub.now().Add(-time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	h.hub.stopEndedPlayers(ctx)
+	streams := h.hub.Streams()
+	if len(streams) != 1 || streams[0].DeviceID != household {
+		t.Errorf("streams after Sam's end: %+v", streams)
+	}
+	if !strings.Contains(h.logs.String(), `reason="the account has ended"`) {
+		t.Errorf("the log does not say why:\n%s", h.logs.String())
+	}
+}

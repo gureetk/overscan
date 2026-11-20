@@ -3,20 +3,25 @@
 package hub
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 	"unicode"
+
+	"overscan.gureet.ca/internal/store"
 )
 
 // The outputs serve players that are not devices of their own: a player
-// signs in as an account, with its playlist token or its login (D103). The
-// hub knows each one, in memory, by its account, its address and its user
-// agent, and gives it a device ID of PlayerBase or more, so that its
-// streams count against its account's limit as a device's do (D102), and a
-// player that changes channel replaces its own stream at a full source or
-// account, as a box does (D36). Two players on one address with the same
-// user agent count as one, as they do behind a proxy.
+// signs in as an account, with its playlist token or its login (D103,
+// D104). The hub knows each one, in memory, by its account, the output it
+// came through, its address and its user agent, and gives it a device ID of
+// PlayerBase or more, so that its streams count against its account's
+// limit as a device's do (D102), and a player that changes channel replaces
+// its own stream at a full source or account, as a box does (D36). Two
+// players on one address with the same user agent count as one, as they do
+// behind a proxy.
 
 // PlayerBase is the lowest device ID of a player that an output serves.
 // The store's devices never reach it.
@@ -26,6 +31,7 @@ const PlayerBase int64 = 1 << 40
 type Player struct {
 	ID        int64
 	AccountID int64
+	Output    string // the output it came through, such as "m3u" or "xtream"
 	Address   string // its IP address
 	Agent     string // its user agent, cut short; "" if it sent none
 	Seen      time.Time
@@ -45,15 +51,17 @@ func IsPlayer(deviceID int64) bool { return deviceID >= PlayerBase }
 // playerKey is how the hub finds a player again.
 type playerKey struct {
 	account int64
+	output  string
 	address string
 	agent   string
 }
 
-// Player returns the device ID of the player of an account at an address
-// with a user agent, remembering a new one.
-func (h *Hub) Player(accountID int64, address, agent string) int64 {
+// Player returns the device ID of the player of an account that came
+// through an output, at an address with a user agent, remembering a new
+// one.
+func (h *Hub) Player(accountID int64, output, address, agent string) int64 {
 	agent = cleanAgent(agent)
-	k := playerKey{accountID, address, agent}
+	k := playerKey{accountID, output, address, agent}
 	now := h.now()
 	h.playersMu.Lock()
 	defer h.playersMu.Unlock()
@@ -76,12 +84,13 @@ func (h *Hub) Player(accountID int64, address, agent string) int64 {
 			}
 		}
 		if len(h.players) >= maxPlayers && oldest != nil {
-			delete(h.players, playerKey{oldest.AccountID, oldest.Address, oldest.Agent})
+			delete(h.players, playerKey{oldest.AccountID, oldest.Output, oldest.Address, oldest.Agent})
 			delete(h.playerByID, oldest.ID)
 		}
 	}
 	h.nextPlayer++
-	p := &Player{ID: PlayerBase + h.nextPlayer, AccountID: accountID, Address: address, Agent: agent, Seen: now}
+	p := &Player{ID: PlayerBase + h.nextPlayer, AccountID: accountID, Output: output, Address: address, Agent: agent,
+		Seen: now}
 	h.players[k] = p
 	h.playerByID[p.ID] = p
 	return p.ID
@@ -120,6 +129,70 @@ func (p Player) Describe() string {
 		name = f[0]
 	}
 	return name + " at " + p.Address
+}
+
+// StopPlayers ends the streams of the players that match, and returns how
+// many it ended: when an output is turned off, or a token or a login that
+// opened them no longer opens anything, what they play stops too.
+func (h *Hub) StopPlayers(match func(Player) bool, reason string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var stop []*session
+	for _, s := range h.sessions {
+		if s.shared || !IsPlayer(s.deviceID) {
+			continue
+		}
+		p, ok := h.PlayerOf(s.deviceID)
+		if !ok {
+			// One that the hub no longer remembers is matched by its
+			// account alone.
+			p = Player{ID: s.deviceID, AccountID: s.account}
+		}
+		if match(p) {
+			stop = append(stop, s)
+		}
+	}
+	for _, s := range stop {
+		h.end(s, reason)
+	}
+	return len(stop)
+}
+
+// stopEndedPlayers ends the streams of the players whose account has ended
+// or is gone (D95, D105): a box stops by itself when its account ends, and
+// a player is stopped.
+func (h *Hub) stopEndedPlayers(ctx context.Context) {
+	accounts := map[int64]bool{}
+	h.mu.Lock()
+	for _, s := range h.sessions {
+		if IsPlayer(s.deviceID) && !s.shared && s.account != 0 {
+			accounts[s.account] = true
+		}
+	}
+	h.mu.Unlock()
+	now := h.now()
+	for id := range accounts {
+		acct, err := h.store.Account(ctx, id)
+		reason := "the account has ended"
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			reason = "the account was removed"
+		case err != nil:
+			h.log.Warn("cannot look up an account whose players play", "account", id, "error", err)
+			continue
+		case !acct.Ended(now):
+			continue
+		}
+		h.StopPlayers(func(p Player) bool { return p.AccountID == id }, reason)
+	}
+}
+
+// IsToken reports whether s is the token of a link that the hub made: an
+// output whose paths share the hub's /live/ prefix hands such a path to
+// the hub.
+func (h *Hub) IsToken(s string) bool {
+	_, ok := h.verify(s)
+	return ok
 }
 
 // ServeLink serves a link that the hub made for a player, as if the

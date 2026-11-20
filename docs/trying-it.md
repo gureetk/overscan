@@ -114,9 +114,9 @@ This is for an app with a Stalker portal option, which talks to the server's API
 
 `devices list` shows every device and its state. [`compatibility.md`](compatibility.md) says how to connect OTT Navigator and TiviMate, and StbEmu, which runs Overscan's page as a box does, and what each did when tried.
 
-## 5. Players: a playlist and a guide
+## 5. Players: a playlist and a guide, or a login
 
-Players such as Kodi, VLC or TiviMate can read an account's playlist and guide, once *Accounts* → *Outputs for players* is on, and the account's own *Playlist and guide*. [`outputs.md`](outputs.md) says how, and what the player gets. The outputs answer players on the server's own networks only, until you say otherwise.
+Players such as Kodi, VLC or TiviMate can read an account's playlist and guide, once *Accounts* → *Outputs for players* is on, and the account's own *Playlist and guide*. Players that sign in to an Xtream server, such as TiviMate or OTT Navigator, can sign in with an account's login instead, once it has one and its *Players sign in as … with its login* is on; they get the films and series too. [`outputs.md`](outputs.md) says how, and what the player gets. The outputs answer players on the server's own networks only, until you say otherwise.
 
 The debug playlist, for the administrator alone, is still there:
 

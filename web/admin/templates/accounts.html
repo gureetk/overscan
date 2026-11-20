@@ -133,6 +133,19 @@
           <p class="hint">{{if not $.Data.OutputsOn}}The outputs are off: turn them on above as well. {{end}}Give a player the playlist's address; most read the guide from it, and others take the guide's address too. The addresses need no password, so treat them as one: making new ones stops the old.</p>
 
           <h3>Login</h3>
+          <form method="post" action="/admin/accounts/{{.ID}}/xtream" hx-post="/admin/accounts/{{.ID}}/xtream" hx-trigger="change" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="switch-row">
+            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+            <input class="switch" type="checkbox" id="xtream-{{.ID}}" name="on" value="1"{{if .Outputs.Xtream}} checked{{end}}>
+            <div>
+              <label for="xtream-{{.ID}}">Players sign in as {{.Name}} with its login</label>
+              <noscript><button class="small" type="submit">Save</button></noscript>
+            </div>
+          </form>
+          {{- if .Server}}
+          <dl class="facts-list addresses">
+            <div><dt>Server</dt><dd class="mono">{{.Server}}</dd></div>
+          </dl>
+          {{- end}}
           <form method="post" action="/admin/accounts/{{.ID}}/login" hx-post="/admin/accounts/{{.ID}}/login" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="login-form">
             <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
             <div class="field">
@@ -151,7 +164,7 @@
             <button type="submit">Remove the login</button>
           </form>
           {{- end}}
-          <p class="hint">For players other than the boxes, such as TiviMate or Kodi, which sign in with it through Overscan's outputs; they start off. Players send the password in the addresses they ask for, so give it a password of its own, never this admin's or a source's. A password holds letters without accents, digits, '.', '_', '-' and '~'.</p>
+          <p class="hint">{{if and .Outputs.Xtream (not $.Data.OutputsOn)}}The outputs are off: turn them on above as well. {{end}}{{if and .Outputs.Xtream (not .Username)}}Give it a login below first. {{end}}Players such as TiviMate or OTT Navigator sign in with it as they do to an Xtream server: give them this server's address and the login. They send the password in the addresses they ask for, so give it a password of its own, never this admin's or a source's. A password holds letters without accents, digits, '.', '_', '-' and '~'.</p>
 
           {{- if not .Household}}
           <div class="profile-more">

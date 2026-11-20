@@ -18,10 +18,11 @@ import (
 // fakeStreams stands in for the hub.
 type fakeStreams []hub.Stream
 
-func (f fakeStreams) Streams() []hub.Stream { return f }
-func (f fakeStreams) CanRepair() bool       { return true }
-func (f fakeStreams) CanConvert() bool      { return true }
-func (f fakeStreams) Encoder() hub.Encoder  { return hub.Encoder{H264: true, ToneMap: true} }
+func (f fakeStreams) Streams() []hub.Stream                         { return f }
+func (f fakeStreams) CanRepair() bool                               { return true }
+func (f fakeStreams) CanConvert() bool                              { return true }
+func (f fakeStreams) Encoder() hub.Encoder                          { return hub.Encoder{H264: true, ToneMap: true} }
+func (f fakeStreams) StopPlayers(func(hub.Player) bool, string) int { return 0 }
 
 // withActivity gives the test admin the lineup of withLineup, a device that
 // plays a channel, one that waits, and a captured request.

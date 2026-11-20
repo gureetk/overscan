@@ -23,6 +23,7 @@ import (
 	"overscan.gureet.ca/internal/portal/device"
 	"overscan.gureet.ca/internal/portal/m3u"
 	"overscan.gureet.ca/internal/portal/stalker"
+	"overscan.gureet.ca/internal/portal/xtream"
 	"overscan.gureet.ca/internal/recorder"
 	"overscan.gureet.ca/internal/store"
 )
@@ -110,6 +111,11 @@ func New(cfg config.Config, log *slog.Logger, version string, svc Services) *Ser
 	// turns them on.
 	logins := admin.NewLogins(svc.Store)
 	m3u.New(svc.Store, svc.Hub, logins, log).Register(mux)
+	xo := xtream.New(svc.Store, svc.Hub, logins, log)
+	if svc.Library != nil {
+		xo.UseLibrary(svc.Library)
+	}
+	xo.Register(mux)
 	mux.HandleFunc("GET /debug/lineup.m3u", s.handleDebugLineup)
 	mux.HandleFunc("GET /debug/play/{entry}", s.handleDebugPlay)
 	s.handler = mux

@@ -420,3 +420,92 @@ func TestOutputsOnAccountsPage(t *testing.T) {
 		t.Errorf("settings: status %d, %s", rec.Code, rec.Body)
 	}
 }
+
+// stopRecorder is a hub that records which players the admin stops, of
+// three: the household's through its playlist, on the LAN, and through its
+// login, from outside; and another account's through its login.
+type stopRecorder struct {
+	fakeStreams
+	stopped []string // each call: its reason, then the players it matched
+}
+
+func (s *stopRecorder) StopPlayers(match func(hub.Player) bool, reason string) int {
+	players := []hub.Player{
+		{AccountID: householdAccount, Output: "m3u", Address: "192.168.1.20"},
+		{AccountID: householdAccount, Output: "xtream", Address: "203.0.113.7"},
+		{AccountID: householdAccount + 1, Output: "xtream", Address: "192.168.1.21"},
+	}
+	var hit []string
+	for i, p := range players {
+		if match(p) {
+			hit = append(hit, fmt.Sprint(i))
+		}
+	}
+	s.stopped = append(s.stopped, reason+": "+strings.Join(hit, ","))
+	return len(hit)
+}
+
+// The Accounts page lets an account's players sign in with its login
+// (D104), and shows them where; what a switch, a login or a token let a
+// player open stops when it no longer would.
+func TestXtreamOnAccountsPage(t *testing.T) {
+	ta := newTestAdmin(t)
+	ta.setPassword("correct horse")
+	c, csrf := ta.signIn("correct horse")
+	hx := []string{"HX-Request", "true"}
+	ctx := context.Background()
+	ta.UseSupport(Support{Listen: ":8080"})
+	hubs := &stopRecorder{}
+	ta.UseStreams(hubs)
+	post := func(path string, form url.Values) string {
+		t.Helper()
+		form.Set("csrf", csrf)
+		rec := ta.do("POST", path, form, c, hx...)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status %d\n%s", path, rec.Code, rec.Body)
+		}
+		return rec.Body.String()
+	}
+
+	post("/admin/accounts/outputs/on", url.Values{"on": {"1"}})
+	page := post("/admin/accounts/1/xtream", url.Values{"on": {"1"}})
+	if a, _ := ta.st.Account(ctx, householdAccount); !a.Outputs.Xtream || !strings.Contains(page, "once it has one") ||
+		!strings.Contains(page, "Give it a login below first.") {
+		t.Errorf("the switch without a login: %+v", a.Outputs)
+	}
+	page = post("/admin/accounts/1/login", url.Values{"username": {"alex"}, "password": {"correct-horse-battery"}})
+	if !strings.Contains(page, `<dt>Server</dt><dd class="mono">http://example.com:8080</dd>`) ||
+		!strings.Contains(page, `value="alex"`) || strings.Contains(page, "below first") {
+		t.Errorf("the address is not shown:\n%s", page)
+	}
+	if len(hubs.stopped) != 0 {
+		t.Errorf("a first login stopped players: %v", hubs.stopped)
+	}
+	post("/admin/accounts/1/login", url.Values{"username": {"alex"}, "password": {"another-horse-battery"}})
+	post("/admin/accounts/outputs/anywhere", url.Values{"on": {"1"}})
+	post("/admin/accounts/outputs/anywhere", url.Values{})
+	post("/admin/accounts/1/playlist", url.Values{"on": {"1"}})
+	post("/admin/accounts/1/token", url.Values{})
+	post("/admin/accounts/1/xtream", url.Values{})
+	post("/admin/accounts/1/remove-login", url.Values{})
+	post("/admin/accounts/1/expiry", url.Values{"date": {"2001-01-01"}})
+	post("/admin/accounts/outputs/on", url.Values{})
+	want := []string{
+		"the account's login changed: 1",
+		"the outputs answer players on the server's own networks only: 1",
+		"the account's playlist has new addresses: 0",
+		"the account's Xtream login was turned off: 1",
+		"the account's login was removed: 1",
+		"the account has ended: 0,1",
+		"the outputs were turned off: 0,1,2",
+	}
+	if strings.Join(hubs.stopped, "\n") != strings.Join(want, "\n") {
+		t.Errorf("stopped:\n%s\nwant:\n%s", strings.Join(hubs.stopped, "\n"), strings.Join(want, "\n"))
+	}
+	// Through the API, an account's outputs turned off stop its players.
+	hubs.stopped = nil
+	rec := ta.apiDo("PATCH", "accounts/1", `{"outputs": {"m3u": false, "xtream": false}}`, c, csrfHeader, csrf)
+	if rec.Code != http.StatusOK || len(hubs.stopped) != 1 || hubs.stopped[0] != "the account's playlist was turned off: 0" {
+		t.Errorf("the API: status %d, stopped %v", rec.Code, hubs.stopped)
+	}
+}

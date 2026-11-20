@@ -428,6 +428,7 @@ func (h *Hub) Run(ctx context.Context) {
 			h.mu.Lock()
 			h.sweep(h.now())
 			h.mu.Unlock()
+			h.stopEndedPlayers(ctx)
 		}
 	}
 }

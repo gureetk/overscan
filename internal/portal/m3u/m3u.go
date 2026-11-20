@@ -104,24 +104,6 @@ func (o *Output) failed(w http.ResponseWriter, what string, err error) {
 	http.Error(w, "internal error", http.StatusInternalServerError)
 }
 
-// channels returns the channels that an account's players see: those its
-// lineup shows, without the locked ones once it has a parental PIN, since
-// a player cannot ask for one (D55, D85).
-func (o *Output) channels(ctx context.Context, acct store.Account) ([]store.LineupChannel, error) {
-	all, err := o.store.LineupChannels(ctx, acct.LineupID)
-	if err != nil {
-		return nil, err
-	}
-	out := all[:0]
-	for _, c := range all {
-		if c.Locked && acct.PINHash != "" {
-			continue
-		}
-		out = append(out, c)
-	}
-	return out, nil
-}
-
 // attr makes s safe inside a double-quoted attribute of a playlist.
 func attr(s string) string {
 	return strings.NewReplacer(`"`, "'", "\r", " ", "\n", " ").Replace(s)
@@ -154,15 +136,32 @@ func (o *Output) playlist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	list, err := o.channels(ctx, acct)
+	list, err := output.Channels(ctx, o.store, acct)
 	if err != nil {
 		o.failed(w, "list an account's channels", err)
 		return
 	}
-	base := output.Base(r)
-	guide := base + "/epg/" + token + ".xml.gz"
+	base := output.Base(r) + "/playlist/" + token
+	o.log.Info("a player read its playlist", "account", acct.Name, "player", output.ClientAddress(r), "channels", len(list))
+	WritePlaylist(w, list, output.Base(r), output.Base(r)+"/epg/"+token+".xml.gz", Links{
+		Stream:  func(entryID int64) string { return base + "/" + strconv.FormatInt(entryID, 10) + ".ts" },
+		Archive: func(entryID int64) string { return base + "/archive/" + strconv.FormatInt(entryID, 10) + ".ts" },
+	})
+}
+
+// Links makes a playlist's addresses: a channel's stream, and the address
+// of its past programmes, to which the playlist adds start={utc} and
+// end={utcend}.
+type Links struct {
+	Stream  func(entryID int64) string
+	Archive func(entryID int64) string
+}
+
+// WritePlaylist answers with an M3U playlist of channels, in their order,
+// that names guide as its guide; logos are addresses under base.
+func WritePlaylist(w http.ResponseWriter, list []store.LineupChannel, base, guide string, links Links) {
 	var b strings.Builder
-	fmt.Fprintf(&b, "#EXTM3U url-tvg=\"%s\" x-tvg-url=\"%s\"\n", guide, guide)
+	fmt.Fprintf(&b, "#EXTM3U url-tvg=\"%s\" x-tvg-url=\"%s\"\n", attr(guide), attr(guide))
 	for _, c := range list {
 		fmt.Fprintf(&b, "#EXTINF:-1 tvg-id=\"%s\" tvg-name=\"%s\" tvg-chno=\"%d\"", GuideID(c.EntryID), attr(c.Name), c.Number)
 		if logo := artwork.LogoPath(c.EntryID, c.Logo); logo != "" {
@@ -175,12 +174,11 @@ func (o *Output) playlist(w http.ResponseWriter, r *http.Request) {
 			b.WriteString(` radio="true"`)
 		}
 		if c.ArchiveDays > 0 {
-			fmt.Fprintf(&b, ` catchup="default" catchup-source="%s/playlist/%s/archive/%d.ts?start={utc}&end={utcend}" catchup-days="%d"`,
-				base, token, c.EntryID, c.ArchiveDays)
+			fmt.Fprintf(&b, ` catchup="default" catchup-source="%s?start={utc}&end={utcend}" catchup-days="%d"`,
+				attr(links.Archive(c.EntryID)), c.ArchiveDays)
 		}
-		fmt.Fprintf(&b, ",%s\n%s/playlist/%s/%d.ts\n", title(c.Name), base, token, c.EntryID)
+		fmt.Fprintf(&b, ",%s\n%s\n", title(c.Name), links.Stream(c.EntryID))
 	}
-	o.log.Info("a player read its playlist", "account", acct.Name, "player", output.ClientAddress(r), "channels", len(list))
 	w.Header().Set("Content-Type", "audio/x-mpegurl; charset=utf-8")
 	w.Header().Set("Content-Disposition", `inline; filename="overscan.m3u"`)
 	w.Header().Set("Cache-Control", "no-store")
@@ -208,7 +206,7 @@ func (o *Output) guide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	list, err := o.channels(ctx, acct)
+	list, err := output.Channels(ctx, o.store, acct)
 	if err != nil {
 		o.failed(w, "list an account's channels", err)
 		return
@@ -367,7 +365,7 @@ func (o *Output) live(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	player := output.Player(o.hub, acct.ID, r)
+	player := output.Player(o.hub, acct.ID, output.M3U, r)
 	o.hub.ServeLink(w, r, output.Continuous(o.hub.Link(player, entry)))
 }
 
@@ -402,7 +400,7 @@ func (o *Output) archive(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "start and end must name a past time within the channel's archive", http.StatusBadRequest)
 		return
 	}
-	player := output.Player(o.hub, acct.ID, r)
+	player := output.Player(o.hub, acct.ID, output.M3U, r)
 	link, _ := o.hub.ArchiveLink(player, entry.PlayableEntry, start, stop)
 	o.hub.ServeLink(w, r, link)
 }

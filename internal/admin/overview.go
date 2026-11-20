@@ -19,12 +19,14 @@ import (
 
 // Streams lists what is playing, and says whether it can repair streams,
 // convert films and episodes that a box cannot play, and transcode their
-// video; the stream hub does.
+// video, and stops what players play; the stream hub does.
 type Streams interface {
 	Streams() []hub.Stream
 	CanRepair() bool
 	CanConvert() bool
 	Encoder() hub.Encoder
+	// StopPlayers ends the streams of the players that match (D104).
+	StopPlayers(match func(hub.Player) bool, reason string) int
 }
 
 // UseStreams gives the admin what lists the streams playing. Without it, the

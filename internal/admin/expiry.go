@@ -40,8 +40,13 @@ func (a *Admin) setExpiry(ctx context.Context, t time.Time) error {
 	}
 	if t.IsZero() {
 		a.log.Info("the household's end date removed in the admin")
-	} else {
-		a.log.Info("the household's end date set in the admin", "ends", t.UTC().Format(time.RFC3339), "ended", !a.now().Before(t))
+		return nil
+	}
+	ended := !a.now().Before(t)
+	a.log.Info("the household's end date set in the admin", "ends", t.UTC().Format(time.RFC3339), "ended", ended)
+	if ended {
+		// Its boxes stop by themselves; its players are stopped.
+		a.stopPlayers(playersOf(householdAccount), "the account has ended")
 	}
 	return nil
 }
