@@ -36,6 +36,16 @@ func TestCheck(t *testing.T) {
 		{Rule{Action: "exclude", Match: Match{Name: "a\x00b"}}, "control characters"},
 		{Rule{Action: "exclude", Match: Match{Name: strings.Repeat("a", 201)}}, "at most 200"},
 		{Rule{Action: "exclude", Match: Match{Source: -1}}, "source"},
+		{Rule{Action: "guide", Channel: "Alpha"}, ""},
+		{Rule{Action: "guide", Replace: "+1"}, ""},
+		{Rule{Action: "guide", Replace: `/\s*\+1$/`, With: ""}, ""},
+		{Rule{Action: "guide"}, "Name the channel"},
+		{Rule{Action: "guide", Channel: "Alpha", Replace: "+1"}, "not both"},
+		{Rule{Action: "guide", Replace: "/(/"}, "regular expression"},
+		{Rule{Action: "timeshift", Minutes: 60}, ""},
+		{Rule{Action: "timeshift", Minutes: -MaxShift}, ""},
+		{Rule{Action: "timeshift"}, "Shift the guide"},
+		{Rule{Action: "timeshift", Minutes: MaxShift + 1}, "Shift the guide"},
 	} {
 		got, err := Check(tc.rule)
 		var mistake *Error
@@ -50,9 +60,34 @@ func TestCheck(t *testing.T) {
 	}
 	// What an action does not use is dropped, and a quality spelled as
 	// QualityTags spells it.
-	got, err := Check(Rule{Action: "exclude", Name: "x", Group: "y", From: 3, Match: Match{Quality: "4k"}})
-	if err != nil || got.Name != "" || got.Group != "" || got.From != 0 || got.Match.Quality != "4K" {
+	got, err := Check(Rule{Action: "exclude", Name: "x", Group: "y", From: 3, Channel: "z", Minutes: 5, Match: Match{Quality: "4k"}})
+	if err != nil || got.Name != "" || got.Group != "" || got.From != 0 || got.Channel != "" || got.Minutes != 0 ||
+		got.Match.Quality != "4K" {
 		t.Errorf("tidied: %+v %v", got, err)
+	}
+}
+
+func TestGuideName(t *testing.T) {
+	for _, tc := range []struct {
+		rule       Rule
+		name, want string
+	}{
+		{Rule{Action: Guide, Channel: "Alpha"}, "Alpha +1", "Alpha"},
+		{Rule{Action: Guide, Replace: "+1"}, "Alpha +1", "Alpha"},
+		{Rule{Action: Guide, Replace: `/\s*\(east\)$/`, With: " (West)"}, "Alpha (East)", "Alpha (West)"},
+		{Rule{Action: Guide, Replace: "+1"}, "Alpha", "Alpha"},
+	} {
+		r, err := Check(tc.rule)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fn, err := CompileGuide(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := fn(tc.name); got != tc.want {
+			t.Errorf("%+v on %q = %q, want %q", tc.rule, tc.name, got, tc.want)
+		}
 	}
 }
 

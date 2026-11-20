@@ -18,16 +18,18 @@ import (
 
 // Actions.
 const (
-	Include  = "include"  // shows the channels, even in a hidden group
-	Exclude  = "exclude"  // hides them
-	Rename   = "rename"   // names them anew, or replaces text in their names
-	Regroup  = "regroup"  // moves them to a group, made if the lineup has none of that name
-	Renumber = "renumber" // numbers them from a number, in their order
-	Logo     = "logo"     // gives them a logo from an address
+	Include  = "include"   // shows the channels, even in a hidden group
+	Exclude  = "exclude"   // hides them
+	Rename   = "rename"    // names them anew, or replaces text in their names
+	Regroup  = "regroup"   // moves them to a group, made if the lineup has none of that name
+	Renumber = "renumber"  // numbers them from a number, in their order
+	Logo     = "logo"      // gives them a logo from an address
+	Guide    = "guide"     // shows the guide of another channel on them (D108)
+	Shift    = "timeshift" // shows their guide's times later or earlier (D108)
 )
 
 // Actions lists the actions in the order that the admin offers them.
-var Actions = []string{Include, Exclude, Rename, Regroup, Renumber, Logo}
+var Actions = []string{Include, Exclude, Rename, Regroup, Renumber, Logo, Guide, Shift}
 
 // Limits.
 const (
@@ -36,6 +38,7 @@ const (
 	maxText    = 200 // characters, of a name, a group or a replacement
 	maxLogo    = 2048
 	MaxNumber  = 999_999 // the highest number that a rule numbers from
+	MaxShift   = 24 * 60 // minutes that a rule shifts a guide by, either way
 )
 
 // Rule is one rule of a lineup.
@@ -47,10 +50,17 @@ type Rule struct {
 
 	// For rename: a new name, or text to replace in the name and what
 	// replaces it. Text between slashes is a regular expression, and $1
-	// and so on in With are its groups.
+	// and so on in With are its groups. For guide, Replace and With make
+	// the name of the channel whose guide to show from the channel's own.
 	Name    string `json:"name,omitempty" yaml:"name,omitempty"`
 	Replace string `json:"replace,omitempty" yaml:"replace,omitempty"`
 	With    string `json:"with,omitempty" yaml:"with,omitempty"`
+	// For guide: the name of the channel whose guide to show, as its
+	// source gives it, if Replace does not make it.
+	Channel string `json:"channel,omitempty" yaml:"channel,omitempty"`
+	// For timeshift: the minutes to show the guide's times later by, or
+	// earlier by if below 0.
+	Minutes int `json:"minutes,omitempty" yaml:"minutes,omitempty"`
 	// For regroup: the group's name.
 	Group string `json:"group,omitempty" yaml:"group,omitempty"`
 	// For renumber: the first number.
@@ -102,6 +112,7 @@ func Check(r Rule) (Rule, error) {
 	r.Match.Guide = strings.TrimSpace(r.Match.Guide)
 	r.Match.Quality = strings.TrimSpace(r.Match.Quality)
 	r.Name, r.Group, r.Logo = strings.TrimSpace(r.Name), strings.TrimSpace(r.Group), strings.TrimSpace(r.Logo)
+	r.Channel = strings.TrimSpace(r.Channel)
 	if r.Match.Source < 0 {
 		return Rule{}, bad("Choose a source, or any.")
 	}
@@ -165,6 +176,34 @@ func Check(r Rule) (Rule, error) {
 			return Rule{}, bad("A logo's address starts with http:// or https://.")
 		}
 		keep.Logo = r.Logo
+	case Guide:
+		switch {
+		case r.Channel != "" && r.Replace != "":
+			return Rule{}, bad("A guide comes from a channel named, or from a name made by replacing text, not both.")
+		case r.Channel != "":
+			if err := checkText("channel's name", r.Channel, maxText); err != nil {
+				return Rule{}, err
+			}
+			keep.Channel = r.Channel
+		case r.Replace != "":
+			if err := checkText("text to replace", r.Replace, maxPattern); err != nil {
+				return Rule{}, err
+			}
+			if err := checkText("replacement", r.With, maxText); err != nil {
+				return Rule{}, err
+			}
+			if _, err := replacer(r.Replace, r.With); err != nil {
+				return Rule{}, bad("The text to replace is not a regular expression that Overscan reads: %v.", err)
+			}
+			keep.Replace, keep.With = r.Replace, r.With
+		default:
+			return Rule{}, bad("Name the channel whose guide to show, or the text to replace in a channel's name to make it.")
+		}
+	case Shift:
+		if r.Minutes == 0 || r.Minutes < -MaxShift || r.Minutes > MaxShift {
+			return Rule{}, bad("Shift the guide by 1 to %d minutes, later or earlier.", MaxShift)
+		}
+		keep.Minutes = r.Minutes
 	default:
 		return Rule{}, bad("Choose what the rule does: %s.", strings.Join(Actions, ", "))
 	}
@@ -291,6 +330,15 @@ type Renamer func(name string) string
 func CompileRename(r Rule) (Renamer, error) {
 	if r.Name != "" {
 		return func(string) string { return r.Name }, nil
+	}
+	return replacer(r.Replace, r.With)
+}
+
+// CompileGuide returns what gives a checked guide rule the name of the
+// channel whose guide a channel shows, from the channel's own name.
+func CompileGuide(r Rule) (Renamer, error) {
+	if r.Channel != "" {
+		return func(string) string { return r.Channel }, nil
 	}
 	return replacer(r.Replace, r.With)
 }

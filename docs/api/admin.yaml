@@ -60,8 +60,10 @@ tags:
       before it plays them, and Stalker clients do not see them (D55). A
       channel's stream can be set to go through ffmpeg, which rebuilds its
       timestamps (D57). A lineup's rules (D107) show, hide, rename, regroup,
-      number or give a logo to the channels that they match, in order, after
-      every refresh; the administrator's own edits of a channel win over them.
+      number or give a logo to the channels that they match, give them
+      another channel's guide or move their guide's times (D108), in order,
+      after every refresh; the administrator's own edits of a channel win
+      over them.
   - name: lineups
     description: >-
       The lineups (D106). Each account sees one. A new one starts as a copy
@@ -3383,8 +3385,9 @@ components:
           type: string
           maxLength: 200
           description: >-
-            For `rename`, in place of `name`: text to replace in the name,
-            whatever its case; between slashes, a regular expression.
+            For `rename`, in place of `name`, and for `guide`, in place of
+            `channel`: text to replace in the name, whatever its case;
+            between slashes, a regular expression.
         with:
           type: string
           maxLength: 200
@@ -3403,9 +3406,20 @@ components:
           format: uri
           maxLength: 2048
           description: For `logo`, the logo's address, http or https.
+        channel:
+          type: string
+          maxLength: 200
+          description: >-
+            For `guide`, in place of `replace`: the name, as its source gives
+            it, of the channel whose guide to show.
+        minutes:
+          type: integer
+          minimum: -1440
+          maximum: 1440
+          description: For `timeshift`, how many minutes later the guide's times show, or earlier below 0; not 0.
     RuleAction:
       type: string
-      enum: [include, exclude, rename, regroup, renumber, logo]
+      enum: [include, exclude, rename, regroup, renumber, logo, guide, timeshift]
       description: >-
         `include` shows the channels, even in a hidden group; `exclude` hides
         them; `rename` names them anew or replaces text in their names, from
@@ -3413,8 +3427,12 @@ components:
         group; `renumber` numbers them in a row, in their order, keeping the
         numbers it gave before for the channels that it still matches and
         skipping numbers that the administrator pinned; `logo` gives them a
-        logo. Where two rules do the same to a channel, the later one wins;
-        what the administrator set on a channel wins over every rule.
+        logo; `guide` shows on them the guide of the lineup's channel named
+        `channel`, or named as they are with `replace` replaced by `with`,
+        from their own source if it has one (D108); `timeshift` moves the
+        times of their guide's programmes by `minutes` (D108). Where two
+        rules do the same to a channel, the later one wins; what the
+        administrator set on a channel wins over every rule.
     Rule:
       type: object
       required: [id, position, matches, match, action, "off"]
@@ -3446,6 +3464,10 @@ components:
           type: integer
         logo:
           type: string
+        channel:
+          type: string
+        minutes:
+          type: integer
     Visibility:
       type: string
       enum: [group, shown, hidden]
