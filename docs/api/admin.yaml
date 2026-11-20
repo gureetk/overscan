@@ -1059,6 +1059,73 @@ paths:
         "403":
           $ref: "#/components/responses/CSRF"
 
+  /expiry:
+    get:
+      tags: [lineup]
+      operationId: getExpiry
+      summary: When the household's account ends
+      responses:
+        "200":
+          $ref: "#/components/responses/Expiry"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    put:
+      tags: [lineup]
+      operationId: setExpiry
+      summary: Set when the household's account ends
+      description: >-
+        From that time, its boxes say that the account has ended and play
+        nothing, its Stalker clients are refused as blocked ones are, and its
+        recordings stop (D95). A time that has passed ends the account at
+        once. The admin's page sets the start of the day after the one
+        chosen, in the server's time zone.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expires_at]
+              properties:
+                expires_at:
+                  type: string
+                  format: date-time
+                  examples: ["2028-01-01T00:00:00Z"]
+      responses:
+        "200":
+          $ref: "#/components/responses/Expiry"
+        "400":
+          description: The time is missing or not one (`bad_date`), or the body is not the JSON the path takes (`bad_json`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+    delete:
+      tags: [lineup]
+      operationId: removeExpiry
+      summary: Remove the household's end date
+      description: The account never ends, and its boxes and Stalker clients play again.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Expiry"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+
   /settings:
     get:
       tags: [lineup]
@@ -2776,6 +2843,20 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    Expiry:
+      description: When the household's account ends, and whether it has.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [expires_at, ended]
+            properties:
+              expires_at:
+                type: [string, "null"]
+                format: date-time
+                description: When it ends; null if never.
+              ended:
+                type: boolean
     NoSuchDevice:
       description: There is no device with that MAC address (`no_such_device`).
       content:

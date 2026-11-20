@@ -5,7 +5,7 @@
 // series are read the first time a box asks, so the screen can say that
 // they are still loading, and asks again.
 
-import { describe, type LibraryState, type Shelf, type ShelfPage, type TitleKind, type TitleRow } from '../api';
+import { describe, type LibraryState, type Shelf, type ShelfPage, shutOut, type TitleKind, type TitleRow } from '../api';
 import { el, Logo, setText, setWidth, show, toggle } from '../dom';
 import { icon } from '../icons';
 import type { Press } from '../keys';
@@ -213,7 +213,7 @@ export class LibraryScreen implements Screen {
         return;
       }
       if (err || !st) {
-        if (err && (err.code === 'unauthorized' || err.code === 'blocked')) {
+        if (shutOut(err)) {
           return;
         }
         self.showStatus("Couldn't load the " + self.noun + '. ' + describe(err));

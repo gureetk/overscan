@@ -123,10 +123,24 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// A blocked device learns that it is blocked from its profile, and
-	// nothing else.
+	// nothing else. A device whose account has ended is refused as a
+	// blocked one, but still reads its end date from its profile and its
+	// account (D95).
 	if d.State == store.DeviceBlocked && !(module == "stb" && action == "get_profile") {
 		authFailed(w)
 		return
+	}
+	if d.State == store.DeviceApproved && module+"/"+action != "stb/get_profile" && module+"/"+action != "account_info/get_main_info" {
+		acct, err := a.store.Account(ctx, d.AccountID)
+		if err != nil {
+			a.internalError(w, "look up account", err)
+			return
+		}
+		if acct.Ended(a.now()) {
+			a.log.Debug("stalker request from a device whose account has ended", "mac", d.MAC, "type", module, "action", action)
+			authFailed(w)
+			return
+		}
 	}
 
 	switch module + "/" + action {

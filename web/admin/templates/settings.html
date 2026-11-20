@@ -262,6 +262,30 @@
 </div>
 
 <div>
+  <section class="panel" id="household" aria-labelledby="household-title">
+    <div class="panel-title"><span class="tile-icon{{if .Data.Ended}} bad{{end}}">{{template "i-user"}}</span><h2 id="household-title">Household</h2>{{if .Data.Ended}}<span class="badge bad">Ended</span>{{else if .Data.EndText}}<span class="badge">Until {{.Data.EndText}}</span>{{else}}<span class="badge">No end date</span>{{end}}</div>
+    {{- if .Data.Ended}}
+    <p class="hint warn">The household's account ended at the end of {{.Data.EndText}}. Its boxes say so and play nothing, its Stalker clients are refused, and its recordings stop, until it has a later end date or none.</p>
+    {{- else if .Data.EndText}}
+    <p>The household's boxes and Stalker clients play until the end of {{.Data.EndText}}, in this server's time zone. After it, boxes say that the account has ended and play nothing, and Stalker clients are refused.</p>
+    {{- else}}
+    <p>The household's account never ends. With an end date, its boxes and Stalker clients play until the end of that day, in this server's time zone; after it, boxes say that the account has ended and play nothing, and Stalker clients are refused.</p>
+    {{- end}}
+    <div class="pin-forms">
+      <form method="post" action="/admin/settings/expiry" hx-post="/admin/settings/expiry" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" class="row-form">
+        <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+        <input name="date" type="date" value="{{.Data.EndDay}}" min="2000-01-01" max="9998-12-31" aria-label="Last day the household's account plays" required>
+        <button type="submit">{{if .Data.EndText}}Change{{else}}Set an end date{{end}}</button>
+      </form>
+      {{- if .Data.EndText}}
+      <form method="post" action="/admin/settings/expiry" hx-post="/admin/settings/expiry" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML">
+        <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+        <button type="submit" name="remove" value="1">Remove the end date</button>
+      </form>
+      {{- end}}
+    </div>
+  </section>
+
   <section class="panel" aria-labelledby="server-title">
     <div class="panel-title"><span class="tile-icon">{{template "i-sources"}}</span><h2 id="server-title">This server</h2></div>
     <dl class="facts-list">

@@ -2,7 +2,7 @@
 
 Overscan's own MAG page talks to the server through the device API, a JSON API under `/api/device/v1/` built for the box ([plan](../plan.md), section 9). The page and the server ship together, so the API changes with them. It is not meant for other clients: third-party players have the Stalker API.
 
-Version 0, in M1, covers what the first page needs: a session, the channel list, and playing a channel. M2 adds what the page's new interface needs ([D52](../decisions.md)): the guide, favourites, what the box watched, search, and the box's own settings. M3 adds films and series ([D63](../decisions.md) to [D65](../decisions.md)), plays through ffmpeg those whose sound the box cannot play ([D68](../decisions.md)), checks what each box plays ([D70](../decisions.md)), and has Jellyfin transcode the video it cannot play ([D71](../decisions.md)). M4 adds past programmes from their sources' archives ([D81](../decisions.md), [D84](../decisions.md)), locks on films and series ([D85](../decisions.md)), radio stations ([D87](../decisions.md)), and recordings ([D89](../decisions.md)). M5 adds profiles ([D94](../decisions.md)).
+Version 0, in M1, covers what the first page needs: a session, the channel list, and playing a channel. M2 adds what the page's new interface needs ([D52](../decisions.md)): the guide, favourites, what the box watched, search, and the box's own settings. M3 adds films and series ([D63](../decisions.md) to [D65](../decisions.md)), plays through ffmpeg those whose sound the box cannot play ([D68](../decisions.md)), checks what each box plays ([D70](../decisions.md)), and has Jellyfin transcode the video it cannot play ([D71](../decisions.md)). M4 adds past programmes from their sources' archives ([D81](../decisions.md), [D84](../decisions.md)), locks on films and series ([D85](../decisions.md)), radio stations ([D87](../decisions.md)), and recordings ([D89](../decisions.md)). M5 adds profiles ([D94](../decisions.md)) and an account's end date ([D95](../decisions.md)).
 
 ## Conventions
 
@@ -16,6 +16,7 @@ Version 0, in M1, covers what the first page needs: a session, the channel list,
 | `bad_request` | 400, or 415 | The request could not be read, its body is not JSON, a value is not one the call takes, or a guide's window or list of channels is out of bounds. |
 | `unauthorized` | 401 | There is no valid session: start a new one. |
 | `blocked` | 403 | The administrator has blocked this box. |
+| `expired` | 403 | The box's account has passed its end date ([D95](../decisions.md)): start a new session, which says so. |
 | `not_found` | 404 | No such call, or no such channel, shelf, film, series or episode for this box. |
 | `no_archive` | 404 | The programme does not play from its channel's archive: the channel's source keeps none that Overscan plays, the programme has not ended, or it began longer ago than the archive reaches back ([D81](../decisions.md)). |
 | `recording_off` | 409 | The server does not record: the administrator has not turned recording on ([D89](../decisions.md)). |
@@ -67,7 +68,7 @@ The answer says whether the box may use Overscan. For an approved box with its s
 }
 ```
 
-`expires` is when the token stops working, in Unix seconds. `label` is the name that the administrator gave the box, if any, and `version` is the server's. A box paired at this session also gets `"secret"`, to keep.
+`expires` is when the token stops working, in Unix seconds. `label` is the name that the administrator gave the box, if any, and `version` is the server's. A box paired at this session also gets `"secret"`, to keep. `ends`, when the box's account has an end date, is that end, in Unix seconds ([D95](../decisions.md)).
 
 A box that asks to be paired, or waits for approval, gets `"state": "pending"` with the `code` to show, and a new `secret` to keep if it has just asked:
 
@@ -75,7 +76,7 @@ A box that asks to be paired, or waits for approval, gets `"state": "pending"` w
 {"state": "pending", "mac": "00:1A:79:12:34:56", "code": "481930", "secret": "<secret>", "version": "v0.0.5"}
 ```
 
-A blocked box gets `"state": "blocked"`. Neither gets a token.
+A blocked box gets `"state": "blocked"`. An approved box whose account has passed its end date gets `"state": "expired"` with `ends`; the page says that the account has ended and asks again now and then, and the box's other calls answer `expired` until the account has a later end date, or none. None of these gets a token.
 
 ### `GET /api/device/v1/channels`
 

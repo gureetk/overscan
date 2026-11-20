@@ -316,6 +316,14 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	household, err := a.store.Account(ctx, householdAccount)
+	if err != nil {
+		return "", err
+	}
+	ends := "none"
+	if !household.ExpiresAt.IsZero() {
+		ends = fmt.Sprintf("%s, ended: %v", household.ExpiresAt.UTC().Format(time.RFC3339), household.Ended(a.now()))
+	}
 	profiles, err := a.store.Profiles(ctx, householdAccount)
 	if err != nil {
 		return "", err
@@ -339,6 +347,7 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 		recordings[store.RecordingDone], recordings[store.RecordingFailed], recordings[store.RecordingCancelled])
 	fmt.Fprintf(&b, "Timeshift: keeps %d minutes of a box's channel (0 is off)\n", timeshift)
 	fmt.Fprintf(&b, "Shared tuner: %v\n", sharedTuner)
+	fmt.Fprintf(&b, "The household's end date: %s\n", ends)
 	fmt.Fprintf(&b, "Profiles: %d, %d with a PIN to switch to them\n", len(profiles), withPIN)
 	fmt.Fprintf(&b, "Stream repair: every channel by default: %v; HLS too: %v; %d channels set to be repaired, %d set not to be; %s repaired in all\n",
 		repairDefault, repairHLS, repairOn, repairOff, count(repaired))

@@ -71,6 +71,12 @@ export function date(sec: number): string {
   return days[d.getDay()] + ' ' + d.getDate() + ' ' + months[d.getMonth()];
 }
 
+/** fullDate writes a date with its year: 31 Dec 2027. */
+export function fullDate(sec: number): string {
+  const d = local(sec);
+  return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+}
+
 /** day writes a day as near to today: Today, Tomorrow, Yesterday or Thu 22. */
 export function day(sec: number): string {
   const today = startOfDay(now());

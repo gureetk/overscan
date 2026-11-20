@@ -20,6 +20,7 @@ import {
   type PlaybackReport,
   type Programme,
   type Progress,
+  shutOut,
   type StreamAudio,
   type StreamStart,
   type SubtitleInfo,
@@ -314,7 +315,7 @@ export class FilmPlayer {
       this.host.stopped("Can't play " + playingName(p) + '. ' + describe(err));
       return;
     }
-    if (err && (code === 'unauthorized' || code === 'blocked' || code === 'not_found')) {
+    if (err && (shutOut(err) || code === 'not_found')) {
       this.host.lost(err);
       return;
     }

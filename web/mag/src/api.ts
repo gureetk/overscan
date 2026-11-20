@@ -14,8 +14,18 @@ export interface ApiError {
 
 export type Callback<T> = (err: ApiError | null, data: T | null) => void;
 
+/**
+ * shutOut says whether the server no longer lets the box in: its session
+ * ended, the box was blocked, or its account ended (D95). The page then
+ * starts a new session, which says which.
+ */
+export function shutOut(err: ApiError | null): boolean {
+  return !!err && (err.code === 'unauthorized' || err.code === 'blocked' || err.code === 'expired');
+}
+
 export interface Session {
-  state: 'approved' | 'pending' | 'blocked';
+  /** expired: the box's account has passed its end date (D95). */
+  state: 'approved' | 'pending' | 'blocked' | 'expired';
   mac: string;
   /** The code of the box's request to pair, while it waits. */
   code?: string;
@@ -24,6 +34,8 @@ export interface Session {
   token?: string;
   expires?: number;
   label?: string;
+  /** When the box's account ends, in Unix seconds, if it has an end date (D95). */
+  ends?: number;
   version: string;
 }
 

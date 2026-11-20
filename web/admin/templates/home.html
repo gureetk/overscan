@@ -92,6 +92,16 @@
       <div class="todo-actions"><a class="button" href="/admin/settings">See Settings</a></div>
     </li>
   {{- end}}
+  {{- if not .Data.Ended.IsZero}}
+    <li>
+      <span class="tile-icon bad">{{template "i-alert"}}</span>
+      <div class="todo-text">
+        <strong>The household's account has ended</strong>
+        <span>Its end date was {{.Data.EndedText}}. Its boxes play nothing, and its Stalker clients are refused, until it has a later end date or none.</span>
+      </div>
+      <div class="todo-actions"><a class="button" href="/admin/settings#household">See Settings</a></div>
+    </li>
+  {{- end}}
   {{- if not .Data.Sources}}
     <li>
       <span class="tile-icon accent">{{template "i-sources"}}</span>

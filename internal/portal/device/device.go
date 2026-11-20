@@ -54,6 +54,7 @@ const (
 	errBadRequest   = "bad_request"
 	errUnauthorized = "unauthorized" // start a new session
 	errBlocked      = "blocked"
+	errExpired      = "expired" // the box's account has passed its end date (D95)
 	errNotFound     = "not_found"
 	errLimit        = "limit"  // the source has no free connection
 	errBusy         = "busy"   // the server transcodes as many films as it may at once (D73)
@@ -154,6 +155,10 @@ type sessionRequest struct {
 	Secret string `json:"secret"` // "" if the box has none
 }
 
+// stateExpired is the state of an approved box whose account has passed its
+// end date (D95): it gets no session.
+const stateExpired store.DeviceState = "expired"
+
 // sessionResponse says whether the box may use Overscan, and if so gives it
 // a session token.
 type sessionResponse struct {
@@ -164,7 +169,10 @@ type sessionResponse struct {
 	Token   string            `json:"token,omitempty"`
 	Expires int64             `json:"expires,omitempty"` // Unix seconds
 	Label   string            `json:"label,omitempty"`
-	Version string            `json:"version"`
+	// Ends is when the box's account ends, in Unix seconds, if it has an
+	// end date (D95).
+	Ends    int64  `json:"ends,omitempty"`
+	Version string `json:"version"`
 }
 
 // session answers POST session (D39). A paired box that sends its secret
@@ -173,7 +181,8 @@ type sessionResponse struct {
 // a new secret. A box that waits for its request to pair to be approved gets
 // its code again. Any other box asks to be paired: it gets a new secret to
 // keep and a code to show, and its request replaces any earlier one for the
-// same MAC address. A blocked box is told so.
+// same MAC address. A blocked box is told so, and so is an approved box
+// whose account has ended (D95).
 func (a *API) session(w http.ResponseWriter, r *http.Request) {
 	// A JSON body cannot come from another site's page without a CORS
 	// preflight, which the API never grants, so a page elsewhere cannot
@@ -208,7 +217,10 @@ func (a *API) session(w http.ResponseWriter, r *http.Request) {
 		resp.State = store.DeviceBlocked
 		a.log.Debug("blocked device refused", "mac", d.MAC)
 	case d.Paired() && secretMatches(req.Secret, d.SecretHash) && d.State == store.DeviceApproved:
-		a.startSession(&resp, d)
+		if err := a.startSession(ctx, &resp, d); err != nil {
+			a.internalError(w, "look up account", err)
+			return
+		}
 	case !d.Paired() && d.State == store.DeviceApproved:
 		secret := newSecret()
 		paired, err := a.store.AdoptSecret(ctx, d.MAC, store.HashSecret(secret), a.now())
@@ -218,7 +230,10 @@ func (a *API) session(w http.ResponseWriter, r *http.Request) {
 		}
 		a.log.Info("device paired", "mac", d.MAC, "label", d.Label)
 		resp.Secret = secret
-		a.startSession(&resp, paired)
+		if err := a.startSession(ctx, &resp, paired); err != nil {
+			a.internalError(w, "look up account", err)
+			return
+		}
 	case d.PairingHash != "" && secretMatches(req.Secret, d.PairingHash):
 		resp.Code = d.PairingCode
 		a.log.Debug("device waiting for approval", "mac", d.MAC, "code", d.PairingCode)
@@ -237,14 +252,29 @@ func (a *API) session(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// startSession gives an approved, paired device a session token.
-func (a *API) startSession(resp *sessionResponse, d store.Device) {
+// startSession gives an approved, paired device a session token, unless its
+// account has ended.
+func (a *API) startSession(ctx context.Context, resp *sessionResponse, d store.Device) error {
 	now := a.now()
+	acct, err := a.store.Account(ctx, d.AccountID)
+	if err != nil {
+		return err
+	}
+	if !acct.ExpiresAt.IsZero() {
+		resp.Ends = acct.ExpiresAt.Unix()
+	}
+	if acct.Ended(now) {
+		resp.State = stateExpired
+		resp.Label = d.Label
+		a.log.Debug("a box of an account that has ended refused", "mac", d.MAC, "label", d.Label)
+		return nil
+	}
 	resp.State = store.DeviceApproved
 	resp.Token = a.sign(sessionClaims{deviceID: d.ID, mac: d.MAC, secretTag: secretTag(d.SecretHash), issued: now.Unix()})
 	resp.Expires = now.Add(sessionTTL).Unix()
 	resp.Label = d.Label
 	a.log.Info("device session started", "mac", d.MAC, "label", d.Label, "model", d.Model)
+	return nil
 }
 
 // requestPairing records a request to pair with a new code, trying another
@@ -305,7 +335,15 @@ func (a *API) authorized(next func(http.ResponseWriter, *http.Request, store.Dev
 		case c.secretTag != secretTag(d.SecretHash): // paired again since
 			unauthorized(w)
 		case d.State == store.DeviceApproved:
-			next(w, r, d)
+			acct, err := a.store.Account(r.Context(), d.AccountID)
+			switch {
+			case err != nil:
+				a.internalError(w, "look up account", err)
+			case acct.Ended(a.now()):
+				writeError(w, http.StatusForbidden, errExpired)
+			default:
+				next(w, r, d)
+			}
 		case d.State == store.DeviceBlocked:
 			writeError(w, http.StatusForbidden, errBlocked)
 		default:

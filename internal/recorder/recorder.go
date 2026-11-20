@@ -243,9 +243,10 @@ func (r *Recorder) start(ctx context.Context, rec store.Recording, limit int64) 
 		return
 	}
 	rec.File, rec.Dir = name, r.dir
+	until := r.until(ctx, rec)
 	r.log.Info("a recording began", "title", rec.Title, "channel", rec.Channel,
-		"until", rec.Stop.Add(tail).UTC().Format(time.DateTime))
-	r.run(ctx, rec, entry, r.fileFor(f, limit, used), false)
+		"until", until.UTC().Format(time.DateTime))
+	r.run(ctx, rec, entry, r.fileFor(f, limit, used), false, until)
 }
 
 // resume goes on with a recording that a stop of the server cut short, if
@@ -281,16 +282,25 @@ func (r *Recorder) resume(ctx context.Context, rec store.Recording, limit int64)
 		r.finish(ctx, rec, rec.File, stopped)
 		return
 	}
+	until := r.until(ctx, rec)
 	r.log.Info("a recording goes on after the server's restart", "title", rec.Title, "channel", rec.Channel,
-		"until", rec.Stop.Add(tail).UTC().Format(time.DateTime))
-	r.run(ctx, rec, entry, r.fileFor(f, limit, used), true)
+		"until", until.UTC().Format(time.DateTime))
+	r.run(ctx, rec, entry, r.fileFor(f, limit, used), true, until)
 }
 
-// ready checks that a recording can be made: that its channel is still in
-// the lineup, and that the folder has room. It returns the channel, the
-// room the folder's files take, and why the recording cannot be made, or
-// an error that a later look may not have.
+// ready checks that a recording can be made: that its account has not
+// ended (D95), that its channel is still in the lineup, and that the folder
+// has room. It returns the channel, the room the folder's files take, and
+// why the recording cannot be made, or an error that a later look may not
+// have.
 func (r *Recorder) ready(ctx context.Context, rec store.Recording, limit int64) (store.PlayableEntry, int64, string, error) {
+	acct, err := r.store.Account(ctx, rec.AccountID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return store.PlayableEntry{}, 0, "", err
+	}
+	if err == nil && acct.Ended(r.now()) {
+		return store.PlayableEntry{}, 0, errAccountEnded, nil
+	}
 	entry, err := r.store.PlayableEntry(ctx, rec.EntryID)
 	if errors.Is(err, store.ErrNotFound) {
 		return entry, 0, "the channel is no longer in the lineup", nil
@@ -311,6 +321,20 @@ func (r *Recorder) ready(ctx context.Context, rec store.Recording, limit int64) 
 	return entry, used, "", nil
 }
 
+// errAccountEnded is why a recording of an account past its end date is
+// not made (D95).
+const errAccountEnded = "its account has ended"
+
+// until returns when a recording stops: two minutes after its programme,
+// or when its account ends, if that is sooner (D95).
+func (r *Recorder) until(ctx context.Context, rec store.Recording) time.Time {
+	stop := rec.Stop.Add(tail)
+	if acct, err := r.store.Account(ctx, rec.AccountID); err == nil && !acct.ExpiresAt.IsZero() && acct.ExpiresAt.Before(stop) {
+		return acct.ExpiresAt
+	}
+	return stop
+}
+
 // fileFor returns f as a recording's file, which stops taking bytes once
 // the folder's files take limit.
 func (r *Recorder) fileFor(f *os.File, limit, used int64) *file {
@@ -320,11 +344,10 @@ func (r *Recorder) fileFor(f *os.File, limit, used int64) *file {
 	}}
 }
 
-// run records in the background until the recording's end, or until it is
-// called off. A stop of the server leaves it under way, for the next start
-// to go on with or to end.
-func (r *Recorder) run(ctx context.Context, rec store.Recording, entry store.PlayableEntry, out *file, resumed bool) {
-	stop := rec.Stop.Add(tail)
+// run records in the background until stop, the recording's end or its
+// account's, or until it is called off. A stop of the server leaves it
+// under way, for the next start to go on with or to end.
+func (r *Recorder) run(ctx context.Context, rec store.Recording, entry store.PlayableEntry, out *file, resumed bool, stop time.Time) {
 	rctx, cancel := context.WithDeadline(context.WithoutCancel(ctx), stop)
 	r.mu.Lock()
 	r.running[rec.ID] = cancel
@@ -353,6 +376,9 @@ func (r *Recorder) run(ctx context.Context, rec store.Recording, entry store.Pla
 		}
 		if resumed && why == errNothing {
 			why = "the server stopped while it recorded"
+		}
+		if why == "" && stop.Before(rec.Stop.Add(tail)) && !r.now().Before(stop) {
+			why = "its account ended while it recorded"
 		}
 		r.finish(context.WithoutCancel(ctx), rec, rec.File, why)
 	}()
