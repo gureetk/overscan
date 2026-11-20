@@ -1,0 +1,7 @@
+#EXTM3U url-tvg="PROVIDER/guide.xml"
+#EXTINF:-1 tvg-id="news.example" tvg-logo="PROVIDER/logos/news.png" group-title="News" catchup="append" catchup-days="1" catchup-source="?utc={utc}&lutc={lutc}",Example News
+PROVIDER/live/1.ts
+#EXTINF:-1 tvg-id="sports.example" group-title="Sports",Example Sports
+PROVIDER/live/2.ts
+#EXTINF:-1 tvg-id="weather.example" group-title="News",Example Weather
+PROVIDER/live/3.ts

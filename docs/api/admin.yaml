@@ -875,7 +875,8 @@ paths:
       operationId: setAccountLogin
       summary: Set an account's login
       description: >-
-        Players other than the boxes sign in with it through the outputs. The username has 1 to 64 ASCII letters,
+        Players other than the boxes sign in with it through the Xtream output, while the account's `outputs.xtream`
+        is on (D104); a new username or password stops what they play with the old one (D105). The username has 1 to 64 ASCII letters,
         digits, '.', '_', '-' or '@', and no other account has it, whatever its case (`username_taken`, 409). The
         password has 8 to 128 ASCII letters, digits, '.', '_', '-' or '~', which need no escaping in an address;
         it cannot be the administrator's or a source's (`password_in_use`). Overscan keeps only an argon2id hash of
@@ -918,7 +919,7 @@ paths:
       operationId: removeAccountLogin
       summary: Remove an account's login
       description: >-
-        Players can no longer sign in as it.
+        Players can no longer sign in as it, and what they play with it stops (D105).
       security:
         - session: []
           csrf: []
@@ -965,7 +966,8 @@ paths:
       operationId: newAccountToken
       summary: Make an account a new playlist token
       description: >-
-        It replaces the one the account had: addresses made with the old one stop working. A server without a key
+        It replaces the one the account had: addresses made with the old one stop working, and so does what players
+        play with them (D105). A server without a key
         file cannot keep one (`no_key`, 409).
       security:
         - session: []
@@ -1882,9 +1884,10 @@ paths:
                 outputs:
                   type: boolean
                   description: >-
-                    The outputs that players other than the boxes use (D103):
-                    each account's playlist and guide, for accounts whose
-                    own switch is on too.
+                    The outputs that players other than the boxes use: each
+                    account's playlist and guide (D103) and its Xtream login
+                    (D104), for accounts whose own switches are on too.
+                    Turning them off stops what players play (D105).
                 outputs_anywhere:
                   type: boolean
                   description: >-
@@ -2761,10 +2764,15 @@ components:
       properties:
         m3u:
           type: boolean
-          description: Its playlist and guide.
+          description: >-
+            Its playlist and guide, at addresses with its playlist token
+            (D103). Turning it off stops what players play through it (D105).
         xtream:
           type: boolean
-          description: The Xtream-compatible API.
+          description: >-
+            The Xtream-compatible API, `get.php` and `xmltv.php`, for players
+            that sign in with its login (D104), once it has one. Turning it
+            off stops what players play through it (D105).
     Profile:
       type: object
       required: [id, account_id, name, first, pin, devices, theme_id]
@@ -3568,8 +3576,8 @@ components:
               outputs:
                 type: boolean
                 description: >-
-                  The outputs that players other than the boxes use (D103).
-                  Off at first.
+                  The outputs that players other than the boxes use (D103,
+                  D104). Off at first.
               outputs_anywhere:
                 type: boolean
                 description: >-

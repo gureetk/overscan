@@ -25,9 +25,26 @@ It covers so far:
 | Films: categories, lists 14 to a page by name or by date, and a film's link, which plays the file from the part a player asks for | Section 6 |
 | Series in the `series` module: a series' seasons with `movie_id`, each with its episodes' numbers, and an episode's link | Section 6 |
 
-Run it with the rest of the tests, or alone:
+## `xtream/`
+
+The Xtream API as players use it, from the [Xtream notes](../docs/protocol/xtream-api-notes.md), with Overscan's choices in their section 10. It builds Overscan and runs it with a fictional lineup of three channels in two groups (`xtream/testdata/lineup.m3u`), streamed by a fake provider with a guide for two of them and an archive of one, and a fictional library of sixteen films and a series of two seasons in a folder. Its setup alone is Overscan's own: it sets the administrator's password with `overscan admin password`, and signs in to the admin API to turn the outputs on and give the household's account a fictional login.
+
+It covers so far:
+
+| Scenario | Xtream notes |
+| --- | --- |
+| The account call, and a wrong login that does not sign in or play | Section 2 |
+| Live categories, and every channel or one category's, with unique IDs, numbers and archive flags | Section 3 |
+| A live channel's address, which plays MPEG-TS | Section 4 |
+| The short guide, from the programme on now, with and without a limit, and the day's table with what is on now and in the archive | Section 5 |
+| A past programme's timeshift address, in the server's time zone, which plays it from the archive; none for one to come | Section 6 |
+| Film and series categories and lists, a film's and a series' details, and addresses that play a film or an episode from the part a player asks for | Section 7 |
+| `get.php` with addresses that play, and `xmltv.php` with the channels of `epg_channel_id` | Sections 5 and 7 |
+| An action the server lacks, answered with an empty list | Section 10 |
+
+Run them with the rest of the tests, or alone:
 
     go test ./conformance/...
 
-It needs the `go` command, which builds the server. Fixtures are fictional; never put real portal addresses, accounts or MAC addresses here ([clean-room policy](../docs/clean-room.md)).
+They need the `go` command, which builds the server. Fixtures are fictional; never put real portal or panel addresses, accounts or MAC addresses here ([clean-room policy](../docs/clean-room.md)).
 

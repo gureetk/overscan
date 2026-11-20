@@ -251,14 +251,15 @@ func (s *Store) PortalTitles(ctx context.Context, categoryID int64, from, count 
 		return []TitleListing{}, nil
 	}
 	return s.listings(ctx, fmt.Sprintf("portal shelf %d", categoryID), `
-		SELECT `+titleRowColumns+`, c.name, c.id, t.summary, t.details
+		SELECT `+titleRowColumns+`, c.name, c.id, t.summary, t.details, t.container
 		FROM titles t JOIN library_categories c ON c.id = t.category_id JOIN sources s ON s.id = t.source_id
 		WHERE t.category_id = ? AND t.position BETWEEN ? AND ? AND `+libraryShown+`
 		ORDER BY t.position`, categoryID, max(0, from)+1, max(0, from)+count)
 }
 
 // listings returns the listings that query selects: a title's row, the
-// name and the ID of its category, its summary and its details.
+// name and the ID of its category, its summary, its details and its
+// container.
 func (s *Store) listings(ctx context.Context, what, query string, args ...any) ([]TitleListing, error) {
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -270,7 +271,7 @@ func (s *Store) listings(ctx context.Context, what, query string, args ...any) (
 		var l TitleListing
 		var summary string
 		var details sql.NullString
-		if l.TitleRow, err = scanTitleRow(rows, &l.Shelf, &l.CategoryID, &summary, &details); err != nil {
+		if l.TitleRow, err = scanTitleRow(rows, &l.Shelf, &l.CategoryID, &summary, &details, &l.Container); err != nil {
 			return nil, fmt.Errorf("store: %s: %w", what, err)
 		}
 		if err := json.Unmarshal([]byte(summary), &l.Summary); err != nil {

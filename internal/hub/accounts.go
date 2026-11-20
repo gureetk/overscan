@@ -110,6 +110,22 @@ func (h *Hub) accountFull(ctx context.Context, deviceID int64) bool {
 	return others >= limit
 }
 
+// AccountStreams returns how many streams an account's devices and players
+// play now, as its limit counts them.
+func (h *Hub) AccountStreams(accountID int64) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	now := h.now()
+	h.sweep(now)
+	n := 0
+	for _, s := range h.sessions {
+		if s.counts(accountID, now) {
+			n++
+		}
+	}
+	return n
+}
+
 // Room says whether a device can start a stream from a source: nil if it
 // can, ErrAccountLimit while the device's account plays as many streams as
 // it may, or ErrLimit while the source does, and none of the device's own

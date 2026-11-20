@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"overscan.gureet.ca/internal/portal/output"
 	"overscan.gureet.ca/internal/store"
 )
 
@@ -123,6 +124,7 @@ func (a *Admin) removeAccount(ctx context.Context, id int64) (store.Account, err
 		return store.Account{}, accountStoreError(err)
 	}
 	a.log.Info("account removed in the admin", "account", acct.Name)
+	a.stopPlayers(playersOf(id), "the account was removed")
 	return acct, nil
 }
 
@@ -190,6 +192,9 @@ func (a *Admin) setLogin(ctx context.Context, id int64, username, password strin
 	}
 	a.log.Info("an account's login set in the admin", "account", acct.Name, "new_login", old.Username == "",
 		"new_password", password != "")
+	if old.Username != "" && (password != "" || !strings.EqualFold(old.Username, acct.Username)) {
+		a.stopPlayers(playersOf(id, output.Xtream), "the account's login changed")
+	}
 	return acct, nil
 }
 
@@ -203,6 +208,7 @@ func (a *Admin) removeLogin(ctx context.Context, id int64) (store.Account, error
 		return store.Account{}, accountStoreError(err)
 	}
 	a.log.Info("an account's login removed in the admin", "account", acct.Name)
+	a.stopPlayers(playersOf(id, output.Xtream), "the account's login was removed")
 	acct.Username, acct.PasswordHash = "", ""
 	return acct, nil
 }
@@ -219,6 +225,9 @@ func (a *Admin) newToken(ctx context.Context, id int64) (store.Account, string, 
 		return store.Account{}, "", accountStoreError(err)
 	}
 	a.log.Info("an account's playlist token made in the admin", "account", acct.Name, "replaced", acct.HasToken)
+	if acct.HasToken {
+		a.stopPlayers(playersOf(id, output.M3U), "the account's playlist has new addresses")
+	}
 	acct.HasToken = true
 	return acct, token, nil
 }
@@ -256,11 +265,16 @@ func (a *Admin) setAccountExpiry(ctx context.Context, id int64, t time.Time) (st
 	if err := a.store.SetAccountExpiry(ctx, id, t); err != nil {
 		return store.Account{}, accountStoreError(err)
 	}
+	ended := !t.IsZero() && !a.now().Before(t)
 	if t.IsZero() {
 		a.log.Info("an account's end date removed in the admin", "account", acct.Name)
 	} else {
 		a.log.Info("an account's end date set in the admin", "account", acct.Name,
-			"ends", t.UTC().Format(time.RFC3339), "ended", !a.now().Before(t))
+			"ends", t.UTC().Format(time.RFC3339), "ended", ended)
+	}
+	if ended {
+		// Its boxes stop by themselves; its players are stopped.
+		a.stopPlayers(playersOf(id), "the account has ended")
 	}
 	acct.ExpiresAt = t
 	return acct, nil
@@ -333,6 +347,18 @@ func (a *Admin) setPlaylist(ctx context.Context, id int64, on bool) (store.Accou
 	return a.setOutputs(ctx, id, o)
 }
 
+// setXtream lets an account's players sign in with its login through the
+// Xtream-compatible API, or stops them (D104).
+func (a *Admin) setXtream(ctx context.Context, id int64, on bool) (store.Account, error) {
+	acct, err := a.account(ctx, id)
+	if err != nil {
+		return store.Account{}, err
+	}
+	o := acct.Outputs
+	o.Xtream = on
+	return a.setOutputs(ctx, id, o)
+}
+
 // setOutputs sets the outputs that an account may use.
 func (a *Admin) setOutputs(ctx context.Context, id int64, o store.Outputs) (store.Account, error) {
 	acct, err := a.account(ctx, id)
@@ -344,6 +370,12 @@ func (a *Admin) setOutputs(ctx context.Context, id int64, o store.Outputs) (stor
 	}
 	if o != acct.Outputs {
 		a.log.Info("an account's outputs set in the admin", "account", acct.Name, "m3u", o.M3U, "xtream", o.Xtream)
+	}
+	if acct.Outputs.M3U && !o.M3U {
+		a.stopPlayers(playersOf(id, output.M3U), "the account's playlist was turned off")
+	}
+	if acct.Outputs.Xtream && !o.Xtream {
+		a.stopPlayers(playersOf(id, output.Xtream), "the account's Xtream login was turned off")
 	}
 	acct.Outputs = o
 	return acct, nil
@@ -391,6 +423,9 @@ type accountRow struct {
 	// Playlist and Guide are its playlist's and guide's addresses, while
 	// it may use them and has a token (D103); "" otherwise.
 	Playlist, Guide string
+	// Server is the address that its players sign in at, while it may use
+	// the Xtream API and has a login (D104); "" otherwise.
+	Server string
 }
 
 // Household says that it is the household's account, which cannot be
@@ -456,6 +491,9 @@ func (a *Admin) accountsData(ctx context.Context, base string) (accountsData, er
 		}
 		if row.Token != "" && acct.Outputs.M3U && base != "" {
 			row.Playlist, row.Guide = base+"/playlist/"+row.Token+".m3u", base+"/epg/"+row.Token+".xml.gz"
+		}
+		if acct.Username != "" && acct.Outputs.Xtream {
+			row.Server = base
 		}
 		if !acct.ExpiresAt.IsZero() {
 			day := lastDay(acct.ExpiresAt, time.Local)
@@ -576,6 +614,18 @@ func (a *Admin) accountAction(w http.ResponseWriter, r *http.Request, s store.Ad
 			notice = acct.Name + "'s players can no longer read its playlist and guide."
 			if on {
 				notice = acct.Name + "'s players can read its playlist and guide at the addresses below."
+			}
+		}
+	case "xtream":
+		on := r.PostFormValue("on") != ""
+		if acct, err = a.setXtream(ctx, id, on); err == nil {
+			switch {
+			case !on:
+				notice = acct.Name + "'s players can no longer sign in with its login."
+			case acct.Username == "":
+				notice = acct.Name + "'s players can sign in with its login once it has one: give it one below."
+			default:
+				notice = acct.Name + "'s players can sign in as " + acct.Username + " at the address below."
 			}
 		}
 	case "remove":

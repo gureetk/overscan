@@ -88,10 +88,33 @@ func Base(r *http.Request) string {
 	return scheme + "://" + r.Host
 }
 
-// Player returns the hub's device ID of the player that made a request, as
-// a player of an account (D103).
-func Player(h *hub.Hub, accountID int64, r *http.Request) int64 {
-	return h.Player(accountID, ClientAddress(r), r.UserAgent())
+// The outputs, as the hub knows the players that come through them.
+const (
+	M3U    = "m3u"    // the playlist and guide with a token (D103)
+	Xtream = "xtream" // the Xtream-compatible API, with a login (D104)
+)
+
+// Player returns the hub's device ID of the player that made a request
+// through an output, as a player of an account (D103).
+func Player(h *hub.Hub, accountID int64, output string, r *http.Request) int64 {
+	return h.Player(accountID, output, ClientAddress(r), r.UserAgent())
+}
+
+// Channels returns the channels that an account's players see: those its
+// lineup shows, without the locked ones once it has a parental PIN, since
+// a player cannot ask for one (D55).
+func Channels(ctx context.Context, st *store.Store, acct store.Account) ([]store.LineupChannel, error) {
+	all, err := st.LineupChannels(ctx, acct.LineupID)
+	if err != nil {
+		return nil, err
+	}
+	out := all[:0]
+	for _, c := range all {
+		if !(c.Locked && acct.PINHash != "") {
+			out = append(out, c)
+		}
+	}
+	return out, nil
 }
 
 // Continuous returns a channel's link as a continuous MPEG-TS stream: the

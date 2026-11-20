@@ -316,6 +316,34 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// Accounts and outputs say only how many, never who or what login.
+	accounts, err := a.store.Accounts(ctx)
+	if err != nil {
+		return "", err
+	}
+	logins, limited, playlists, xtreams := 0, 0, 0, 0
+	for _, acct := range accounts {
+		if acct.Username != "" {
+			logins++
+		}
+		if acct.MaxStreams > 0 {
+			limited++
+		}
+		if acct.Outputs.M3U {
+			playlists++
+		}
+		if acct.Outputs.Xtream {
+			xtreams++
+		}
+	}
+	outputsOn, err := a.store.Outputs(ctx)
+	if err != nil {
+		return "", err
+	}
+	anywhere, err := a.store.OutputsAnywhere(ctx)
+	if err != nil {
+		return "", err
+	}
 	household, err := a.store.Account(ctx, householdAccount)
 	if err != nil {
 		return "", err
@@ -370,6 +398,9 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 	fmt.Fprintf(&b, "Timeshift: keeps %d minutes of a box's channel (0 is off)\n", timeshift)
 	fmt.Fprintf(&b, "Shared tuner: %v\n", sharedTuner)
 	fmt.Fprintf(&b, "The household's end date: %s\n", ends)
+	fmt.Fprintf(&b, "Accounts: %d; with a login: %d; with a limit on streams: %d\n", len(accounts), logins, limited)
+	fmt.Fprintf(&b, "Outputs for players: on: %v; anywhere: %v; playlists on: %d; Xtream logins on: %d\n",
+		outputsOn, anywhere, playlists, xtreams)
 	fmt.Fprintf(&b, "Profiles: %d, %d with a PIN to switch to them\n", len(profiles), withPIN)
 	fmt.Fprintf(&b, "Themes: %d installed; the household's: %s; profiles with their own: %d\n", len(themes), householdTheme, ownTheme)
 	fmt.Fprintf(&b, "Messages: %d in the admin's list, waiting on %d boxes\n", len(messages), waiting)
