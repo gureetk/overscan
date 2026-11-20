@@ -316,6 +316,23 @@ func (a *Admin) setAccountTheme(ctx context.Context, id, themeID int64) (store.A
 	return acct, nil
 }
 
+// setPlaylist lets an account's players read its playlist and guide, or
+// stops them, making it a playlist token if it has none (D103).
+func (a *Admin) setPlaylist(ctx context.Context, id int64, on bool) (store.Account, error) {
+	acct, err := a.account(ctx, id)
+	if err != nil {
+		return store.Account{}, err
+	}
+	if on && !acct.HasToken {
+		if acct, _, err = a.newToken(ctx, id); err != nil {
+			return store.Account{}, err
+		}
+	}
+	o := acct.Outputs
+	o.M3U = on
+	return a.setOutputs(ctx, id, o)
+}
+
 // setOutputs sets the outputs that an account may use.
 func (a *Admin) setOutputs(ctx context.Context, id int64, o store.Outputs) (store.Account, error) {
 	acct, err := a.account(ctx, id)
@@ -371,6 +388,9 @@ type accountRow struct {
 	EndText   string // the last day it plays, "" if it never ends
 	EndDay    string // the same, as a date input takes it
 	IsEnded   bool
+	// Playlist and Guide are its playlist's and guide's addresses, while
+	// it may use them and has a token (D103); "" otherwise.
+	Playlist, Guide string
 }
 
 // Household says that it is the household's account, which cannot be
@@ -380,14 +400,18 @@ func (r accountRow) Household() bool { return r.ID == householdAccount }
 // accountsData is what the Accounts page shows.
 type accountsData struct {
 	Accounts []accountRow
-	Themes   []store.Theme
-	Name     string // typed into the form that adds an account
-	Open     int64  // the account whose forms are open
-	Streams  []int  // the limits the page offers
+	// OutputsOn says that the outputs that players use are on, and
+	// Anywhere that they answer players from any address (D103).
+	OutputsOn, Anywhere bool
+	Themes              []store.Theme
+	Name                string // typed into the form that adds an account
+	Open                int64  // the account whose forms are open
+	Streams             []int  // the limits the page offers
 }
 
-// accountsData returns what the Accounts page shows.
-func (a *Admin) accountsData(ctx context.Context) (accountsData, error) {
+// accountsData returns what the Accounts page shows; base is the portal's
+// address, for the addresses of the accounts' playlists.
+func (a *Admin) accountsData(ctx context.Context, base string) (accountsData, error) {
 	accounts, err := a.store.Accounts(ctx)
 	if err != nil {
 		return accountsData{}, err
@@ -412,6 +436,12 @@ func (a *Admin) accountsData(ctx context.Context) (accountsData, error) {
 	}
 	now := a.now()
 	data := accountsData{Themes: themes, Streams: []int{1, 2, 3, 4, 5, 6, 8, 10}}
+	if data.OutputsOn, err = a.store.Outputs(ctx); err != nil {
+		return accountsData{}, err
+	}
+	if data.Anywhere, err = a.store.OutputsAnywhere(ctx); err != nil {
+		return accountsData{}, err
+	}
 	for _, acct := range accounts {
 		row := accountRow{Account: acct, Devices: approved[acct.ID], ThemeName: themeNames[acct.ThemeID], IsEnded: acct.Ended(now)}
 		profiles, err := a.store.Profiles(ctx, acct.ID)
@@ -423,6 +453,9 @@ func (a *Admin) accountsData(ctx context.Context) (accountsData, error) {
 			if row.Token, err = a.store.AccountToken(ctx, acct.ID); err != nil {
 				a.log.Warn("cannot read an account's playlist token", "account", acct.Name, "error", err)
 			}
+		}
+		if row.Token != "" && acct.Outputs.M3U && base != "" {
+			row.Playlist, row.Guide = base+"/playlist/"+row.Token+".m3u", base+"/epg/"+row.Token+".xml.gz"
 		}
 		if !acct.ExpiresAt.IsZero() {
 			day := lastDay(acct.ExpiresAt, time.Local)
@@ -440,7 +473,7 @@ func (a *Admin) accountsPage(w http.ResponseWriter, r *http.Request, s store.Adm
 
 // showAccounts renders the Accounts page with v's error or notice.
 func (a *Admin) showAccounts(w http.ResponseWriter, r *http.Request, s store.AdminSession, status int, v view) {
-	data, err := a.accountsData(r.Context())
+	data, err := a.accountsData(r.Context(), portalBase(r.Host, a.support.Listen))
 	if err != nil {
 		a.log.Error("cannot list the accounts", "error", err)
 		a.message(w, r, http.StatusInternalServerError, "Something went wrong", "The server's log says what.", &s)
@@ -536,6 +569,14 @@ func (a *Admin) accountAction(w http.ResponseWriter, r *http.Request, s store.Ad
 			err = terr
 		} else if acct, err = a.setAccountTheme(ctx, id, themeID); err == nil {
 			notice = "Chose the theme of " + acct.Name + ". Its boxes show it within five minutes."
+		}
+	case "playlist":
+		on := r.PostFormValue("on") != ""
+		if acct, err = a.setPlaylist(ctx, id, on); err == nil {
+			notice = acct.Name + "'s players can no longer read its playlist and guide."
+			if on {
+				notice = acct.Name + "'s players can read its playlist and guide at the addresses below."
+			}
 		}
 	case "remove":
 		if acct, err = a.removeAccount(ctx, id); err == nil {

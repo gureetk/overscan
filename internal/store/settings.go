@@ -51,6 +51,16 @@ const (
 	// screen of the household that plays a channel (D93); off until it is
 	// set.
 	settingSharedTuner = "shared_tuner"
+
+	// settingOutputs is "1" if the outputs that players use are on: the
+	// playlists and guides, and the Xtream-compatible API (D103); off
+	// until it is set. Each account has its own switches too.
+	settingOutputs = "outputs"
+
+	// settingOutputsAnywhere is "1" if the outputs answer players from
+	// any address, not only from this server's own networks (D103); off
+	// until it is set.
+	settingOutputsAnywhere = "outputs_anywhere"
 )
 
 // What a source's mark for adults does (D86).
@@ -222,6 +232,32 @@ func (s *Store) SharedTuner(ctx context.Context) (bool, error) {
 // SetSharedTuner turns the shared tuner on or off.
 func (s *Store) SetSharedTuner(ctx context.Context, on bool) error {
 	return s.setSetting(ctx, settingSharedTuner, onOff(on))
+}
+
+// Outputs reports whether the outputs that players use are on (D103). They
+// are off until set.
+func (s *Store) Outputs(ctx context.Context) (bool, error) {
+	v, _, err := s.setting(ctx, settingOutputs)
+	return v == "1", err
+}
+
+// SetOutputs turns the outputs on or off.
+func (s *Store) SetOutputs(ctx context.Context, on bool) error {
+	return s.setSetting(ctx, settingOutputs, onOff(on))
+}
+
+// OutputsAnywhere reports whether the outputs answer players from any
+// address, rather than only from private and loopback ones (D103). It is
+// off until set.
+func (s *Store) OutputsAnywhere(ctx context.Context) (bool, error) {
+	v, _, err := s.setting(ctx, settingOutputsAnywhere)
+	return v == "1", err
+}
+
+// SetOutputsAnywhere lets the outputs answer players from any address, or
+// only from private and loopback ones.
+func (s *Store) SetOutputsAnywhere(ctx context.Context, on bool) error {
+	return s.setSetting(ctx, settingOutputsAnywhere, onOff(on))
 }
 
 // onOff writes a switch as a setting's value.

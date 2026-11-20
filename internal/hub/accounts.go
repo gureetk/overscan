@@ -27,6 +27,16 @@ func (h *Hub) viewer(ctx context.Context, deviceID int64) (account int64, limit 
 	switch {
 	case deviceID == 0:
 		return 0, 0 // the debug playlist
+	case IsPlayer(deviceID):
+		p, ok := h.PlayerOf(deviceID)
+		if !ok {
+			return 0, 0
+		}
+		limit, err := h.store.AccountStreams(ctx, p.AccountID)
+		if err != nil {
+			h.log.Error("cannot look up an account's limit of streams", "account", p.AccountID, "error", err)
+		}
+		return p.AccountID, limit
 	case deviceID < 0:
 		// A recording plays as a device of its own (D89).
 		account, err := h.store.RecordingAccount(ctx, -deviceID)

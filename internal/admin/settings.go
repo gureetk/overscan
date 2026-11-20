@@ -44,6 +44,8 @@ type apiSettings struct {
 	RecordingHours   int    `json:"recordings_max_hours"`
 	TimeshiftMinutes int    `json:"timeshift_minutes"`
 	SharedTuner      bool   `json:"shared_tuner"`
+	Outputs          bool   `json:"outputs"`
+	OutputsAnywhere  bool   `json:"outputs_anywhere"`
 }
 
 func (a *Admin) apiSettings(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
@@ -77,6 +79,11 @@ func (a *Admin) apiSettings(w http.ResponseWriter, r *http.Request, _ store.Admi
 					}
 				}
 			}
+		}
+	}
+	if err == nil {
+		if v.Outputs, err = a.store.Outputs(ctx); err == nil {
+			v.OutputsAnywhere, err = a.store.OutputsAnywhere(ctx)
 		}
 	}
 	if a.editAnswer(w, err) {
@@ -216,6 +223,24 @@ func (a *Admin) apiChangeSettings(w http.ResponseWriter, r *http.Request, _ stor
 				return
 			}
 			if a.editAnswer(w, a.setSharedTuner(r.Context(), on)) {
+				return
+			}
+		case "outputs":
+			var on bool
+			if json.Unmarshal(v, &on) != nil {
+				apiError(w, http.StatusBadRequest, "bad_json", "outputs is true or false.")
+				return
+			}
+			if a.editAnswer(w, a.setOutputsOn(r.Context(), on)) {
+				return
+			}
+		case "outputs_anywhere":
+			var on bool
+			if json.Unmarshal(v, &on) != nil {
+				apiError(w, http.StatusBadRequest, "bad_json", "outputs_anywhere is true or false.")
+				return
+			}
+			if a.editAnswer(w, a.setOutputsAnywhere(r.Context(), on)) {
 				return
 			}
 		default:

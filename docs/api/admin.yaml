@@ -1879,6 +1879,17 @@ paths:
                     One connection to a source serves every screen that
                     plays a channel: boxes, Stalker clients and recordings
                     (D93). It applies from the next channel a screen plays.
+                outputs:
+                  type: boolean
+                  description: >-
+                    The outputs that players other than the boxes use (D103):
+                    each account's playlist and guide, for accounts whose
+                    own switch is on too.
+                outputs_anywhere:
+                  type: boolean
+                  description: >-
+                    The outputs answer players from any address, not only
+                    from this server's own networks.
       responses:
         "200":
           $ref: "#/components/responses/Settings"
@@ -3463,7 +3474,7 @@ components:
         application/json:
           schema:
             type: object
-            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes, adult_marks, radio_apart, tmdb_key_set, tmdb_language, recordings_cap, recordings_until, recordings_max_hours, timeshift_minutes, shared_tuner]
+            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes, adult_marks, radio_apart, tmdb_key_set, tmdb_language, recordings_cap, recordings_until, recordings_max_hours, timeshift_minutes, shared_tuner, outputs, outputs_anywhere]
             properties:
               repair_default:
                 type: boolean
@@ -3554,6 +3565,17 @@ components:
                   One connection to a source serves every screen that plays a
                   channel, and counts once against the source's limit (D93).
                   Off at first: each screen has a connection of its own.
+              outputs:
+                type: boolean
+                description: >-
+                  The outputs that players other than the boxes use (D103).
+                  Off at first.
+              outputs_anywhere:
+                type: boolean
+                description: >-
+                  The outputs answer players from any address. Off at first:
+                  only private, loopback, link-local and shared (RFC 6598)
+                  addresses.
     NoRecorder:
       description: This server cannot record (`no_recorder`).
       content:

@@ -46,6 +46,8 @@ The notes in [protocol/catchup-notes.md](protocol/catchup-notes.md) are **Docume
 
 The notes in [protocol/playlist-notes.md](protocol/playlist-notes.md) are **Documented** from the public documentation of the same two players, and not from their code.
 
+The notes in [protocol/m3u-output-notes.md](protocol/m3u-output-notes.md), on the playlists and guides that Overscan serves to players, are **Documented** from the same players' public documentation and the XMLTV project's description of its format, and mark Overscan's own choices as such; no player's code is read.
+
 The notes in [protocol/tmdb-notes.md](protocol/tmdb-notes.md) are **Documented** from The Movie Database's own developer documentation, the documentation of an open-source client (MIT), whose code was not read, and answers on TMDB's forum.
 
 The matrix in [compatibility.md](compatibility.md) says how to connect each app from its public documentation, and what each did from tests with the app, which are **Observed**. No app's code is read.

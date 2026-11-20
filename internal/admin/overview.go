@@ -144,6 +144,9 @@ func (a *Admin) streamRowsOf(ctx context.Context, devices []store.Device, lineup
 		switch {
 		case s.DeviceID == 0:
 			rows[i].Device = "the debug playlist" // which plays as no device
+		case s.Player != "":
+			// A player that an output serves, as the account (D103).
+			rows[i].Device, rows[i].Model = s.Player, "A player"
 		case s.DeviceID < 0:
 			// A recording plays as a device of its own (D89).
 			rows[i].Device = "a recording on this server"

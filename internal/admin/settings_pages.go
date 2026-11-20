@@ -209,9 +209,20 @@ func (a *Admin) lockCount(ctx context.Context) (int, error) {
 // when the devices' address is unknown. listen is the address the server
 // listens on for devices, such as ":8080".
 func portalAddresses(host, listen string) (mag, stalker string) {
+	base := portalBase(host, listen)
+	if base == "" {
+		return "", ""
+	}
+	return base + "/c/", base + "/stalker_portal/c/"
+}
+
+// portalBase returns the scheme, host and port of the portal's address:
+// the host that the admin was reached at, or the one the server listens
+// on, with the port it listens on; "" if neither says.
+func portalBase(host, listen string) string {
 	listenHost, port, err := net.SplitHostPort(listen)
 	if err != nil || port == "" {
-		return "", ""
+		return ""
 	}
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
@@ -221,10 +232,9 @@ func portalAddresses(host, listen string) (mag, stalker string) {
 		host = listenHost
 	}
 	if host == "" {
-		return "", ""
+		return ""
 	}
-	base := "http://" + net.JoinHostPort(host, port)
-	return base + "/c/", base + "/stalker_portal/c/"
+	return "http://" + net.JoinHostPort(host, port)
 }
 
 // settingsDone answers a change made on the Settings page: the page again

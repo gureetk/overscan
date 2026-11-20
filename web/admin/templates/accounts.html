@@ -8,6 +8,28 @@
 </div>
 <div id="account-sections">
 {{template "alerts" .}}
+<section class="card" id="outputs" aria-labelledby="outputs-title">
+  <div class="panel-title"><span class="tile-icon">{{template "i-live"}}</span><h2 id="outputs-title">Outputs for players</h2>{{if .Data.OutputsOn}}<span class="badge ok">On</span>{{else}}<span class="badge">Off</span>{{end}}</div>
+  <form method="post" action="/admin/accounts/outputs/on" hx-post="/admin/accounts/outputs/on" hx-trigger="change" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="switch-row">
+    <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+    <input class="switch" type="checkbox" id="outputs-on" name="on" value="1"{{if .Data.OutputsOn}} checked{{end}} aria-describedby="outputs-on-text">
+    <div>
+      <label for="outputs-on">Serve players other than the boxes</label>
+      <p id="outputs-on-text">{{if .Data.OutputsOn}}Players such as Kodi, VLC or TiviMate read the playlist and guide of each account whose playlist is on, below, and play its channels through this server, within each account's and each source's limits.{{else}}Off: players other than the boxes get nothing. Boxes and Stalker clients play as before.{{end}}</p>
+      <noscript><button class="small" type="submit">Save</button></noscript>
+    </div>
+  </form>
+  <form method="post" action="/admin/accounts/outputs/anywhere" hx-post="/admin/accounts/outputs/anywhere" hx-trigger="change" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="switch-row">
+    <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+    <input class="switch" type="checkbox" id="outputs-anywhere" name="on" value="1"{{if .Data.Anywhere}} checked{{end}} aria-describedby="outputs-anywhere-text">
+    <div>
+      <label for="outputs-anywhere">Answer players anywhere</label>
+      <p id="outputs-anywhere-text">{{if .Data.Anywhere}}Players from any address are answered.{{else}}Off: only players on this server's own networks are answered: private addresses, this server itself, and VPNs in the shared address space.{{end}}</p>
+      <noscript><button class="small" type="submit">Save</button></noscript>
+    </div>
+  </form>
+  <p class="hint">Players send an account's token or login in every address they ask for, and a playlist's addresses play without a password. Keep the outputs on your own network; to reach them from outside, use a VPN, or a proxy with TLS, rather than an open port.</p>
+</section>
 <section class="card" id="accounts" aria-labelledby="accounts-title">
   <h2 id="accounts-title">Accounts <span class="count quiet">{{len .Data.Accounts}}</span></h2>
   <ul class="profiles accounts">
@@ -88,6 +110,27 @@
             <noscript><button type="submit">Save</button></noscript>
           </form>
           {{- end}}
+
+          <h3>Playlist and guide</h3>
+          <form method="post" action="/admin/accounts/{{.ID}}/playlist" hx-post="/admin/accounts/{{.ID}}/playlist" hx-trigger="change" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="switch-row">
+            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+            <input class="switch" type="checkbox" id="playlist-{{.ID}}" name="on" value="1"{{if .Outputs.M3U}} checked{{end}}>
+            <div>
+              <label for="playlist-{{.ID}}">Players read {{.Name}}'s playlist and guide</label>
+              <noscript><button class="small" type="submit">Save</button></noscript>
+            </div>
+          </form>
+          {{- if .Playlist}}
+          <dl class="facts-list addresses">
+            <div><dt>Playlist (M3U)</dt><dd class="mono">{{.Playlist}}</dd></div>
+            <div><dt>Guide (XMLTV)</dt><dd class="mono">{{.Guide}}</dd></div>
+          </dl>
+          <form method="post" action="/admin/accounts/{{.ID}}/token" hx-post="/admin/accounts/{{.ID}}/token" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" hx-confirm="Make new addresses for {{.Name}}'s playlist and guide? The old ones stop working at once.">
+            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+            <button type="submit">Make new addresses</button>
+          </form>
+          {{- end}}
+          <p class="hint">{{if not $.Data.OutputsOn}}The outputs are off: turn them on above as well. {{end}}Give a player the playlist's address; most read the guide from it, and others take the guide's address too. The addresses need no password, so treat them as one: making new ones stops the old.</p>
 
           <h3>Login</h3>
           <form method="post" action="/admin/accounts/{{.ID}}/login" hx-post="/admin/accounts/{{.ID}}/login" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="login-form">
