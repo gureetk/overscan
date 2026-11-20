@@ -314,17 +314,20 @@ type apiRecording struct {
 	Stop     time.Time `json:"stop"`
 	// UntilStopped says that it runs until it is stopped, at the latest
 	// until Stop (D98).
-	UntilStopped bool   `json:"until_stopped,omitempty"`
-	State        string `json:"state"`
-	File         string `json:"file,omitempty"`
-	Bytes        int64  `json:"bytes"`
-	Error        string `json:"error,omitempty"`
+	UntilStopped bool `json:"until_stopped,omitempty"`
+	// Timed says that a box set it by time, to run exactly from Start to
+	// Stop (D101).
+	Timed bool   `json:"timed,omitempty"`
+	State string `json:"state"`
+	File  string `json:"file,omitempty"`
+	Bytes int64  `json:"bytes"`
+	Error string `json:"error,omitempty"`
 }
 
 func apiRecordingOf(r store.Recording) apiRecording {
 	return apiRecording{ID: r.ID, DeviceID: r.DeviceID, EntryID: r.EntryID, Channel: r.Channel, Title: r.Title,
-		Start: r.Start.UTC(), Stop: r.Stop.UTC(), UntilStopped: r.UntilStopped, State: r.State, File: r.File, Bytes: r.Size,
-		Error: r.Error}
+		Start: r.Start.UTC(), Stop: r.Stop.UTC(), UntilStopped: r.UntilStopped, Timed: r.Timed, State: r.State, File: r.File,
+		Bytes: r.Size, Error: r.Error}
 }
 
 // apiRecordings lists the recordings to come and under way, and the last

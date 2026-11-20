@@ -135,15 +135,23 @@ type Recording struct {
 	// at the latest until Stop, rather than to the end of a programme
 	// (D98, schema 34).
 	UntilStopped bool
+	// Timed is set for a recording of a channel at a time that a box set,
+	// which runs exactly from Start to Stop (D101, schema 35).
+	Timed bool
 }
 
-const recordingColumns = `id, account_id, device_id, entry_id, channel, title, start, stop, state, file, size, error, created_at, dir, until_stopped`
+// Exact reports whether a recording runs exactly from its start to its
+// stop, rather than from a minute before its programme to two minutes
+// after it: one that runs until it is stopped, or one set by time.
+func (r Recording) Exact() bool { return r.UntilStopped || r.Timed }
+
+const recordingColumns = `id, account_id, device_id, entry_id, channel, title, start, stop, state, file, size, error, created_at, dir, until_stopped, timed`
 
 func scanRecording(row rowScanner) (Recording, error) {
 	var r Recording
 	var start, stop, created int64
 	err := row.Scan(&r.ID, &r.AccountID, &r.DeviceID, &r.EntryID, &r.Channel, &r.Title, &start, &stop, &r.State,
-		&r.File, &r.Size, &r.Error, &created, &r.Dir, &r.UntilStopped)
+		&r.File, &r.Size, &r.Error, &created, &r.Dir, &r.UntilStopped, &r.Timed)
 	r.Start, r.Stop, r.CreatedAt = time.Unix(start, 0), time.Unix(stop, 0), time.Unix(created, 0)
 	return r, err
 }
@@ -153,15 +161,15 @@ func scanRecording(row rowScanner) (Recording, error) {
 // cancelled is scheduled again.
 func (s *Store) ScheduleRecording(ctx context.Context, r Recording) (Recording, error) {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO recordings (account_id, device_id, entry_id, channel, title, start, stop, state, created_at, until_stopped)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO recordings (account_id, device_id, entry_id, channel, title, start, stop, state, created_at, until_stopped, timed)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (entry_id, start) DO UPDATE SET
 			account_id = excluded.account_id, device_id = excluded.device_id, channel = excluded.channel,
 			title = excluded.title, stop = excluded.stop, state = excluded.state, error = '', size = 0, file = '', dir = '',
-			created_at = excluded.created_at, until_stopped = excluded.until_stopped
+			created_at = excluded.created_at, until_stopped = excluded.until_stopped, timed = excluded.timed
 		WHERE recordings.state IN (?, ?)`,
 		r.AccountID, r.DeviceID, r.EntryID, r.Channel, r.Title, r.Start.Unix(), r.Stop.Unix(), RecordingScheduled,
-		r.CreatedAt.Unix(), r.UntilStopped, RecordingFailed, RecordingCancelled)
+		r.CreatedAt.Unix(), r.UntilStopped, r.Timed, RecordingFailed, RecordingCancelled)
 	if err != nil {
 		return Recording{}, fmt.Errorf("store: schedule a recording: %w", err)
 	}
@@ -185,6 +193,23 @@ func (s *Store) ActiveRecording(ctx context.Context, entryID int64, at time.Time
 	}
 	if err != nil {
 		return Recording{}, fmt.Errorf("store: lineup entry %d's recording: %w", entryID, err)
+	}
+	return r, nil
+}
+
+// OverlappingRecording returns a recording of a lineup entry, scheduled or
+// under way, whose time overlaps the one from start to stop, or
+// ErrNotFound (D101).
+func (s *Store) OverlappingRecording(ctx context.Context, entryID int64, start, stop time.Time) (Recording, error) {
+	r, err := scanRecording(s.db.QueryRowContext(ctx, `SELECT `+recordingColumns+` FROM recordings
+		WHERE entry_id = ? AND state IN (?, ?) AND start < ? AND stop > ?
+		ORDER BY start, id LIMIT 1`,
+		entryID, RecordingScheduled, RecordingRecording, stop.Unix(), start.Unix()))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Recording{}, ErrNotFound
+	}
+	if err != nil {
+		return Recording{}, fmt.Errorf("store: lineup entry %d's recordings: %w", entryID, err)
 	}
 	return r, nil
 }

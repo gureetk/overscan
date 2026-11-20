@@ -21,6 +21,8 @@ export interface Recording {
   stop: number;
   /** Set for a recording that runs until it is stopped (D98). */
   until_stopped?: boolean;
+  /** Set for a recording that a box set by time, which runs exactly from start to stop (D101). */
+  timed?: boolean;
   state: 'scheduled' | 'recording' | 'done' | 'failed' | 'cancelled';
   error?: string;
   /** The bytes of its file, for one that is done or failed after it began (D100). */
@@ -32,13 +34,18 @@ function active(r: Recording): boolean {
   return r.state === 'scheduled' || r.state === 'recording';
 }
 
+/** exact says whether a recording runs exactly from its start to its stop, rather than from a minute before its programme to two minutes after it. */
+export function exact(r: Recording): boolean {
+  return !!r.until_stopped || !!r.timed;
+}
+
 /**
  * recordingNow says whether a recording is under way at t: the server
- * begins one a minute before its programme, and looks for those due every
- * few seconds.
+ * begins one a minute before its programme, or at its start for one that
+ * runs exactly as set, and looks for those due every few seconds.
  */
 export function recordingNow(r: Recording, t: number): boolean {
-  return r.state === 'recording' || r.start - 60 <= t;
+  return r.state === 'recording' || r.start - (exact(r) ? 0 : 60) <= t;
 }
 
 interface RecordingList {
@@ -136,7 +143,7 @@ export class Recordings {
   onChannel(id: number, t: number): Recording | null {
     for (let i = 0; i < this.list.length; i++) {
       const r = this.list[i]!;
-      if (r.channel === id && active(r) && recordingNow(r, t) && t < r.stop + (r.until_stopped ? 0 : 120)) {
+      if (r.channel === id && active(r) && recordingNow(r, t) && t < r.stop + (exact(r) ? 0 : 120)) {
         return r;
       }
     }
@@ -164,6 +171,23 @@ export class Recordings {
   recordNow(id: number, pin: string, done: Callback<Recording>): void {
     const self = this;
     const body: { channel: number; now: boolean; pin?: string } = { channel: id, now: true };
+    if (pin) {
+      body.pin = pin;
+    }
+    this.client.call<Recording>('POST', 'recordings', body, function (err, r) {
+      if (r) {
+        self.put(r);
+      } else if (err && err.code === 'recording_off') {
+        self.on = false;
+      }
+      done(err, r);
+    });
+  }
+
+  /** recordTimed records channel id from start to stop, in Unix seconds (D101). */
+  recordTimed(id: number, start: number, stop: number, pin: string, done: Callback<Recording>): void {
+    const self = this;
+    const body: { channel: number; start: number; stop: number; pin?: string } = { channel: id, start: start, stop: stop };
     if (pin) {
       body.pin = pin;
     }

@@ -106,6 +106,8 @@ For a household (M5):
 - A message from the admin shows over whatever is on screen until OK, and does not come back.
 - A theme chosen for the household, and another for a profile, change the box's look within five minutes, with every screen still readable; *Overscan* brings back the page's own look.
 - With the shared tuner on, a box and a recording of the channel it plays use one connection to the source.
+- Green in Live TV records the channel shown, with or without a guide, and green again stops it; what it recorded plays on *Movies*. A box's *Settings → Recording Stops* chooses whether such a recording stops at the programme's end or when it is stopped.
+- *Recordings* on Home lists what records now, what is to come and what ended in the last day; *Record by Time* records a channel from a start to an end, and the recording begins and ends at those times.
 
 ## The admin with the box
 

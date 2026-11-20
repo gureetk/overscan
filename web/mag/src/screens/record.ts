@@ -112,7 +112,7 @@ export function stop(ctx: Ctx, r: Recording, done: () => void): void {
 }
 
 /** withPIN asks for the parental PIN for a locked channel, then goes on. */
-function withPIN(ctx: Ctx, c: Channel, go: (pin: string) => void): void {
+export function withPIN(ctx: Ctx, c: Channel, go: (pin: string) => void): void {
   if (c.locked) {
     ctx.unlock(label(c), function (ok) {
       if (ok) {

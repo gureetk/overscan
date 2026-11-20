@@ -2777,16 +2777,21 @@ components:
           format: date-time
           description: >-
             When the programme begins, and the recording a minute earlier;
-            for a channel recorded from now on (D98), when it began.
+            for a channel recorded from now on (D98), when it began; for one
+            set by time (D101), when it begins.
         stop:
           type: string
           format: date-time
           description: >-
             When the programme ends, and the recording two minutes later;
-            for one that runs until it is stopped, the latest it may run.
+            for one that runs until it is stopped, the latest it may run;
+            for one set by time, when it ends.
         until_stopped:
           type: boolean
           description: Present, and true, for a recording that runs until it is stopped (D98).
+        timed:
+          type: boolean
+          description: Present, and true, for a recording that a box set by time, from its start to its stop exactly (D101).
         state:
           type: string
           enum: [scheduled, recording, done, failed, cancelled]

@@ -475,3 +475,35 @@ func TestRecordingUntilStopped(t *testing.T) {
 		t.Errorf("done %+v", done)
 	}
 }
+
+// TestRecordingByTime checks that a recording set by time begins at its
+// start, not a minute before, and ends at its stop, not two minutes after
+// (D101).
+func TestRecordingByTime(t *testing.T) {
+	hub := &fakeHub{}
+	r, st, entry := newRecorder(t, hub)
+	tk := tick
+	tick, lead, tail = 20*time.Millisecond, time.Hour, time.Hour
+	t.Cleanup(func() { tick = tk })
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	start := time.Now().Truncate(time.Second).Add(2 * time.Second)
+	rec, err := st.ScheduleRecording(ctx, store.Recording{EntryID: entry, Channel: "Example News", Title: "Example News",
+		Start: start, Stop: start.Add(time.Second), Timed: true, CreatedAt: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go r.Run(ctx)
+	time.Sleep(300 * time.Millisecond)
+	if got, err := st.RecordingByID(ctx, rec.ID); err != nil || got.State != store.RecordingScheduled {
+		t.Fatalf("before its start: %+v, %v", got, err)
+	}
+	waitState(t, st, rec.ID, store.RecordingRecording)
+	if time.Now().Before(start) {
+		t.Errorf("began %v before its start", time.Until(start))
+	}
+	done := waitState(t, st, rec.ID, store.RecordingDone)
+	if done.Size == 0 || !done.Timed {
+		t.Errorf("done %+v", done)
+	}
+}
