@@ -448,3 +448,30 @@ func TestRecordingStopsWithItsAccount(t *testing.T) {
 		t.Errorf("after the account's end: %+v", got)
 	}
 }
+
+// A recording that runs until it is stopped ends at its stop, the latest it
+// may run, without the tail of a programme's; and Wake starts one that a box
+// has just started without waiting for the next look (D98).
+func TestRecordingUntilStopped(t *testing.T) {
+	hub := &fakeHub{}
+	r, st, entry := newRecorder(t, hub)
+	tk := tick
+	tick, tail = time.Hour, time.Hour
+	t.Cleanup(func() { tick = tk })
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go r.Run(ctx)
+	time.Sleep(50 * time.Millisecond) // past Run's first look
+	now := time.Now()
+	rec, err := st.ScheduleRecording(ctx, store.Recording{EntryID: entry, Channel: "Example News", Title: "Example News",
+		Start: now, Stop: now.Add(2 * time.Second), UntilStopped: true, CreatedAt: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Wake()
+	waitState(t, st, rec.ID, store.RecordingRecording)
+	done := waitState(t, st, rec.ID, store.RecordingDone)
+	if done.Size == 0 || !done.UntilStopped {
+		t.Errorf("done %+v", done)
+	}
+}

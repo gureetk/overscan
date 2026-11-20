@@ -105,3 +105,63 @@ func TestRecordings(t *testing.T) {
 		t.Errorf("deleted twice: %v", err)
 	}
 }
+
+// How long a recording that a box starts on a channel runs, and the one a
+// channel has under way or due now (D98).
+func TestRecordNow(t *testing.T) {
+	st := openTest(t, newPath(t))
+	ctx := context.Background()
+	if v, err := st.RecordUntil(ctx); err != nil || v != RecordUntilProgramme {
+		t.Fatalf("until at first %q, %v", v, err)
+	}
+	if h, err := st.RecordingHours(ctx); err != nil || h != DefaultRecordingHours {
+		t.Fatalf("hours at first %d, %v", h, err)
+	}
+	if err := st.SetRecordUntil(ctx, "forever"); err == nil {
+		t.Error("an unknown end")
+	}
+	for _, bad := range []int{0, MaxRecordingHours + 1} {
+		if err := st.SetRecordingHours(ctx, bad); err == nil {
+			t.Errorf("%d hours", bad)
+		}
+	}
+	if err := st.SetRecordUntil(ctx, RecordUntilStopped); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetRecordingHours(ctx, 6); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := st.RecordUntil(ctx); v != RecordUntilStopped {
+		t.Errorf("until %q", v)
+	}
+	if h, _ := st.RecordingHours(ctx); h != 6 {
+		t.Errorf("hours %d", h)
+	}
+
+	now := time.Unix(1_800_000_000, 0)
+	if _, err := st.ActiveRecording(ctx, 7, now); !errors.Is(err, ErrNotFound) {
+		t.Errorf("none: %v", err)
+	}
+	later, err := st.ScheduleRecording(ctx, Recording{EntryID: 7, Channel: "one", Title: "Later", Start: now.Add(time.Hour),
+		Stop: now.Add(2 * time.Hour), CreatedAt: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	open, err := st.ScheduleRecording(ctx, Recording{EntryID: 7, Channel: "one", Title: "one", Start: now,
+		Stop: now.Add(4 * time.Hour), UntilStopped: true, CreatedAt: now})
+	if err != nil || !open.UntilStopped {
+		t.Fatalf("until stopped %+v, %v", open, err)
+	}
+	if got, err := st.ActiveRecording(ctx, 7, now); err != nil || got.ID != open.ID {
+		t.Errorf("due now %+v, %v", got, err)
+	}
+	if got, err := st.ActiveRecording(ctx, 7, now.Add(90*time.Minute)); err != nil || got.ID != later.ID {
+		t.Errorf("an hour and a half later %+v, %v", got, err)
+	}
+	if err := st.SetRecordingState(ctx, open.ID, RecordingDone, "", "one.ts", 188, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ActiveRecording(ctx, 7, now); !errors.Is(err, ErrNotFound) {
+		t.Errorf("after it was made: %v", err)
+	}
+}

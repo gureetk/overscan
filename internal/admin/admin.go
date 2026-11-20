@@ -140,6 +140,7 @@ func (a *Admin) Handler() http.Handler {
 	mux.Handle("POST /admin/settings/shared", a.page(a.sharedForm))
 	mux.Handle("POST /admin/settings/tmdb", a.page(a.tmdbForm))
 	mux.Handle("POST /admin/settings/recordings", a.page(a.recordingsForm))
+	mux.Handle("POST /admin/settings/recordings/end", a.page(a.recordingEndForm))
 	mux.Handle("POST /admin/recordings/{id}/{action}", a.page(a.recordingAction))
 	mux.Handle("GET /admin/support-bundle", a.page(a.supportBundle))
 	mux.Handle("GET /admin/{$}", a.page(a.home))

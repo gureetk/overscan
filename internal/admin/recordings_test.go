@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -57,8 +58,9 @@ func TestRecordings(t *testing.T) {
 		t.Fatal(err)
 	}
 	answer := ta.do("POST", "/admin/settings/recordings", lineupForm(csrf, "", "cap", "25"), c, hx...)
-	mustContain(t, "on", answer.Body.String(), "Boxes can record programmes from the TV Guide, in up to 25 GB.",
-		"This server records them, in up to 25 GB, and boxes play them on Movies, from the folder source that reads them.", `<option value="25" selected>Up to 25 GB</option>`,
+	mustContain(t, "on", answer.Body.String(), "Boxes can record, in up to 25 GB.",
+		"This server records, in up to 25 GB, and boxes play the recordings on Movies, from the folder source that reads them.", `<option value="25" selected>Up to 25 GB</option>`,
+		`<option value="programme" selected>Stops when its programme ends</option>`, `<option value="4" selected>4 hours</option>`,
 		"They go in <code>"+rec.dir+"</code>, and take 3 MB there.", "Nothing recorded yet.")
 	if n, _ := ta.st.RecordingsCap(ctx); n != 25 {
 		t.Errorf("room %d GB", n)
@@ -316,4 +318,45 @@ func TestRecordingsFolderMoved(t *testing.T) {
 			t.Errorf("%s: %v", p, err)
 		}
 	}
+}
+
+// What a recording that a box starts on a channel runs until, and the
+// longest one that runs until it is stopped may run, from the Settings page
+// and the API (D98).
+func TestRecordingEnd(t *testing.T) {
+	ta := newTestAdmin(t)
+	ta.setPassword("correct horse")
+	c, csrf := ta.signIn("correct horse")
+	hx := []string{"HX-Request", "true"}
+	ctx := context.Background()
+	rec := &fakeRecorder{dir: filepath.Join(t.TempDir(), "Recordings")}
+	ta.UseRecorder(rec)
+	if strings.Contains(ta.do("GET", "/admin/settings", nil, c).Body.String(), `id="recordings-until"`) {
+		t.Error("the choices show while recording is off")
+	}
+	if err := ta.st.SetRecordingsCap(ctx, 10); err != nil {
+		t.Fatal(err)
+	}
+	answer := ta.do("POST", "/admin/settings/recordings/end", lineupForm(csrf, "", "until", "stopped", "hours", "8"), c, hx...)
+	mustContain(t, "until stopped", answer.Body.String(), "A recording that a box starts on a channel runs until it is stopped, or for at most 8 hours.",
+		`<option value="stopped" selected>Runs until it is stopped</option>`, `<option value="8" selected>8 hours</option>`)
+	if v, _ := ta.st.RecordUntil(ctx); v != store.RecordUntilStopped {
+		t.Errorf("until %q", v)
+	}
+	if h, _ := ta.st.RecordingHours(ctx); h != 8 {
+		t.Errorf("hours %d", h)
+	}
+	for _, bad := range [][]string{{"until", "never", "hours", "4"}, {"until", "programme", "hours", "0"}, {"until", "programme", "hours", "25"}} {
+		if answer := ta.do("POST", "/admin/settings/recordings/end", lineupForm(csrf, "", bad...), c, hx...); answer.Code != http.StatusBadRequest {
+			t.Errorf("%v: status %d", bad, answer.Code)
+		}
+	}
+	h := []string{csrfHeader, csrf}
+	var got apiSettings
+	if rec := ta.apiDo("PATCH", "settings", `{"recordings_until": "programme", "recordings_max_hours": 2}`, c, h...); rec.Code != http.StatusOK ||
+		json.Unmarshal(rec.Body.Bytes(), &got) != nil || got.RecordUntil != "programme" || got.RecordingHours != 2 {
+		t.Errorf("API: %d %s", rec.Code, rec.Body)
+	}
+	apiErrorOf(t, ta.apiDo("PATCH", "settings", `{"recordings_until": "soon"}`, c, h...), http.StatusBadRequest, "bad_recordings_until")
+	apiErrorOf(t, ta.apiDo("PATCH", "settings", `{"recordings_max_hours": "4"}`, c, h...), http.StatusBadRequest, "bad_json")
 }

@@ -40,6 +40,8 @@ type apiSettings struct {
 	TMDBKeySet       bool   `json:"tmdb_key_set"`
 	TMDBLanguage     string `json:"tmdb_language"`
 	RecordingsCap    int    `json:"recordings_cap"`
+	RecordUntil      string `json:"recordings_until"`
+	RecordingHours   int    `json:"recordings_max_hours"`
 	TimeshiftMinutes int    `json:"timeshift_minutes"`
 	SharedTuner      bool   `json:"shared_tuner"`
 }
@@ -61,7 +63,11 @@ func (a *Admin) apiSettings(w http.ResponseWriter, r *http.Request, _ store.Admi
 									if v.TMDBLanguage, err = a.store.TMDBLanguage(ctx); err == nil {
 										if v.RecordingsCap, err = a.store.RecordingsCap(ctx); err == nil {
 											if v.TimeshiftMinutes, err = a.store.Timeshift(ctx); err == nil {
-												v.SharedTuner, err = a.store.SharedTuner(ctx)
+												if v.SharedTuner, err = a.store.SharedTuner(ctx); err == nil {
+													if v.RecordUntil, err = a.store.RecordUntil(ctx); err == nil {
+														v.RecordingHours, err = a.store.RecordingHours(ctx)
+													}
+												}
 											}
 										}
 									}
@@ -174,6 +180,24 @@ func (a *Admin) apiChangeSettings(w http.ResponseWriter, r *http.Request, _ stor
 				return
 			}
 			if a.editAnswer(w, a.setRecordingsCap(r.Context(), gb)) {
+				return
+			}
+		case "recordings_until":
+			var until string
+			if json.Unmarshal(v, &until) != nil {
+				apiError(w, http.StatusBadRequest, "bad_json", `recordings_until is "programme" or "stopped".`)
+				return
+			}
+			if a.editAnswer(w, a.setRecordUntil(r.Context(), until)) {
+				return
+			}
+		case "recordings_max_hours":
+			var hours int
+			if json.Unmarshal(v, &hours) != nil {
+				apiError(w, http.StatusBadRequest, "bad_json", fmt.Sprintf("recordings_max_hours is a whole number of hours from 1 to %d.", store.MaxRecordingHours))
+				return
+			}
+			if a.editAnswer(w, a.setRecordingHours(r.Context(), hours)) {
 				return
 			}
 		case "timeshift_minutes":

@@ -49,6 +49,8 @@ type settingsData struct {
 	TMDBNotice       string            // the notice TMDB asks applications to show
 	CanRecord        bool              // this server records programmes (D89)
 	RecordingsCap    int               // the room recordings may take, in gigabytes; 0 while recording is off
+	RecordUntil      string            // what a recording that a box starts on a channel runs until (D98)
+	RecordingHours   int               // the most hours that one which runs until stopped may run
 	Timeshift        int               // the minutes of a box's live channel the server keeps; 0 while timeshift is off (D92)
 	SharedTuner      bool              // one connection to a source serves every screen that plays a channel (D93)
 	EndsAt           time.Time         // when the household's account ends; zero if never (D95)
@@ -154,6 +156,12 @@ func (a *Admin) settings(r *http.Request) (settingsData, error) {
 	if d.RecordingsCap, err = a.store.RecordingsCap(ctx); err != nil {
 		return d, err
 	}
+	if d.RecordUntil, err = a.store.RecordUntil(ctx); err != nil {
+		return d, err
+	}
+	if d.RecordingHours, err = a.store.RecordingHours(ctx); err != nil {
+		return d, err
+	}
 	if d.Timeshift, err = a.store.Timeshift(ctx); err != nil {
 		return d, err
 	}
@@ -249,6 +257,18 @@ func (d settingsData) RecordingCaps() []int {
 		slices.Sort(caps)
 	}
 	return caps
+}
+
+// RecordingHourChoices returns the most hours that the Settings page
+// offers for a recording which runs until it is stopped, with the one set
+// if it is another.
+func (d settingsData) RecordingHourChoices() []int {
+	hours := recordingHours
+	if !slices.Contains(hours, d.RecordingHours) {
+		hours = append(slices.Clone(hours), d.RecordingHours)
+		slices.Sort(hours)
+	}
+	return hours
 }
 
 // RecordingRows returns the recordings that the Settings page lists: those

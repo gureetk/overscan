@@ -288,7 +288,7 @@ export class GuideScreen implements Screen {
         if (i === this.row && q.start <= this.at && this.at < q.stop) {
           cls += ' focus';
         }
-        const rec = q.stop > t ? this.ctx.recordings.find(c.id, q.start) : null;
+        const rec = q.stop > t ? this.ctx.recordings.forProgramme(c.id, q.start, q.stop) : null;
         if (rec) {
           cls += recordingNow(rec, t) ? ' rec now' : ' rec';
         }
@@ -341,7 +341,7 @@ export class GuideScreen implements Screen {
     }
     setText(this.title, p.title);
     const archived = inArchive(c, p, t);
-    const rec = p.stop > t ? this.ctx.recordings.find(c.id, p.start) : null;
+    const rec = p.stop > t ? this.ctx.recordings.forProgramme(c.id, p.start, p.stop) : null;
     const recText = rec ? (recordingNow(rec, t) ? ' · Recording' : ' · To be recorded') : '';
     setHTML(this.meta, escape(day(p.start) + ', ' + span(p.start, p.stop) + (p.category ? ' · ' + p.category : '') + (archived ? ' · Catch-up' : '') + recText));
     setText(this.description, p.description || p.subtitle || '');

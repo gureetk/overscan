@@ -12,7 +12,7 @@ import { star } from '../icons';
 import type { Press } from '../keys';
 import type { PickItem } from '../overlays';
 import { clock, duration, hms, now, progress, span } from '../time';
-import { record, recordable, recordText } from './record';
+import { channelText, recordChannel } from './record';
 import { Clock, type Ctx, escape, Footer, type Screen, type VideoArea } from './screen';
 
 /** How long the banner shows by itself. */
@@ -151,7 +151,8 @@ export class WatchScreen implements Screen {
     show(this.fav, favourite);
     const p = this.ctx.guide.at(c.id, t);
     const next = this.ctx.guide.after(c.id, p ? p.stop : t);
-    setText(this.nowText, p ? span(p.start, p.stop) : '');
+    const recording = !!this.ctx.recordings.onChannel(c.id, now());
+    setText(this.nowText, (p ? span(p.start, p.stop) : '') + (recording ? (p ? ' · ' : '') + 'Recording' : ''));
     setText(this.title, p ? p.title : c.name);
     show(this.barRow, !!p);
     if (p) {
@@ -160,9 +161,8 @@ export class WatchScreen implements Screen {
     }
     setHTML(this.next, next ? '<span class="at">Next ' + clock(next.start) + '</span>' + escape(next.title) : '');
     this.drawBadges();
-    // What is on live is what records, however far behind the box is.
-    const live = this.ctx.guide.at(c.id, now());
-    const recording = live && recordable(this.ctx, live) ? recordText(this.ctx, c, live) : '';
+    // The channel records from what is on live, however far behind the box is.
+    const recordKey = this.ctx.recordings.on ? channelText(this.ctx, c) : '';
     const colours = [{ key: 'red', text: favourite ? 'Remove from Favourites' : 'Add to Favourites' }];
     const keys = shifted
       ? [
@@ -176,11 +176,11 @@ export class WatchScreen implements Screen {
     if (player.shiftable()) {
       // Green pauses: the remote's REC key records.
       colours.push({ key: 'green', text: player.paused() ? 'Play' : 'Pause' });
-      if (recording) {
-        keys.push({ key: 'REC', text: recording });
+      if (recordKey) {
+        keys.push({ key: 'REC', text: recordKey });
       }
-    } else if (recording) {
-      colours.push({ key: 'green', text: recording });
+    } else if (recordKey) {
+      colours.push({ key: 'green', text: recordKey });
     }
     colours.push({ key: 'yellow', text: 'Audio' }, { key: 'blue', text: 'Guide' });
     this.footer.set(colours, keys);
@@ -309,14 +309,14 @@ export class WatchScreen implements Screen {
   }
 
   /**
-   * recordNow records what is on now on the channel that plays, or calls
-   * its recording off. Green comes here only when it does not pause.
+   * recordNow records the channel that plays from now on, or stops its
+   * recording. Green comes here only when it does not pause.
    */
   private recordNow(): void {
     const self = this;
     const c = this.ctx.player.channel;
     if (c) {
-      record(this.ctx, c, this.ctx.guide.at(c.id, now()), function () {
+      recordChannel(this.ctx, c, function () {
         self.showBanner();
       });
     }

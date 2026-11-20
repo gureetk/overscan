@@ -10,9 +10,8 @@ import { icon, star } from '../icons';
 import type { Press } from '../keys';
 import { indexOf, isUHD } from '../lineup';
 import { ListView } from '../list';
-import { recordingNow } from '../recordings';
 import { clock, duration, now, progress, span } from '../time';
-import { record, recordable, recordText } from './record';
+import { channelText, recordChannel } from './record';
 import { Clock, type Ctx, escape, Footer, type Screen, type VideoArea } from './screen';
 
 /** The rows the lists show: groups of 2.5625rem, channels of 4rem. */
@@ -364,16 +363,18 @@ export class LiveScreen implements Screen {
     }
     show(this.nowLine, !!p);
     show(this.barBox, !!p);
+    const recording = !!this.ctx.recordings.onChannel(c.id, t);
     if (p) {
-      const rec = this.ctx.recordings.find(c.id, p.start);
-      const recText = rec ? (recordingNow(rec, t) ? ' · Recording' : ' · To be recorded') : '';
-      setText(this.nowText, span(p.start, p.stop) + ' · ' + duration(p.stop - t) + ' left' + recText);
+      setText(this.nowText, span(p.start, p.stop) + ' · ' + duration(p.stop - t) + ' left' + (recording ? ' · Recording' : ''));
       setText(this.title, p.title);
       setWidth(this.bar, progress(p.start, p.stop, t));
       setText(this.description, p.description || p.subtitle || '');
     } else {
       setText(this.title, c.name);
-      setText(this.description, this.ctx.guide.knows(c.id, t, t + 1) ? 'No guide for this channel.' : '');
+      setText(
+        this.description,
+        recording ? 'Recording until it is stopped.' : this.ctx.guide.knows(c.id, t, t + 1) ? 'No guide for this channel.' : '',
+      );
     }
     // What comes next: from the descriptions if the page has them, else the guide.
     const after = p ? p.stop : t;
@@ -503,12 +504,12 @@ export class LiveScreen implements Screen {
     this.drawFooter();
   }
 
-  /** recordNow records what is on now on the channel in focus, or calls its recording off. */
+  /** recordNow records the channel in focus from now on, or stops its recording. */
   private recordNow(): void {
     const self = this;
     const c = this.focused();
     if (c && this.pane === 'channels') {
-      record(this.ctx, c, this.ctx.guide.at(c.id, now()), function () {
+      recordChannel(this.ctx, c, function () {
         self.drawSide();
       });
     }
@@ -517,9 +518,8 @@ export class LiveScreen implements Screen {
   private drawFooter(): void {
     const colours = [{ key: 'red', text: 'Favourite' }];
     const c = this.focused();
-    const p = c ? this.ctx.guide.at(c.id, now()) : null;
-    if (c && p && this.pane === 'channels' && recordable(this.ctx, p)) {
-      colours.push({ key: 'green', text: recordText(this.ctx, c, p) });
+    if (c && this.pane === 'channels' && this.ctx.recordings.on) {
+      colours.push({ key: 'green', text: channelText(this.ctx, c) });
     }
     colours.push({ key: 'yellow', text: this.ctx.lineup.byName ? 'Sort by Number' : 'Sort by Name' }, { key: 'blue', text: 'Search' });
     this.footer.set(

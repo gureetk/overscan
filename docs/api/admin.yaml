@@ -105,11 +105,14 @@ tags:
       at most 12.
   - name: recordings
     description: >-
-      Programmes that boxes record from the guide on this server (D89), once
-      `recordings_cap` in the settings gives them room. A recording plays
-      the channel through the stream hub, as a device of its own, from a
-      minute before its programme to two minutes after it, and its file goes
-      in the recordings folder, which a folder source reads.
+      Programmes that boxes record from the guide on this server (D89), and
+      channels they record from now on (D98), once `recordings_cap` in the
+      settings gives them room. A recording plays the channel through the
+      stream hub, as a device of its own: a programme's from a minute
+      before it to two minutes after it, and a channel's until the end of
+      the programme the guide shows on it, or until it is stopped, for at
+      most `recordings_max_hours`. Its file goes in the recordings folder,
+      which a folder source reads.
 
 paths:
   /session:
@@ -1429,6 +1432,20 @@ paths:
                     folder and, unless a source reads it, a folder source
                     for it. A server that cannot record answers 503
                     (`no_recorder`).
+                recordings_until:
+                  type: string
+                  enum: [programme, stopped]
+                  description: >-
+                    What a recording that a box starts on a channel runs
+                    until, while the guide shows a programme on it: its end,
+                    or until it is stopped (D98).
+                recordings_max_hours:
+                  type: integer
+                  minimum: 1
+                  maximum: 24
+                  description: >-
+                    The most hours that a recording which runs until it is
+                    stopped may run (D98).
                 timeshift_minutes:
                   type: integer
                   minimum: 0
@@ -1555,9 +1572,9 @@ paths:
     post:
       tags: [recordings]
       operationId: cancelRecording
-      summary: Call a recording off
+      summary: Call a recording off, or stop one under way
       description: >-
-        A recording to come is called off. One under way ends now, and what
+        A recording to come is called off. One under way stops now, and what
         it has written is kept, as a recording made.
       security:
         - session: []
@@ -2752,15 +2769,24 @@ components:
           description: The channel's name, as the box saw it.
         title:
           type: string
-          description: The programme's, from the guide.
+          description: >-
+            The programme's, from the guide; for a channel recorded with no
+            programme in the guide, the channel's name.
         start:
           type: string
           format: date-time
-          description: When the programme begins; the recording begins a minute earlier.
+          description: >-
+            When the programme begins, and the recording a minute earlier;
+            for a channel recorded from now on (D98), when it began.
         stop:
           type: string
           format: date-time
-          description: When it ends; the recording ends two minutes later.
+          description: >-
+            When the programme ends, and the recording two minutes later;
+            for one that runs until it is stopped, the latest it may run.
+        until_stopped:
+          type: boolean
+          description: Present, and true, for a recording that runs until it is stopped (D98).
         state:
           type: string
           enum: [scheduled, recording, done, failed, cancelled]
@@ -2960,7 +2986,7 @@ components:
         application/json:
           schema:
             type: object
-            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes, adult_marks, radio_apart, tmdb_key_set, tmdb_language, recordings_cap, timeshift_minutes, shared_tuner]
+            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes, adult_marks, radio_apart, tmdb_key_set, tmdb_language, recordings_cap, recordings_until, recordings_max_hours, timeshift_minutes, shared_tuner]
             properties:
               repair_default:
                 type: boolean
@@ -3022,6 +3048,21 @@ components:
                 description: >-
                   The room that recordings may take, in gigabytes (D89). 0, at
                   first, for none: boxes cannot record.
+              recordings_until:
+                type: string
+                enum: [programme, stopped]
+                description: >-
+                  What a recording that a box starts on a channel runs until,
+                  while the guide shows a programme on it: "programme", at
+                  first, for its end, or "stopped", until it is stopped (D98).
+                  Without a programme, it runs until it is stopped.
+              recordings_max_hours:
+                type: integer
+                minimum: 1
+                maximum: 24
+                description: >-
+                  The most hours that a recording which runs until it is
+                  stopped may run (D98); 4 at first.
               timeshift_minutes:
                 type: integer
                 minimum: 0

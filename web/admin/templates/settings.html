@@ -179,7 +179,7 @@
       <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
       <div>
         <label for="recordings-cap">Record on this server</label>
-        <p id="recordings-text">{{if .Data.RecordingsCap}}Boxes record programmes from the TV Guide with the green key. This server records them, in up to {{.Data.RecordingsCap}} GB, and boxes play them on Movies, from the folder source that reads them.{{else}}Off: boxes cannot record. Once it is on, they record programmes from the TV Guide on this server, and play them on Movies.{{end}}</p>
+        <p id="recordings-text">{{if .Data.RecordingsCap}}Boxes record with the green key: a programme from the TV Guide, or the channel they show from Live TV or full screen. This server records, in up to {{.Data.RecordingsCap}} GB, and boxes play the recordings on Movies, from the folder source that reads them.{{else}}Off: boxes cannot record. Once it is on, they record programmes from the TV Guide, or the channel they show, on this server, and play them on Movies.{{end}}</p>
         <noscript><button class="small" type="submit">Save</button></noscript>
       </div>
       <select id="recordings-cap" name="cap" aria-describedby="recordings-text"{{if not .Data.CanRecord}} disabled{{end}}>
@@ -188,8 +188,35 @@
         {{- end}}
       </select>
     </form>
+    {{- if and .Data.CanRecord .Data.RecordingsCap}}
+    <form method="post" action="/admin/settings/recordings/end" hx-post="/admin/settings/recordings/end" hx-trigger="change" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" class="recording-end">
+      <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+      <div class="switch-row with-select">
+        <div>
+          <label for="recordings-until">A recording started on a channel</label>
+          <p id="recordings-until-text">Green or REC in Live TV or full screen records the channel from then on. While the guide shows a programme on it, the recording can stop at the programme's end, or run until it is stopped.</p>
+        </div>
+        <select id="recordings-until" name="until" aria-describedby="recordings-until-text">
+          <option value="programme"{{if eq .Data.RecordUntil "programme"}} selected{{end}}>Stops when its programme ends</option>
+          <option value="stopped"{{if eq .Data.RecordUntil "stopped"}} selected{{end}}>Runs until it is stopped</option>
+        </select>
+      </div>
+      <div class="switch-row with-select">
+        <div>
+          <label for="recordings-hours">The longest a recording runs until it is stopped</label>
+          <p id="recordings-hours-text">A recording without a programme in the guide runs until it is stopped, or for at most this long, so that one left running does not take a connection and the room for ever.</p>
+        </div>
+        <select id="recordings-hours" name="hours" aria-describedby="recordings-hours-text">
+          {{- range .Data.RecordingHourChoices}}
+          <option value="{{.}}"{{if eq . $.Data.RecordingHours}} selected{{end}}>{{if eq . 1}}1 hour{{else}}{{.}} hours{{end}}</option>
+          {{- end}}
+        </select>
+      </div>
+      <noscript><button class="small" type="submit">Save</button></noscript>
+    </form>
+    {{- end}}
     {{- if .Data.CanRecord}}
-    <p class="hint">They go in <code>{{.Data.RecordingsDir}}</code>, and take {{.Data.RecordingsUsedText}} there. Another folder is set with <code>recordings_dir</code> in the configuration file, and takes effect when the server starts again. A recording runs from a minute before its programme to two minutes after it, and uses one of its source's connections all that time.</p>
+    <p class="hint">They go in <code>{{.Data.RecordingsDir}}</code>, and take {{.Data.RecordingsUsedText}} there. Another folder is set with <code>recordings_dir</code> in the configuration file, and takes effect when the server starts again. A programme from the guide is recorded from a minute before it to two minutes after it. A recording uses one of its source's connections all the time it runs, unless the shared tuner is on. Stopping one keeps what it recorded.</p>
     {{- end}}
     {{- if or .Data.Upcoming .Data.Recent}}
     <div class="table-wrap">
@@ -198,7 +225,7 @@
       <tbody>
       {{- range .Data.RecordingRows}}
         <tr>
-          <td><span class="strong">{{.Title}}</span><div class="note">{{.Channel}} · <span class="nowrap">{{.Start.UTC.Format "2 Jan 15:04"}} to {{.Stop.UTC.Format "15:04"}} UTC</span></div></td>
+          <td><span class="strong">{{.Title}}</span><div class="note">{{.Channel}} · {{if .UntilStopped}}<span class="nowrap">{{.Start.UTC.Format "2 Jan 15:04"}} UTC</span>, until stopped, <span class="nowrap">by {{.Stop.UTC.Format "15:04"}} at the latest</span>{{else}}<span class="nowrap">{{.Start.UTC.Format "2 Jan 15:04"}} to {{.Stop.UTC.Format "15:04"}} UTC</span>{{end}}</div></td>
           <td>
             {{- if eq .State "scheduled"}}<span class="badge">To come</span>
             {{- else if eq .State "recording"}}<span class="badge bad">Recording</span>
@@ -208,9 +235,9 @@
           </td>
           <td class="actions">
             {{- if or (eq .State "scheduled") (eq .State "recording")}}
-            <form method="post" action="/admin/recordings/{{.ID}}/cancel" hx-post="/admin/recordings/{{.ID}}/cancel" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" hx-confirm="Call off {{.Title}}?{{if eq .State "recording"}} What it has recorded so far is kept.{{end}}">
+            <form method="post" action="/admin/recordings/{{.ID}}/cancel" hx-post="/admin/recordings/{{.ID}}/cancel" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" hx-confirm="{{if eq .State "recording"}}Stop {{.Title}}? What it has recorded so far is kept.{{else}}Call off {{.Title}}?{{end}}">
               <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
-              <button class="small" type="submit">Call off</button>
+              <button class="small" type="submit">{{if eq .State "recording"}}Stop{{else}}Call off{{end}}</button>
             </form>
             {{- else}}
             <form method="post" action="/admin/recordings/{{.ID}}/delete" hx-post="/admin/recordings/{{.ID}}/delete" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" hx-confirm="Delete {{.Title}}{{if .File}} and its file{{end}}?">
