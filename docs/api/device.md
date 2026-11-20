@@ -2,7 +2,7 @@
 
 Overscan's own MAG page talks to the server through the device API, a JSON API under `/api/device/v1/` built for the box ([plan](../plan.md), section 9). The page and the server ship together, so the API changes with them. It is not meant for other clients: third-party players have the Stalker API.
 
-Version 0, in M1, covers what the first page needs: a session, the channel list, and playing a channel. M2 adds what the page's new interface needs ([D52](../decisions.md)): the guide, favourites, what the box watched, search, and the box's own settings. M3 adds films and series ([D63](../decisions.md) to [D65](../decisions.md)), plays through ffmpeg those whose sound the box cannot play ([D68](../decisions.md)), checks what each box plays ([D70](../decisions.md)), and has Jellyfin transcode the video it cannot play ([D71](../decisions.md)). M4 adds past programmes from their sources' archives ([D81](../decisions.md), [D84](../decisions.md)), locks on films and series ([D85](../decisions.md)), radio stations ([D87](../decisions.md)), and recordings ([D89](../decisions.md)). M5 adds profiles ([D94](../decisions.md)) and an account's end date ([D95](../decisions.md)).
+Version 0, in M1, covers what the first page needs: a session, the channel list, and playing a channel. M2 adds what the page's new interface needs ([D52](../decisions.md)): the guide, favourites, what the box watched, search, and the box's own settings. M3 adds films and series ([D63](../decisions.md) to [D65](../decisions.md)), plays through ffmpeg those whose sound the box cannot play ([D68](../decisions.md)), checks what each box plays ([D70](../decisions.md)), and has Jellyfin transcode the video it cannot play ([D71](../decisions.md)). M4 adds past programmes from their sources' archives ([D81](../decisions.md), [D84](../decisions.md)), locks on films and series ([D85](../decisions.md)), radio stations ([D87](../decisions.md)), and recordings ([D89](../decisions.md)). M5 adds profiles ([D94](../decisions.md)), an account's end date ([D95](../decisions.md)) and messages from the administrator ([D96](../decisions.md)).
 
 ## Conventions
 
@@ -105,7 +105,21 @@ A channel's `id` belongs to its place in the lineup and stays the same when its 
 
 ### `GET /api/device/v1/channels/version`
 
-The lineup's `version` alone, `{"version": "9f2c41d07ab3e815"}`. The page asks for it every few minutes, and loads the channels again when it has changed, so the box shows the administrator's changes without *Restart Portal*.
+The lineup's `version`, `{"version": "9f2c41d07ab3e815"}`. The page asks for it every few minutes, and loads the channels again when it has changed, so the box shows the administrator's changes without *Restart Portal*. With it come the `messages` that the box has still to show, as with the channels.
+
+### Messages
+
+The administrator's messages to the box ([D96](../decisions.md)) come with `GET channels` and `GET channels/version`, the oldest first, while the box has some to show:
+
+```json
+"messages": [{"id": 12, "text": "The server restarts at 23:00.\nIt is back a minute later.", "sent": 1796414400}]
+```
+
+`text` is plain text of up to 500 characters, with line breaks: the page shows it as text, never as markup. `sent` is when it was sent, in Unix seconds. A message that the box has not shown within a week stops coming.
+
+#### `POST /api/device/v1/messages/{id}/read`
+
+Says that the box showed a message and the viewer closed it, and answers `{"id": 12, "read": true}`; the message stops coming. Saying so again changes nothing. A message that is not the box's answers `not_found`.
 
 ### `POST /api/device/v1/channels/{id}/play`
 

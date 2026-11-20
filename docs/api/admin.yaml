@@ -81,6 +81,13 @@ tags:
       The boxes and players that use Overscan (D23). A new one waits until the
       administrator approves it: a box running Overscan's page by the
       six-digit code it shows (D39), a Stalker client by its MAC address.
+  - name: messages
+    description: >-
+      Short messages to the household's boxes that run Overscan's page
+      (D96). A box shows a message the next time it checks, within five
+      minutes, until someone closes it, and says when it was read. A box
+      that has not shown it within a week never does. Stalker clients get
+      none.
   - name: profiles
     description: >-
       Who watches on the household's devices (D94). Each profile keeps its
@@ -465,6 +472,110 @@ paths:
                 $ref: "#/components/schemas/Error"
         "415":
           $ref: "#/components/responses/NotJSON"
+
+  /messages:
+    get:
+      tags: [messages]
+      operationId: listMessages
+      summary: List the last messages
+      description: The newest first, at most 100. A message stays listed for 30 days after its week is over.
+      responses:
+        "200":
+          description: The messages.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [messages]
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    post:
+      tags: [messages]
+      operationId: sendMessage
+      summary: Send a message
+      description: >-
+        To the box with the MAC address, or without one to every box of the
+        household that runs Overscan's page, as it is now: a box paired later
+        never shows it. At most 50 messages may wait to be read.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [text]
+              properties:
+                text:
+                  type: string
+                  maxLength: 500
+                  description: Plain text; line breaks are kept, and boxes show it as text, never as markup.
+                mac:
+                  type: string
+                  description: The box to send it to; empty or left out for every box.
+      responses:
+        "201":
+          description: The message.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "400":
+          description: The text is empty, longer than 500 characters or holds a control character other than a line break (`bad_text`), the MAC address is not one (`bad_mac`), or the body is not the JSON the path takes (`bad_json`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NoSuchDevice"
+        "409":
+          description: >-
+            The device does not run Overscan's page (`not_a_box`), the
+            household has no box to send it to (`no_boxes`), or 50 messages
+            wait to be read (`too_many_messages`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+
+  /messages/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    delete:
+      tags: [messages]
+      operationId: deleteMessage
+      summary: Delete a message
+      description: The boxes that have not shown it never will.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          description: There is no such message (`no_such_message`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /profiles:
     get:
@@ -1954,6 +2065,33 @@ components:
           oneOf:
             - $ref: "#/components/schemas/PlaybackCheck"
             - type: "null"
+    Message:
+      type: object
+      required: [id, text, every_box, mac, sent_at, expires_at, boxes, read]
+      properties:
+        id:
+          type: integer
+        text:
+          type: string
+        every_box:
+          type: boolean
+          description: Whether it went to every box, not to one alone.
+        mac:
+          type: [string, "null"]
+          description: The box it went to alone; null for every box.
+        sent_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+          description: A box that has not shown it by then never will.
+        boxes:
+          type: integer
+          description: How many boxes it went to.
+        read:
+          type: integer
+          description: How many of them read it.
     Profile:
       type: object
       required: [id, name, first, pin, devices]

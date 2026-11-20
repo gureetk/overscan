@@ -4,7 +4,7 @@
 // the screens and moving between them, the remote's keys, and where the
 // video shows (D52).
 
-import { type ApiError, type Channel, Client, describe, type Lineup, type Profile, type Profiles, type Programme, type Session, shutOut } from './api';
+import { type ApiError, type BoxMessage, type Channel, Client, describe, type Lineup, type Profile, type Profiles, type Programme, type Session, shutOut } from './api';
 import { PlaybackCheck } from './check';
 import { el, show } from './dom';
 import { FilmPlayer, pastProgramme, type Playing, playingName } from './film';
@@ -12,7 +12,7 @@ import { GuideCache } from './guide';
 import { keyOf, type Press } from './keys';
 import { LibraryModel } from './library';
 import { LineupModel } from './lineup';
-import { type Modal, NumberBox, type PickItem, Picker, PinDialog, Toast } from './overlays';
+import { MessageDialog, type Modal, NumberBox, type PickItem, Picker, PinDialog, Toast } from './overlays';
 import type { Platform, Rect } from './platform';
 import { label, Player } from './player';
 import { Recordings } from './recordings';
@@ -34,7 +34,7 @@ import { keepPIN, keptPIN } from './pin';
 import { ProfilesModel } from './profiles';
 import { readSecret, writeSecret } from './secret';
 import { SettingsModel } from './settings';
-import { fullDate } from './time';
+import { clock, day, fullDate } from './time';
 
 /** How long the page waits for another digit of a channel number. */
 const digitWaitMs = 1500;
@@ -66,6 +66,11 @@ export class App {
   private numberBox: NumberBox;
   private pin: PinDialog;
   private picker: Picker;
+  private notice: MessageDialog;
+  /** Messages from the administrator to show, the oldest first (D96). */
+  private notes: BoxMessage[] = [];
+  /** The messages this page showed, by ID, so that none shows twice. */
+  private shownNotes: { [id: number]: boolean } = {};
   private hole: VideoHole;
   private window = '';
 
@@ -260,6 +265,7 @@ export class App {
     this.numberBox = new NumberBox(document.body);
     this.pin = new PinDialog(document.body, changed);
     this.picker = new Picker(document.body, changed);
+    this.notice = new MessageDialog(document.body, changed);
   }
 
   start(): void {
@@ -395,6 +401,7 @@ export class App {
       }
       self.setLineup(lineup);
       done();
+      self.receiveMessages(lineup.messages);
     });
   }
 
@@ -428,13 +435,16 @@ export class App {
     const self = this;
     clearTimeout(this.versionTimer);
     this.versionTimer = setTimeout(function () {
-      self.client.call<{ version: string }>('GET', 'channels/version', null, function (err, v) {
+      self.client.call<{ version: string; messages?: BoxMessage[] }>('GET', 'channels/version', null, function (err, v) {
         if (shutOut(err)) {
           self.loaded = false;
           self.connect();
           return;
         }
         const changed = !err && !!v && v.version !== self.lineup.version;
+        if (v) {
+          self.receiveMessages(v.messages);
+        }
         const was = self.profiles.current;
         self.profiles.load(function () {
           if (self.profiles.current !== was) {
@@ -647,6 +657,56 @@ export class App {
     }
   }
 
+  /**
+   * receiveMessages queues the administrator's messages that this page has
+   * not shown, and shows the first. One that it showed and the server
+   * still sends was not marked read: it says so again.
+   */
+  private receiveMessages(list: BoxMessage[] | undefined): void {
+    if (!list) {
+      return;
+    }
+    for (let i = 0; i < list.length; i++) {
+      const m = list[i]!;
+      if (this.shownNotes[m.id]) {
+        this.readMessage(m.id);
+      } else if (!this.queued(m.id)) {
+        this.notes.push(m);
+      }
+    }
+    this.nextMessage();
+  }
+
+  private queued(id: number): boolean {
+    for (let i = 0; i < this.notes.length; i++) {
+      if (this.notes[i]!.id === id) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** nextMessage shows the next message, unless something else asks for the keys, or the page shows no screen yet. */
+  private nextMessage(): void {
+    const self = this;
+    if (this.notes.length === 0 || this.notice.visible() || this.modal() || !this.loaded || this.current === this.message) {
+      return;
+    }
+    const m = this.notes.shift()!;
+    this.shownNotes[m.id] = true;
+    const d = day(m.sent);
+    const sent = 'Sent ' + (d === 'Today' ? 'at ' + clock(m.sent) : (d === 'Yesterday' ? 'yesterday' : d) + ' at ' + clock(m.sent));
+    this.notice.open(m.text, sent, this.notes.length, function () {
+      self.readMessage(m.id);
+      self.nextMessage();
+    });
+  }
+
+  /** readMessage tells the server that a message was read; if it does not hear, the next check says so again. */
+  private readMessage(id: number): void {
+    this.client.call<{ read: boolean }>('POST', 'messages/' + id + '/read', null, function () {});
+  }
+
   private toast(text: string): void {
     this.toastView.show(text);
   }
@@ -761,7 +821,8 @@ export class App {
         this.toastView.visible() ||
         this.numberBox.visible() ||
         this.pin.visible() ||
-        this.picker.visible();
+        this.picker.visible() ||
+        this.notice.visible();
       this.platform.videoOnTop(!over);
     } else {
       this.setWindow(area);
@@ -787,6 +848,9 @@ export class App {
     if (this.picker.visible()) {
       return this.picker;
     }
+    if (this.notice.visible()) {
+      return this.notice;
+    }
     return null;
   }
 
@@ -810,6 +874,8 @@ export class App {
     const modal = this.modal();
     if (modal) {
       modal.key(p);
+      // A message that waited for another box to close shows now.
+      this.nextMessage();
       return;
     }
     if (this.digits !== '') {

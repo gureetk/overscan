@@ -214,18 +214,19 @@ func profileBody(p store.Profile) apiProfile {
 // profileAnswer answers with one of the household's profiles, as it is now,
 // or with what went wrong.
 func (a *Admin) profileAnswer(w http.ResponseWriter, r *http.Request, id int64, err error) {
-	if a.profileFailed(w, err) {
+	if a.apiFailed(w, err) {
 		return
 	}
 	p, err := a.store.Profile(r.Context(), id)
-	if a.profileFailed(w, err) {
+	if a.apiFailed(w, err) {
 		return
 	}
 	writeJSON(w, http.StatusOK, profileBody(p))
 }
 
-// profileFailed answers for err, if there is one.
-func (a *Admin) profileFailed(w http.ResponseWriter, err error) bool {
+// apiFailed answers for err, if there is one: a mistake the request can put
+// right, or a failure of the server's own.
+func (a *Admin) apiFailed(w http.ResponseWriter, err error) bool {
 	var bad *deviceError
 	var badPIN *editError
 	switch {
@@ -264,7 +265,7 @@ func (a *Admin) apiAddProfile(w http.ResponseWriter, r *http.Request, _ store.Ad
 		return
 	}
 	p, err := a.addProfile(r.Context(), body.Name)
-	if a.profileFailed(w, err) {
+	if a.apiFailed(w, err) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, profileBody(p))
@@ -288,7 +289,7 @@ func (a *Admin) apiChangeProfile(w http.ResponseWriter, r *http.Request, _ store
 		return
 	}
 	ctx := r.Context()
-	if _, err := a.householdProfile(ctx, id); a.profileFailed(w, err) {
+	if _, err := a.householdProfile(ctx, id); a.apiFailed(w, err) {
 		return
 	}
 	if body.PIN != nil && *body.PIN != "" {
@@ -315,7 +316,7 @@ func (a *Admin) apiRemoveProfile(w http.ResponseWriter, r *http.Request, _ store
 		apiError(w, http.StatusNotFound, "no_such_profile", "There is no such profile.")
 		return
 	}
-	if _, err := a.removeProfile(r.Context(), id); a.profileFailed(w, err) {
+	if _, err := a.removeProfile(r.Context(), id); a.apiFailed(w, err) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

@@ -242,11 +242,17 @@ type devicesData struct {
 	Accounts []store.Account
 	// Profiles are the household's (D94): the first first, then in the
 	// order they were added.
-	Profiles    []store.Profile
+	Profiles []store.Profile
+	// Boxes are the household's approved devices that run Overscan's page,
+	// which messages go to (D96); Messages are the last messages sent.
+	Boxes       []store.Device
+	Messages    []messageRow
 	Code        string // as typed, after a mistake
 	MAC         string // as typed, after a mistake
 	Label       string // as typed, after a mistake
 	ProfileName string // as typed, after a mistake
+	MessageText string // as typed, after a mistake
+	MessageTo   string // as chosen, after a mistake
 	Now         time.Time
 }
 
@@ -283,7 +289,11 @@ func (a *Admin) devicesData(ctx context.Context) (devicesData, error) {
 			latest[c.Model] = c
 		}
 	}
-	data := devicesData{Accounts: accounts, Profiles: profiles, Now: a.now()}
+	messages, err := a.messageRows(ctx)
+	if err != nil {
+		return devicesData{}, err
+	}
+	data := devicesData{Accounts: accounts, Profiles: profiles, Messages: messages, Now: a.now()}
 	for _, d := range ds {
 		row := deviceRow{Device: d, Account: names[d.AccountID]}
 		if c, ok := checks[d.ID]; ok {
@@ -295,6 +305,9 @@ func (a *Admin) devicesData(ctx context.Context) (devicesData, error) {
 		}
 		if d.State == store.DevicePending || d.PairingCode != "" {
 			data.Waiting = append(data.Waiting, row)
+		}
+		if d.State == store.DeviceApproved && d.AccountID == householdAccount && d.Paired() {
+			data.Boxes = append(data.Boxes, d)
 		}
 		if d.State != store.DevicePending {
 			data.Known = append(data.Known, row)
@@ -330,6 +343,7 @@ func (a *Admin) showDevices(w http.ResponseWriter, r *http.Request, s store.Admi
 	}
 	if typed, ok := v.Data.(devicesData); ok {
 		data.Code, data.MAC, data.Label, data.ProfileName = typed.Code, typed.MAC, typed.Label, typed.ProfileName
+		data.MessageText, data.MessageTo = typed.MessageText, typed.MessageTo
 	}
 	v.Title, v.Section, v.Session, v.Data = "Devices", "devices", &s, data
 	a.render(w, r, status, "devices", v)

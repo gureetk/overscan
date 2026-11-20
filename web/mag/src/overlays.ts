@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // What shows over any screen, and over the video: a short message, the
-// channel number being typed, the PIN prompt and a list to pick from.
+// channel number being typed, the PIN prompt, a list to pick from, and a
+// message from the administrator.
 
 import { el, setClass, setText, show } from './dom';
 import { icon } from './icons';
@@ -155,6 +156,60 @@ export class PinDialog implements Modal {
     this.changed();
     if (done) {
       done(pin);
+    }
+  }
+}
+
+/**
+ * A message from the administrator (D96), shown as text, never as markup,
+ * until the viewer closes it.
+ */
+export class MessageDialog implements Modal {
+  private box: HTMLElement;
+  private heading: HTMLElement;
+  private text: HTMLElement;
+  private sent: HTMLElement;
+  private hint: HTMLElement;
+  private done: (() => void) | null = null;
+  private changed: () => void;
+
+  constructor(parent: HTMLElement, changed: () => void) {
+    this.changed = changed;
+    this.box = el('div', 'modal notice', parent);
+    const panel = el('div', 'panel', this.box);
+    const head = el('div', 'heading', panel);
+    el('span', 'notice-icon', head).innerHTML = icon('message', 26, 1.7);
+    this.heading = el('span', '', head);
+    this.text = el('div', 'text', panel);
+    this.sent = el('div', 'sent', panel);
+    this.hint = el('div', 'hint', panel);
+    show(this.box, false);
+  }
+
+  visible(): boolean {
+    return this.box.style.display !== 'none';
+  }
+
+  /** open shows a message, with when it was sent and how many wait after it, and calls done once it is closed. */
+  open(text: string, sent: string, more: number, done: () => void): void {
+    this.done = done;
+    setText(this.heading, 'Message');
+    setText(this.text, text);
+    setText(this.sent, sent);
+    setText(this.hint, more > 0 ? 'Press OK for the next one: ' + more + (more === 1 ? ' more waits.' : ' more wait.') : 'Press OK to close it.');
+    show(this.box, true);
+    this.changed();
+  }
+
+  key(p: Press): void {
+    if (p.key === 'ok' || p.key === 'back' || p.key === 'exit') {
+      const done = this.done;
+      this.done = null;
+      show(this.box, false);
+      this.changed();
+      if (done) {
+        done();
+      }
     }
   }
 }
