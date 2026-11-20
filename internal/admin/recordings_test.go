@@ -359,4 +359,22 @@ func TestRecordingEnd(t *testing.T) {
 	}
 	apiErrorOf(t, ta.apiDo("PATCH", "settings", `{"recordings_until": "soon"}`, c, h...), http.StatusBadRequest, "bad_recordings_until")
 	apiErrorOf(t, ta.apiDo("PATCH", "settings", `{"recordings_max_hours": "4"}`, c, h...), http.StatusBadRequest, "bad_json")
+
+	// A recording that a box set by time says so, on the page and in the
+	// API (D101).
+	start := time.Date(2026, 12, 4, 21, 0, 0, 0, time.UTC)
+	timed, err := ta.st.ScheduleRecording(ctx, store.Recording{AccountID: 1, EntryID: 7, Channel: "Example News",
+		Title: "Example News", Start: start, Stop: start.Add(90 * time.Minute), Timed: true, CreatedAt: start.Add(-time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, "timed", ta.do("GET", "/admin/settings", nil, c).Body.String(),
+		`<span class="nowrap">4 Dec 21:00 to 22:30 UTC</span>, set by time`)
+	var list struct {
+		Upcoming []apiRecording `json:"upcoming"`
+	}
+	if rec := ta.apiDo("GET", "recordings", "", c); rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &list) != nil ||
+		len(list.Upcoming) != 1 || list.Upcoming[0].ID != timed.ID || !list.Upcoming[0].Timed {
+		t.Errorf("API: %d %s", rec.Code, rec.Body)
+	}
 }

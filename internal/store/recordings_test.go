@@ -207,3 +207,53 @@ func TestEndedRecordings(t *testing.T) {
 		t.Errorf("at most one: %+v", got)
 	}
 }
+
+// TestRecordingsByTime checks that a recording set by time keeps that it
+// was, runs exactly as set, and that the recordings of a lineup entry that
+// overlap a time are found (D101).
+func TestRecordingsByTime(t *testing.T) {
+	st := openTest(t, newPath(t))
+	ctx := context.Background()
+	now := time.Unix(1_800_000_000, 0)
+	timed, err := st.ScheduleRecording(ctx, Recording{EntryID: 7, Channel: "one", Title: "one", Start: now.Add(time.Hour),
+		Stop: now.Add(2 * time.Hour), Timed: true, CreatedAt: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !timed.Timed || !timed.Exact() || timed.UntilStopped {
+		t.Errorf("timed %+v", timed)
+	}
+	programme, err := st.ScheduleRecording(ctx, Recording{EntryID: 7, Channel: "one", Title: "Later", Start: now.Add(3 * time.Hour),
+		Stop: now.Add(4 * time.Hour), CreatedAt: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if programme.Timed || programme.Exact() {
+		t.Errorf("a programme's %+v", programme)
+	}
+	for _, c := range []struct {
+		from, to time.Duration
+		want     int64
+	}{
+		{0, time.Hour, 0},
+		{30 * time.Minute, 90 * time.Minute, timed.ID},
+		{90 * time.Minute, 200 * time.Minute, timed.ID},
+		{2 * time.Hour, 3 * time.Hour, 0},
+		{150 * time.Minute, 5 * time.Hour, programme.ID},
+	} {
+		got, err := st.OverlappingRecording(ctx, 7, now.Add(c.from), now.Add(c.to))
+		if c.want == 0 && !errors.Is(err, ErrNotFound) || c.want != 0 && (err != nil || got.ID != c.want) {
+			t.Errorf("%v to %v: %+v, %v", c.from, c.to, got, err)
+		}
+	}
+	// Another entry's, and one called off, do not count.
+	if _, err := st.OverlappingRecording(ctx, 8, now, now.Add(5*time.Hour)); !errors.Is(err, ErrNotFound) {
+		t.Errorf("another entry: %v", err)
+	}
+	if err := st.SetRecordingState(ctx, timed.ID, RecordingCancelled, "", "", 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.OverlappingRecording(ctx, 7, now.Add(time.Hour), now.Add(2*time.Hour)); !errors.Is(err, ErrNotFound) {
+		t.Errorf("called off: %v", err)
+	}
+}

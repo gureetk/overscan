@@ -216,7 +216,7 @@
     </form>
     {{- end}}
     {{- if .Data.CanRecord}}
-    <p class="hint">They go in <code>{{.Data.RecordingsDir}}</code>, and take {{.Data.RecordingsUsedText}} there. Another folder is set with <code>recordings_dir</code> in the configuration file, and takes effect when the server starts again. A programme from the guide is recorded from a minute before it to two minutes after it. A recording uses one of its source's connections all the time it runs, unless the shared tuner is on. Stopping one keeps what it recorded.</p>
+    <p class="hint">They go in <code>{{.Data.RecordingsDir}}</code>, and take {{.Data.RecordingsUsedText}} there. Another folder is set with <code>recordings_dir</code> in the configuration file, and takes effect when the server starts again. A programme from the guide is recorded from a minute before it to two minutes after it, and a recording set by time exactly as set. A recording uses one of its source's connections all the time it runs, unless the shared tuner is on. Stopping one keeps what it recorded.</p>
     {{- end}}
     {{- if or .Data.Upcoming .Data.Recent}}
     <div class="table-wrap">
@@ -225,7 +225,7 @@
       <tbody>
       {{- range .Data.RecordingRows}}
         <tr>
-          <td><span class="strong">{{.Title}}</span><div class="note">{{.Channel}} · {{if .UntilStopped}}<span class="nowrap">{{.Start.UTC.Format "2 Jan 15:04"}} UTC</span>, until stopped, <span class="nowrap">by {{.Stop.UTC.Format "15:04"}} at the latest</span>{{else}}<span class="nowrap">{{.Start.UTC.Format "2 Jan 15:04"}} to {{.Stop.UTC.Format "15:04"}} UTC</span>{{end}}</div></td>
+          <td><span class="strong">{{.Title}}</span><div class="note">{{.Channel}} · {{if .UntilStopped}}<span class="nowrap">{{.Start.UTC.Format "2 Jan 15:04"}} UTC</span>, until stopped, <span class="nowrap">by {{.Stop.UTC.Format "15:04"}} at the latest</span>{{else}}<span class="nowrap">{{.Start.UTC.Format "2 Jan 15:04"}} to {{.Stop.UTC.Format "15:04"}} UTC</span>{{if .Timed}}, set by time{{end}}{{end}}</div></td>
           <td>
             {{- if eq .State "scheduled"}}<span class="badge">To come</span>
             {{- else if eq .State "recording"}}<span class="badge bad">Recording</span>

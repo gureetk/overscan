@@ -68,6 +68,7 @@ const (
 	errEnded        = "programme_ended" // the programme has ended, so it cannot be recorded
 	errRecorded     = "recorded"        // the programme has been recorded already
 	errTooMany      = "too_many"        // the household has as many recordings to come as it may
+	errOverlaps     = "overlaps"        // the channel records at that time already (D101)
 )
 
 // API is the device API, an http.Handler for the paths under Prefix.

@@ -346,7 +346,7 @@ The first M1 task was a probe page on the real box, because its answers would de
 | Settings | Language, time zone, PIN, diagnostics (version, last request, memory), reload portal. |
 | Messages | From the admin. |
 | Radio | Stations apart from Live TV (M4, D87). |
-| Recordings | Recording from the guide, Live TV and full screen (M4 and M5, D89 and D98); a list of the household's recordings (M5, D100). |
+| Recordings | Recording from the guide, Live TV and full screen (M4 and M5, D89 and D98); a list of the household's recordings, and recording by time (M5, D100 and D101). |
 
 Performance rules: small DOM, no layout thrash, lazy images at small sizes (thumbnails produced by the server), memory checks in the diagnostics screen. Targets to validate in M1: a visible response to a key press within about 150 ms, and the channel list on screen within about 3 s of the page loading.
 
@@ -501,7 +501,7 @@ Each phase ends with a pre-release of v0.4.0 (`v0.4.0-alpha.N`), as M4's did wit
 - Compatibility matrix for third-party Stalker clients (OTT Navigator, TiviMate) and MAG emulators (StbEmu), from tests with those apps. **So far:** [`compatibility.md`](compatibility.md) says how to connect each app and what Overscan gives it; what each does waits for tests with the apps.
 - The milestone's hardening: the security checklist on what is new (text and themes from the admin shown on boxes above all), docs, and an upgrade test from v0.3.0.
 *Done when:* two profiles on one box keep their own favourites and resume points, and the box switches between them; an account past its end date is refused on the box and in Stalker clients, which see the date; a message from the admin shows on the box; a theme installed in the admin changes the box's look for the household or for one profile; with the shared tuner on, two boxes on one channel, or a box and a recording of that channel, use one connection to the source; and a compatibility matrix says what OTT Navigator, TiviMate and StbEmu do with Overscan. A household that adds no profile, sets no end date, sends no message and installs no theme sees nothing change.
-*Status:* built, in pre-releases of v0.4.0 from 20 November 2026: the shared tuner (alpha.1), profiles (alpha.2), the end date (alpha.3), messages (alpha.4), themes (alpha.5), and the review with the docs (alpha.6); then, from the first box tests, recording from Live TV and full screen (alpha.7), and recording a channel from now on, with or without a guide, until its programme ends or until it is stopped (alpha.8, D98); then each box's own choice of how such a recording ends, with the household's as the default (D99), and a *Recordings* screen on the box that lists the household's recordings (D100). The compatibility matrix waits for tests with the apps, and v0.4.0 for tests on the box.
+*Status:* built, in pre-releases of v0.4.0 from 20 November 2026: the shared tuner (alpha.1), profiles (alpha.2), the end date (alpha.3), messages (alpha.4), themes (alpha.5), and the review with the docs (alpha.6); then, from the first box tests, recording from Live TV and full screen (alpha.7), and recording a channel from now on, with or without a guide, until its programme ends or until it is stopped (alpha.8, D98); then each box's own choice of how such a recording ends, with the household's as the default (D99), a *Recordings* screen on the box that lists the household's recordings (D100), and recording a channel at a time set on the box (D101). The compatibility matrix waits for tests with the apps, and v0.4.0 for tests on the box.
 
 ### M6: The household IPTV hub (L)
 The all-in-one stage: every player in the house gets a curated lineup through the protocol it speaks. Details in section 21.
@@ -662,6 +662,7 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 - A box records the channel it shows from now on, with or without a guide: to the end of the programme, or until it is stopped, for at most a few hours; stopping keeps what it recorded (D98).
 - Each box chooses how a recording it starts on a channel ends; the household's setting is the default (D99).
 - The box lists the household's recordings under way, to come and of the last day, and stops or cancels them (D100).
+- A box records a channel at a time it sets, exactly from its start to its end, for at most 24 hours within a week (D101).
 
 **Open**
 

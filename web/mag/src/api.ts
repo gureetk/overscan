@@ -546,6 +546,8 @@ export function describe(err: ApiError | null): string {
       return 'It has been recorded already, and is on Movies.';
     case 'too_many':
       return 'There are as many recordings to come as there may be. Cancel some first.';
+    case 'overlaps':
+      return 'The channel is already recording at that time.';
     case 'internal':
       return "The server failed. Its log says why.";
   }

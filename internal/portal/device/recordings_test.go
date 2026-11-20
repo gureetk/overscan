@@ -370,3 +370,105 @@ func TestRecordingsOfTheLastDay(t *testing.T) {
 		t.Errorf("a day later: %+v", got.Recent)
 	}
 }
+
+// TestRecordingByTime checks that a box records a channel at a time it
+// sets: exactly from its start, or from now, to its stop, titled from the
+// guide where a programme fills half of the time, and refused where the
+// channel records already (D101).
+func TestRecordingByTime(t *testing.T) {
+	h := newHarness(t)
+	ids := h.addGuide()
+	h.approve(macA)
+	token := h.session(macA).Token
+	ctx := context.Background()
+	if err := h.store.SetRecordingsCap(ctx, 10); err != nil {
+		t.Fatal(err)
+	}
+	rec := &fakeRecorder{}
+	h.api.UseRecorder(rec)
+	var bare int64
+	for name, id := range ids {
+		if name != "Channel 0" && name != "Channel 1" {
+			bare = id
+		}
+	}
+	now := h.now.Unix()
+	set := func(ch, start, stop int64) (int, recording, string) {
+		t.Helper()
+		var got recording
+		body := fmt.Sprintf(`{"channel":%d,"start":%d,"stop":%d}`, ch, start, stop)
+		code := h.call("POST", Prefix+"recordings", token, body, &got)
+		var e struct{ Error string }
+		if code != http.StatusOK {
+			h.call("POST", Prefix+"recordings", token, body, &e)
+		}
+		return code, got, e.Error
+	}
+
+	// An hour, an hour from now, on a channel without a guide.
+	code, later, _ := set(bare, now+3600, now+7200)
+	if code != http.StatusOK || !later.Timed || later.UntilStopped || later.Start != now+3600 || later.Stop != now+7200 ||
+		later.State != store.RecordingScheduled || later.Title == "" {
+		t.Fatalf("an hour from now: %d %+v", code, later)
+	}
+	if rec.woken != 0 {
+		t.Errorf("woken %d times for one to come", rec.woken)
+	}
+	// The same channel, at a time that overlaps it, is refused; right after
+	// it is not.
+	if code, _, e := set(bare, now+5400, now+9000); code != http.StatusConflict || e != errOverlaps {
+		t.Errorf("overlapping: %d %s", code, e)
+	}
+	if code, after, _ := set(bare, now+7200, now+9000); code != http.StatusOK || after.ID == later.ID {
+		t.Errorf("right after: %d %+v", code, after)
+	}
+	// A start that has passed records from now, at once.
+	code, fromNow, _ := set(ids["Channel 1"], now-600, now+1800)
+	if code != http.StatusOK || fromNow.Start != now || fromNow.Stop != now+1800 || rec.woken != 1 {
+		t.Errorf("from now: %d %+v, woken %d", code, fromNow, rec.woken)
+	}
+
+	// Titles come from a programme that fills half of the time or more.
+	for _, c := range []struct {
+		start, stop int64
+		title       string
+	}{
+		{now + 4200, now + 6600, "P3"},   // inside P3
+		{now + 6000, now + 8400, "P3"},   // half in P3, half in P4
+		{now + 10200, now + 15000, "P5"}, // ten minutes of P4, an hour of P5, ten minutes of P6
+		{now + 18000, now + 28800, "Channel 0"},
+	} {
+		if code, got, _ := set(ids["Channel 0"], c.start, c.stop); code != http.StatusOK || got.Title != c.title {
+			t.Errorf("%d to %d: %d %q", c.start-now, c.stop-now, code, got.Title)
+		} else if err := h.store.SetRecordingState(ctx, got.ID, store.RecordingCancelled, "", "", 0, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Refused: a time that has passed, too short, too long, too far ahead.
+	if code, _, e := set(bare, now-7200, now-3600); code != http.StatusConflict || e != errEnded {
+		t.Errorf("passed: %d %s", code, e)
+	}
+	for _, c := range [][2]int64{
+		{now + 20000, now + 20030},
+		{now + 20000, now + 20000 + 25*3600},
+		{now + 8*24*3600, now + 8*24*3600 + 3600},
+		{now + 20000, now + 19000},
+	} {
+		if code, _, e := set(bare, c[0], c[1]); code != http.StatusBadRequest || e != errBadRequest {
+			t.Errorf("%d to %d: %d %s", c[0]-now, c[1]-now, code, e)
+		}
+	}
+	// The list says which are set by time.
+	var list struct{ Recordings []recording }
+	h.call("GET", Prefix+"recordings", token, "", &list)
+	timed := 0
+	for _, r := range list.Recordings {
+		if r.Timed {
+			timed++
+		}
+	}
+	if timed != 3 {
+		t.Errorf("listed %+v", list.Recordings)
+	}
+}

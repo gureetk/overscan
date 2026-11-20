@@ -190,7 +190,7 @@ func (r *Recorder) Check(ctx context.Context) {
 	now := r.now()
 	for _, rec := range due {
 		switch {
-		case now.Before(rec.Start.Add(-lead)):
+		case now.Before(begin(rec)):
 			continue
 		case !now.Before(rec.Stop):
 			r.fail(ctx, rec, "the server was not running when it was on")
@@ -337,11 +337,21 @@ func (r *Recorder) ready(ctx context.Context, rec store.Recording, limit int64) 
 // not made (D95).
 const errAccountEnded = "its account has ended"
 
+// begin returns when a recording begins: a minute before its programme,
+// or, for one that runs until it is stopped or was set by time, at its
+// start (D98, D101).
+func begin(rec store.Recording) time.Time {
+	if rec.Exact() {
+		return rec.Start
+	}
+	return rec.Start.Add(-lead)
+}
+
 // end returns when a recording ends: two minutes after its programme, or,
 // for one that runs until it is stopped, at its stop, the latest it may
-// run (D98).
+// run (D98), and for one set by time, at its stop (D101).
 func end(rec store.Recording) time.Time {
-	if rec.UntilStopped {
+	if rec.Exact() {
 		return rec.Stop
 	}
 	return rec.Stop.Add(tail)
