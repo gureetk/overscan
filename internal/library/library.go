@@ -90,6 +90,10 @@ type Library struct {
 	lists   map[listKey]*pending    // reads of lists under way
 	details map[int64]*pending      // reads of titles' details under way, by title
 	pages   map[pageKey]*pending    // reads of pages of portals' categories under way
+	// detailed holds when a read of a title's details last ended well, for
+	// a minute: a device that looked at the title just before then has a
+	// copy without them, and needs no read of its own.
+	detailed map[int64]time.Time
 
 	// stalker holds the sessions of Stalker portals (D76).
 	stalker *stalker.Pool
@@ -130,6 +134,7 @@ func New(st *store.Store, log *slog.Logger, version string) *Library {
 		lists:     map[listKey]*pending{},
 		details:   map[int64]*pending{},
 		pages:     map[pageKey]*pending{},
+		detailed:  map[int64]time.Time{},
 		stalker:   stalker.NewPool(nil),
 		tmdbBase:  tmdb.DefaultBase,
 		tmdbRuns:  map[listKey]bool{},
@@ -671,8 +676,13 @@ func (l *Library) Open(ctx context.Context, id int64) (Opened, error) {
 	return o, nil
 }
 
+// detailedFor is how long the library remembers that a read of a title's
+// details ended well.
+const detailedFor = time.Minute
+
 // startDetails returns the read of a title's details that is under way,
-// starting one if there is none.
+// starting one if there is none. A read that ended well after t was looked
+// up counts as done: t is a copy from before it.
 func (l *Library) startDetails(t store.Title) *pending {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -685,6 +695,10 @@ func (l *Library) startDetails(t store.Title) *pending {
 		close(p.done)
 		return p
 	}
+	if at, ok := l.detailed[t.ID]; ok && t.DetailsAt.Before(at) && l.now().Sub(at) < detailedFor {
+		close(p.done)
+		return p
+	}
 	l.details[t.ID] = p
 	l.running.Add(1)
 	go func() {
@@ -692,6 +706,15 @@ func (l *Library) startDetails(t store.Title) *pending {
 		p.err = l.readDetails(t)
 		l.mu.Lock()
 		delete(l.details, t.ID)
+		if p.err == nil {
+			now := l.now()
+			for id, at := range l.detailed {
+				if now.Sub(at) >= detailedFor {
+					delete(l.detailed, id)
+				}
+			}
+			l.detailed[t.ID] = now
+		}
 		l.mu.Unlock()
 		close(p.done)
 	}()

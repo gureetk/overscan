@@ -384,6 +384,36 @@ func TestOpenGivesUpWithTheDevice(t *testing.T) {
 	}
 }
 
+// TestOpenAsAReadEnds checks that a device that looked a title up just
+// before a read of its details ended does not read them again.
+func TestOpenAsAReadEnds(t *testing.T) {
+	p, srv := newPanel(t)
+	l, st, _, _ := newLibrary(t, srv)
+	ctx := context.Background()
+	if _, err := l.Want(ctx, store.KindMovie, 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	recent, _ := st.RecentTitles(ctx, store.KindMovie, 1)
+	before, err := st.Title(ctx, recent[0].ID)
+	if err != nil || before.Details != nil {
+		t.Fatalf("before %+v, %v", before, err)
+	}
+	if o, err := l.Open(ctx, recent[0].ID); err != nil || o.Details == nil {
+		t.Fatalf("open %+v, %v", o, err)
+	}
+	// The copy from before the read wants the details, which are there.
+	<-l.startDetails(before).done
+	if n := p.count("get_vod_info"); n != 1 {
+		t.Errorf("%d reads", n)
+	}
+	// A minute later, a copy that old reads them again.
+	l.now = func() time.Time { return time.Now().Add(detailedFor) }
+	<-l.startDetails(before).done
+	if n := p.count("get_vod_info"); n != 2 {
+		t.Errorf("a minute later: %d reads", n)
+	}
+}
+
 // waitFor waits up to five seconds for ok.
 func waitFor(t *testing.T, ok func() bool) {
 	t.Helper()
