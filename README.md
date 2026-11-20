@@ -32,9 +32,10 @@ you are entitled to use.
 
 ## Status
 
-**Early development.** Version 0.3.0 is the newest release. It ends the third
-and fourth milestones, "Libraries" and "Catch-up, recording, parental control",
-and holds everything before them.
+**Early development.** Version 0.4.0 is the newest release. It ends the fifth
+milestone, "Households", and holds everything before it. The sixth, "The
+household IPTV hub", is built in pre-releases of 0.5.0, which wait for tests
+with players.
 
 It plays live channels from M3U playlists, Xtream servers and providers' Stalker
 portals, with their programme guides, on a MAG322w1 through Overscan's own
@@ -57,9 +58,24 @@ stations play on a screen of their own; a folder's titles can get their details
 from TMDB; boxes can record programmes from the guide on the server; and, where
 the administrator turns it on, they can pause live TV and go back in it.
 
-Much of what the third and fourth milestones added has been tested against test
+Each person in a household can have a profile on the box, with their own
+favourites and resume points. The administrator can set an end date, send
+messages to the boxes and give them a theme, and, where it is turned on, screens
+on one channel share one connection to its source.
+
+In the 0.5.0 pre-releases, players other than the boxes reach Overscan too.
+Accounts get a login and a limit on their streams, and each can serve players an
+M3U playlist and XMLTV guide, or an Xtream-compatible login for players such as
+TiviMate, behind switches that start off, on the home network only. There can be
+several lineups, one for each account to choose, with rules that keep renaming,
+regrouping, numbering, hiding and fixing the guide of channels as sources
+change; a channel can have backups that play when its own stream cannot start;
+live channels can be made H.264 for a device that needs it; and the lineups
+export to one file, and import from it.
+
+Much of what the third to sixth milestones added has been tested against test
 servers and in a desktop browser, but not yet on a MAG box or with real
-providers and media servers: treat it as early.
+providers, media servers and players: treat it as early.
 [docs/trying-it.md](docs/trying-it.md) says how to try it.
 
 ## What it is meant to do
@@ -103,7 +119,7 @@ clients are expected to work and are tracked in a compatibility matrix,
 | [docs/themes.md](docs/themes.md) | Themes for the boxes: what a theme file holds, and installing one |
 | [docs/rules.md](docs/rules.md) | A lineup's rules: what they match, what they do, and in what order |
 | [docs/lineup-file.md](docs/lineup-file.md) | Lineup files: exporting every lineup, and importing them on this server or another |
-| [docs/compatibility.md](docs/compatibility.md) | What StbEmu, OTT Navigator and TiviMate get from Overscan, and what they did when tried |
+| [docs/compatibility.md](docs/compatibility.md) | What StbEmu, OTT Navigator, TiviMate, VLC and Kodi get from Overscan, and what they did when tried |
 | [docs/api/admin.yaml](docs/api/admin.yaml) | The admin's JSON API, as an OpenAPI 3.1 description |
 | [web/admin/README.md](web/admin/README.md) | The admin's pages and the files they are built from |
 | [conformance/README.md](conformance/README.md) | Black-box tests of what Stalker clients see |
