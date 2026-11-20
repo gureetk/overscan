@@ -1808,6 +1808,71 @@ paths:
           $ref: "#/components/responses/CSRF"
         "404":
           $ref: "#/components/responses/NotFound"
+  /lineup/channels/{id}/backups:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/Lineup"
+    get:
+      tags: [lineup]
+      operationId: listBackups
+      summary: List a channel's backups
+      description: >-
+        The lineup's channels whose streams the hub tries in turn when this
+        channel's own cannot start (D109): its source is at its limit, gives
+        no address for it, or does not send it.
+      responses:
+        "200":
+          $ref: "#/components/responses/Backups"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [lineup]
+      operationId: setBackups
+      summary: Set a channel's backups
+      description: >-
+        The lineup's channels given, by their IDs, in the order to try them,
+        in place of those it had; an empty list removes them. A channel has
+        at most 5 (`too_many_backups`, 409); it cannot be its own backup, nor
+        one twice (`bad_backup`). A backup of another source plays from that
+        source, counted against its limit.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [entries]
+              properties:
+                entries:
+                  type: array
+                  maxItems: 5
+                  items:
+                    type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/Backups"
+        "400":
+          $ref: "#/components/responses/EditMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The channel would have more than 5 backups (`too_many_backups`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          $ref: "#/components/responses/NotJSON"
   /lineup/rules:
     parameters:
       - $ref: "#/components/parameters/Lineup"
@@ -3258,7 +3323,7 @@ components:
                 type: string
     Channel:
       type: object
-      required: [id, channel_id, source_id, source, number, pinned, name, channel_name, renamed, group_id, group, moved, category, visibility, hidden, missing, locked, group_locked, repair, repair_own, adult, radio, rules]
+      required: [id, channel_id, source_id, source, number, pinned, name, channel_name, renamed, group_id, group, moved, category, visibility, hidden, missing, locked, group_locked, repair, repair_own, adult, radio, rules, backups]
       properties:
         id:
           type: integer
@@ -3332,6 +3397,9 @@ components:
             where the administrator's own edits win over them.
           items:
             $ref: "#/components/schemas/RuleAction"
+        backups:
+          type: integer
+          description: How many backups it has (D109), listed at its `backups` path.
     RuleMatch:
       type: object
       additionalProperties: false
@@ -3918,6 +3986,35 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    Backups:
+      description: The channel's backups, in the order the hub tries them.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [backups]
+            properties:
+              backups:
+                type: array
+                items:
+                  type: object
+                  required: [entry_id, channel_id, name, source, number, missing]
+                  properties:
+                    entry_id:
+                      type: integer
+                      description: The backup's own channel in the lineup.
+                    channel_id:
+                      type: integer
+                    name:
+                      type: string
+                      description: As devices see it.
+                    source:
+                      type: string
+                    number:
+                      type: [integer, "null"]
+                    missing:
+                      type: boolean
+                      description: Its source no longer lists it, so it is passed over.
     Rule:
       description: The rule.
       content:

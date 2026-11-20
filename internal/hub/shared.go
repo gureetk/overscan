@@ -50,20 +50,26 @@ func (h *Hub) sharing(ctx context.Context) bool {
 	return on
 }
 
-// AvailableChannel reports, as Available does, whether a channel's source
-// can take a new stream for a device. While the shared tuner is on, a
-// channel that a tuner plays always can: one more screen on it takes no
-// new connection (D93).
+// AvailableChannel reports, as Available does, whether a channel's source,
+// or the source of one of its backups (D109), can take a new stream for a
+// device. While the shared tuner is on, a channel that a tuner plays
+// always can: one more screen on it takes no new connection (D93).
 func (h *Hub) AvailableChannel(ctx context.Context, entry store.PlayableEntry, deviceID int64) bool {
-	if h.sharable(entry) && h.sharing(ctx) {
-		h.mu.Lock()
-		t := h.shared[entry.ChannelID]
-		h.mu.Unlock()
-		if t != nil {
+	sharing := h.sharing(ctx)
+	for _, try := range append([]store.PlayableEntry{entry}, entry.Backups...) {
+		if sharing && h.sharable(try) {
+			h.mu.Lock()
+			t := h.shared[try.ChannelID]
+			h.mu.Unlock()
+			if t != nil {
+				return true
+			}
+		}
+		if h.Available(try.SourceID, deviceID) {
 			return true
 		}
 	}
-	return h.Available(entry.SourceID, deviceID)
+	return false
 }
 
 // openShared returns the session that c starts for a channel that plays

@@ -321,10 +321,13 @@ type apiEntry struct {
 	// Rules lists what the lineup's rules do to it, by their actions
 	// (D107); the administrator's own edits win over them.
 	Rules []string `json:"rules"`
+	// Backups counts the channels whose streams play when its own cannot
+	// start (D109).
+	Backups int `json:"backups"`
 }
 
 func entryBody(e store.LineupEntry) apiEntry {
-	out := apiEntry{ID: e.ID, ChannelID: e.ChannelID, SourceID: e.SourceID, Source: e.Source, Pinned: e.Pinned,
+	out := apiEntry{ID: e.ID, ChannelID: e.ChannelID, SourceID: e.SourceID, Source: e.Source, Pinned: e.Pinned, Backups: e.Backups,
 		Name: e.Name, ChannelName: e.ChannelName, Renamed: e.Renamed, Moved: e.Moved,
 		Visibility: visibilityNames[e.Visibility], Hidden: e.Hidden, Missing: e.Missing, Locked: e.Locked,
 		GroupLocked: e.GroupLocked, Repair: e.Repair, RepairOwn: e.RepairOwn, Adult: e.Adult, Radio: e.Radio}

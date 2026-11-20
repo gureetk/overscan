@@ -219,7 +219,14 @@ type entryRow struct {
 
 	CanRepair     bool
 	RepairDefault bool
+
+	// Backups are, for the entry open in the panel, the channels whose
+	// streams play when its own cannot start (D109).
+	Backups []store.EntryBackup
 }
+
+// MaxBackups is how many backups a channel can have.
+func (entryRow) MaxBackups() int { return store.MaxBackups }
 
 // RepairChoice is the entry's own repair switch, as the edit form names
 // it: "on", "off", or "" when it follows the default.
@@ -393,6 +400,9 @@ func (a *Admin) openEntry(ctx context.Context, d *lineupData) error {
 		return err
 	}
 	row := d.Row(e)
+	if row.Backups, err = a.store.EntryBackups(ctx, lineup, e.ID); err != nil {
+		return err
+	}
 	d.Open = &row
 	return nil
 }

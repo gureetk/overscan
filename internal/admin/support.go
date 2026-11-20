@@ -416,6 +416,11 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 	fmt.Fprintf(&b, "Lineups: %d; accounts that see another than the household's: %d (this file describes the household's)\n",
 		len(lineups), otherLineup)
 	fmt.Fprintf(&b, "Rules: %d in all lineups; %d in the household's\n", allRules, householdRules)
+	withBackups, err := a.store.ChannelsWithBackups(ctx, lineup)
+	if err != nil {
+		return "", err
+	}
+	fmt.Fprintf(&b, "Channels with backups in the household's lineup: %d\n", withBackups)
 	fmt.Fprintf(&b, "Outputs for players: on: %v; anywhere: %v; playlists on: %d; Xtream logins on: %d\n",
 		outputsOn, anywhere, playlists, xtreams)
 	fmt.Fprintf(&b, "Profiles: %d, %d with a PIN to switch to them\n", len(profiles), withPIN)

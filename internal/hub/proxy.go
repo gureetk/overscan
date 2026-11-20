@@ -62,21 +62,41 @@ func (h *Hub) copyIn(parent context.Context, w http.ResponseWriter, s *session, 
 	stop := context.AfterFunc(s.ctx, cancel)
 	defer stop()
 
-	src := h.source(s.sourceID).Name
 	resp, err := h.get(ctx, s, target)
 	if err != nil {
-		var refused *statusError
-		switch {
-		case ctx.Err() != nil:
-		case errors.As(err, &refused):
-			h.log.Warn("a stream's source refused it", s.what(), s.channel, "source", src, "status", refused.status)
-			http.Error(w, "the source answered "+refused.status, http.StatusBadGateway)
-		default:
-			h.log.Warn("cannot reach a stream", s.what(), s.channel, "source", src, "error", err)
-			http.Error(w, "the source cannot be reached", http.StatusBadGateway)
+		if ctx.Err() == nil {
+			h.getFailed(w, s, err)
 		}
 		return
 	}
+	h.serve(ctx, w, s, target, continuous, resp)
+}
+
+// getFailed logs why a stream's source did not answer with it, and tells w
+// so, unless w is nil. A live channel's stream is remembered as failing
+// (D109).
+func (h *Hub) getFailed(w http.ResponseWriter, s *session, err error) {
+	src := h.source(s.sourceID).Name
+	if s.kind == kindEntry {
+		h.markFailing(s.channelID)
+	}
+	var refused *statusError
+	if errors.As(err, &refused) {
+		h.log.Warn("a stream's source refused it", s.what(), s.channel, "source", src, "status", refused.status)
+		if w != nil {
+			http.Error(w, "the source answered "+refused.status, http.StatusBadGateway)
+		}
+		return
+	}
+	h.log.Warn("cannot reach a stream", s.what(), s.channel, "source", src, "error", err)
+	if w != nil {
+		http.Error(w, "the source cannot be reached", http.StatusBadGateway)
+	}
+}
+
+// serve plays what a stream's source answered with, resp, to w.
+func (h *Hub) serve(ctx context.Context, w http.ResponseWriter, s *session, target string, continuous bool, resp *http.Response) {
+	src := h.source(s.sourceID).Name
 	defer resp.Body.Close()
 
 	body := bufio.NewReaderSize(resp.Body, copyBufferBytes)

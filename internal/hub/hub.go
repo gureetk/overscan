@@ -151,6 +151,7 @@ type Hub struct {
 	sessions    map[uint64]*session // by token nonce
 	unrelayable map[int64]time.Time // channels whose HLS the relay could not follow, by ID, until when (D61)
 	shared      map[int64]*session  // the shared tuners that run, by channel ID (D93)
+	failing     map[int64]time.Time // channels whose streams failed to start, by ID, until when (D109)
 }
 
 // New returns a hub for the given sources, keyed by store ID. Its signing
@@ -184,6 +185,7 @@ func New(st *store.Store, log *slog.Logger, version string, sources map[int64]So
 
 		unrelayable: map[int64]time.Time{},
 		shared:      map[int64]*session{},
+		failing:     map[int64]time.Time{},
 		players:     map[playerKey]*Player{},
 		playerByID:  map[int64]*Player{},
 	}
@@ -956,62 +958,8 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		// While the shared tuner is on, a continuous stream comes from
-		// the channel's tuner, which every screen on it shares (D93).
-		if continuous && h.sharable(entry) && h.sharing(r.Context()) {
-			s, err := h.openShared(r.Context(), c, token, entry)
-			switch {
-			case err == nil:
-				h.serveShift(w, r, s)
-				return
-			case !errors.Is(err, errNotShared):
-				h.resolveFailed(w, r, "channel", entry.Name, entry.SourceID, c.deviceID, err)
-				return
-			}
-		}
-		opening := &session{token: token, channelID: entry.ChannelID, sourceID: entry.SourceID,
-			channel: entry.Name, streamURL: entry.StreamURL, repair: entry.Repair, repairHLS: entry.RepairHLS}
-		opening.account, opening.accountLimit = h.viewer(r.Context(), c.deviceID)
-		if h.source(entry.SourceID).Resolves {
-			if !h.roomFor(entry.SourceID, c.deviceID) {
-				h.resolveFailed(w, r, "channel", entry.Name, entry.SourceID, c.deviceID, ErrLimit)
-				return
-			}
-			res, err := h.resolve(r.Context(), entry.SourceID, PlaysChannel, entry.StreamURL)
-			if err != nil {
-				h.resolveFailed(w, r, "channel", entry.Name, entry.SourceID, c.deviceID, err)
-				return
-			}
-			opening.streamURL, opening.ref, opening.refKind = res.Address, entry.StreamURL, PlaysChannel
-			if res.Hold != nil {
-				opening.release = res.Hold()
-			}
-		}
-		if c.shift && continuous {
-			opening.shift = h.openShift(r.Context(), c, entry.Name)
-		}
-		s, err = h.admit(c, opening)
-		if s != opening {
-			// Refused, or another request opened the session first.
-			if opening.release != nil {
-				opening.release()
-			}
-			if opening.shift != nil {
-				opening.shift.close()
-			}
-		}
-		if err != nil {
-			h.refused(w, err, "channel", entry.Name, entry.SourceID, c.deviceID)
-			return
-		}
-		if s.shift != nil {
-			if s == opening {
-				h.tuners.Go(func() { h.tune(s) })
-			}
-			h.serveShift(w, r, s)
-			return
-		}
-		target = s.streamURL
+		h.openChannel(w, r, c, token, entry, continuous)
+		return
 	}
 	h.proxy(w, r, s, target, continuous)
 }

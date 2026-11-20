@@ -114,6 +114,7 @@ func (a *Admin) Handler() http.Handler {
 	mux.Handle("GET /admin/lineup", a.page(a.lineupRoute(a.lineupPage)))
 	mux.Handle("GET /admin/lineup/channels/{id}/edit", a.page(a.lineupRoute(a.entryPanel)))
 	mux.Handle("POST /admin/lineup/channels/{id}", a.page(a.lineupRoute(a.saveEntry)))
+	mux.Handle("POST /admin/lineup/channels/{id}/backups", a.page(a.lineupRoute(a.backupsAction)))
 	mux.Handle("POST /admin/lineup/channels", a.page(a.lineupRoute(a.changeSome)))
 	mux.Handle("POST /admin/lineup/groups", a.page(a.lineupRoute(a.createGroupForm)))
 	mux.Handle("POST /admin/lineup/groups/{id}/{action}", a.page(a.lineupRoute(a.groupAction)))

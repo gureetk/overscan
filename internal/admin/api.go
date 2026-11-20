@@ -100,6 +100,8 @@ func (a *Admin) apiRoutes() []apiRoute {
 		{method: "GET", path: "lineup/channels", fn: a.apiLineupRoute(a.apiEntries)},
 		{method: "PATCH", path: "lineup/channels", fn: a.apiLineupRoute(a.apiChangeEntries)},
 		{method: "PATCH", path: "lineup/channels/{id}", fn: a.apiLineupRoute(a.apiChangeEntry)},
+		{method: "GET", path: "lineup/channels/{id}/backups", fn: a.apiLineupRoute(a.apiBackups)},
+		{method: "PUT", path: "lineup/channels/{id}/backups", fn: a.apiLineupRoute(a.apiSetBackups)},
 		{method: "GET", path: "lineup/rules", fn: a.apiLineupRoute(a.apiRules)},
 		{method: "POST", path: "lineup/rules", fn: a.apiLineupRoute(a.apiAddRule)},
 		{method: "PUT", path: "lineup/rules/{id}", fn: a.apiLineupRoute(a.apiSetRule)},

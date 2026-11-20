@@ -157,7 +157,11 @@ func (s *Store) CopyLineup(ctx context.Context, from int64, name string) (int64,
 				return err
 			}
 		}
-		// Its rules too, which then run on it (D107).
+		// Its channels' backups (D109), and its rules, which then run on
+		// it (D107).
+		if err := copyBackups(ctx, tx, from, id); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO lineup_rules (lineup_id, position, spec)
 			SELECT ?1, position, spec FROM lineup_rules WHERE lineup_id = ?2`, id, from); err != nil {

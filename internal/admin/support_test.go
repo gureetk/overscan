@@ -108,6 +108,7 @@ func TestSupportBundle(t *testing.T) {
 			"Accounts: 1; with a login: 0; with a limit on streams: 0",
 			"Lineups: 1; accounts that see another than the household's: 0",
 			"Rules: 0 in all lineups; 0 in the household's",
+			"Channels with backups in the household's lineup: 0",
 			"Outputs for players: on: false; anywhere: false; playlists on: 0; Xtream logins on: 0"},
 		"devices.txt": {"00:1A:79:xx:xx:xx", "Living room", "MAG322", "Playback checks, the latest first:",
 			"Living room (00:1A:79:xx:xx:xx), MAG322, firmware not said, checked 1 hour ago", "  Plays: MKV\n  Does not play: DTS\n",

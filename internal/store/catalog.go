@@ -597,6 +597,9 @@ type PlayableEntry struct {
 	Repair    bool // its stream goes through ffmpeg: its own switch says so, or else the default does (D57, D58)
 	RepairHLS bool // the server repairs HLS streams too, made into one continuous stream (D61)
 	Radio     bool // a radio station (D87)
+	// Backups are the streams that the hub tries in turn when the entry's
+	// own cannot start (D109): the entry with another channel's stream.
+	Backups []PlayableEntry
 }
 
 // PlayableEntry returns the lineup entry with the given ID if a device may
@@ -615,24 +618,42 @@ func (s *Store) PlayableEntry(ctx context.Context, entryID int64) (PlayableEntry
 	if errors.Is(err, sql.ErrNoRows) {
 		return PlayableEntry{}, ErrNotFound
 	}
-	if err == nil && sealed != nil {
-		p.StreamURL, err = s.open(streamContext(p.SourceID), sealed)
+	if err == nil {
+		p.StreamURL, err = s.streamAddress(p.SourceID, p.StreamURL, sealed, sourceName, sourceType, sourceSealed)
 	}
-	if err == nil && sourceType == source.TypeXtream {
-		// The stream's address is made now, from the source's login (D50).
-		var secret sourceSecret
-		if sourceSealed == nil {
-			err = ErrNoAddress
-		} else if secret, err = s.openSource(p.SourceID, sourceSealed); err == nil {
-			settings := source.Settings{Name: sourceName, Type: sourceType, URL: secret.URL,
-				Username: secret.Username, Password: secret.Password}
-			p.StreamURL, err = settings.StreamURL(p.StreamURL)
-		}
+	if err == nil {
+		p.Backups, err = s.playableBackups(ctx, p)
 	}
 	if err != nil {
 		return PlayableEntry{}, fmt.Errorf("store: lineup entry %d: %w", entryID, err)
 	}
 	return p, nil
+}
+
+// streamAddress returns the address that plays a channel's stream: as it
+// was stored, opened if it was sealed (D46), and for an Xtream source made
+// now from the source's login (D50).
+func (s *Store) streamAddress(sourceID int64, plain string, sealed []byte, sourceName, sourceType string, sourceSealed []byte) (string, error) {
+	address := plain
+	var err error
+	if sealed != nil {
+		if address, err = s.open(streamContext(sourceID), sealed); err != nil {
+			return "", err
+		}
+	}
+	if sourceType != source.TypeXtream {
+		return address, nil
+	}
+	if sourceSealed == nil {
+		return "", ErrNoAddress
+	}
+	secret, err := s.openSource(sourceID, sourceSealed)
+	if err != nil {
+		return "", err
+	}
+	settings := source.Settings{Name: sourceName, Type: sourceType, URL: secret.URL,
+		Username: secret.Username, Password: secret.Password}
+	return settings.StreamURL(address)
 }
 
 // StreamsByKey returns the stream addresses, or for an Xtream source the
