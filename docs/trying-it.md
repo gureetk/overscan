@@ -112,7 +112,7 @@ This is for an app with a Stalker portal option, which talks to the server's API
 4. Connect again. The client lists the channels by group and plays them through the server.
 5. If the server has a source of films and series (section 2), the client's films are the box's *Movies* and its series the box's *Series*, by the same categories. The first time the client asks, the server reads the source's list, which can take a few seconds. A series' seasons are read when the client opens it. Films and episodes play as they are, through the server, with seeking; unlike on the box, nothing is converted or transcoded for a client (D75), so a client whose player cannot decode a file's sound or picture plays it without them.
 
-`devices list` shows every device and its state.
+`devices list` shows every device and its state. [`compatibility.md`](compatibility.md) says how to connect OTT Navigator and TiviMate, and StbEmu, which runs Overscan's page as a box does, and what each did when tried.
 
 ## 5. The debug playlist
 
