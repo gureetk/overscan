@@ -100,6 +100,8 @@ func (a *Admin) Handler() http.Handler {
 	mux.Handle("POST /admin/devices/{mac}/{action}", a.page(a.deviceAction("")))
 	mux.Handle("POST /admin/profiles", a.page(a.profileAction))
 	mux.Handle("POST /admin/profiles/{id}/{action}", a.page(a.profileAction))
+	mux.Handle("POST /admin/messages", a.page(a.messageAction))
+	mux.Handle("POST /admin/messages/{id}/{action}", a.page(a.messageAction))
 	mux.Handle("GET /admin/sources", a.page(a.sourcesPage))
 	mux.Handle("POST /admin/sources", a.page(a.addSourceForm))
 	mux.Handle("GET /admin/sources/{id}", a.page(a.sourcePage))

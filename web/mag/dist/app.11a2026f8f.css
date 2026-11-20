@@ -2328,6 +2328,62 @@ html.video #app {
   color: #8a8a91;
 }
 
+/* A message from the administrator (D96), in the middle of the screen,
+   as tall as its text. */
+.notice {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+          align-items: center;
+  -webkit-justify-content: center;
+          justify-content: center;
+}
+
+.notice .panel {
+  position: relative;
+  width: 36rem;
+  padding: 1.75rem 2rem 1.5rem;
+}
+
+.notice .heading {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+          align-items: center;
+  font-size: 1.375rem;
+  font-weight: 600;
+}
+
+.notice-icon {
+  display: -webkit-flex;
+  display: flex;
+  margin-right: 0.625rem;
+  color: #c7c7cc;
+}
+
+.notice .text {
+  max-height: 22rem;
+  margin-top: 1rem;
+  overflow: hidden;
+  font-size: 1.125rem;
+  line-height: 1.45;
+  white-space: pre-line;
+  word-wrap: break-word;
+}
+
+.notice .sent {
+  margin-top: 1rem;
+  font-size: 0.875rem;
+  color: #a1a1a8;
+}
+
+.notice .hint {
+  margin-top: 1.25rem;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: #8a8a91;
+}
+
 .picker .panel {
   left: 27rem;
   top: 8rem;

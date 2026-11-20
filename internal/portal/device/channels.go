@@ -56,6 +56,9 @@ type channelsResponse struct {
 	RadioApart bool      `json:"radio_apart,omitempty"`
 	Favourites []int64   `json:"favourites"`
 	Recent     []int64   `json:"recent"`
+	// Messages are those from the administrator that the box has still
+	// to show (D96).
+	Messages []boxMessage `json:"messages,omitempty"`
 }
 
 // lineupOf returns the device's lineup as the API shows it, with its version.
@@ -127,20 +130,31 @@ func (a *API) channels(w http.ResponseWriter, r *http.Request, d store.Device) {
 		return
 	}
 	resp.Favourites, resp.Recent = keep(favourites), keep(watched)
+	if resp.Messages, err = a.messagesOf(ctx, d); err != nil {
+		a.internalError(w, "list messages", err)
+		return
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// channelsVersion answers GET channels/version with the lineup's version
-// alone, which the page asks for now and then to notice a changed lineup.
+// channelsVersion answers GET channels/version with the lineup's version,
+// which the page asks for now and then to notice a changed lineup, and the
+// messages that the box has still to show (D96).
 func (a *API) channelsVersion(w http.ResponseWriter, r *http.Request, d store.Device) {
 	resp, _, err := a.lineupOf(r.Context(), d)
 	if err != nil {
 		a.internalError(w, "list channels", err)
 		return
 	}
+	messages, err := a.messagesOf(r.Context(), d)
+	if err != nil {
+		a.internalError(w, "list messages", err)
+		return
+	}
 	writeJSON(w, http.StatusOK, struct {
-		Version string `json:"version"`
-	}{resp.Version})
+		Version  string       `json:"version"`
+		Messages []boxMessage `json:"messages,omitempty"`
+	}{resp.Version, messages})
 }
 
 // playRequest is the body of a play call, which may be empty: the parental

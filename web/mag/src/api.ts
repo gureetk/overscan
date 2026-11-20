@@ -60,6 +60,15 @@ export interface Channel {
   radio?: boolean;
 }
 
+/** A message from the administrator, which the box shows once (D96). */
+export interface BoxMessage {
+  id: number;
+  /** Plain text, with line breaks: never markup. */
+  text: string;
+  /** When it was sent, in Unix seconds. */
+  sent: number;
+}
+
 export interface Lineup {
   version: string;
   groups: Group[];
@@ -68,6 +77,8 @@ export interface Lineup {
   radio_apart?: boolean;
   favourites: number[];
   recent: number[];
+  /** Messages from the administrator that the box has still to show (D96). */
+  messages?: BoxMessage[];
 }
 
 export interface PlayLink {

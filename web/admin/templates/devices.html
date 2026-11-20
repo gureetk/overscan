@@ -43,6 +43,7 @@
 {{template "waiting" .}}
 {{template "known" .}}
 {{template "profiles" .}}
+{{template "messages" .}}
 {{template "checks" .}}
 </div>
 {{end}}
@@ -234,6 +235,47 @@
     <input name="name" maxlength="32" placeholder="Such as Alex" aria-label="Name of a new profile" required value="{{.Data.ProfileName}}">
     <button type="submit">Add a profile</button>
   </form>
+</section>
+{{end}}
+
+{{/* Messages to the boxes (D96): sending one, and the last sent. */}}
+{{define "messages"}}
+<section id="messages" class="card" aria-labelledby="messages-title">
+  <h2 id="messages-title">Messages</h2>
+  <p class="hint">A message shows on the boxes that run Overscan's page, over whatever they show, the next time they check: within five minutes. It stays until someone presses OK. A box that has not shown it within a week never will. Stalker clients get no messages.</p>
+  {{- if .Data.Boxes}}
+  <form method="post" action="/admin/messages" hx-post="/admin/messages" hx-target="#device-sections" hx-select="#device-sections" hx-swap="outerHTML" class="message-form">
+    <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+    <textarea name="text" rows="3" maxlength="500" placeholder="Such as: Dinner is ready." aria-label="Message" required>{{.Data.MessageText}}</textarea>
+    <div class="row-form">
+      <select name="to" aria-label="Send it to">
+        <option value="">To every box</option>
+        {{- range .Data.Boxes}}
+        <option value="{{.MAC}}"{{if eq .MAC $.Data.MessageTo}} selected{{end}}>To {{if .Label}}{{.Label}}{{else}}{{.MAC}}{{end}}</option>
+        {{- end}}
+      </select>
+      <button class="primary" type="submit">Send</button>
+    </div>
+  </form>
+  {{- else}}
+  <p class="empty">No box runs Overscan's page yet, so there is none to send a message to.</p>
+  {{- end}}
+  {{- if .Data.Messages}}
+  <ul class="messages">
+    {{- range .Data.Messages}}
+    <li>
+      <p class="message-text">{{.Text}}</p>
+      <div class="message-foot">
+        <span class="muted">{{.To}} · sent {{ago .SentAt .Now}} · {{.Status}}</span>
+        <form method="post" action="/admin/messages/{{.ID}}/delete" hx-post="/admin/messages/{{.ID}}/delete" hx-target="#device-sections" hx-select="#device-sections" hx-swap="outerHTML">
+          <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+          <button type="submit" class="small quiet">Delete</button>
+        </form>
+      </div>
+    </li>
+    {{- end}}
+  </ul>
+  {{- end}}
 </section>
 {{end}}
 
