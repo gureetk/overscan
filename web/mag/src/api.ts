@@ -272,6 +272,20 @@ export interface Settings {
   groups: 'preview' | 'ok';
 }
 
+/** A profile of the box's account (D94): who watches, with their own favourites and resume points. */
+export interface Profile {
+  id: number;
+  name: string;
+  /** Switching to it asks for its PIN. */
+  pin?: boolean;
+}
+
+/** The account's profiles, the first first, and the one the box plays as. */
+export interface Profiles {
+  profile: number;
+  profiles: Profile[];
+}
+
 /** A clip of the playback check (D70). */
 export interface CheckClip {
   id: string;

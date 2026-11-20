@@ -14,6 +14,7 @@ import type { LineupModel } from '../lineup';
 import type { PickItem } from '../overlays';
 import type { Platform, Rect } from '../platform';
 import type { Player } from '../player';
+import type { ProfilesModel } from '../profiles';
 import type { Recordings } from '../recordings';
 import type { SettingsModel } from '../settings';
 import { clock, date, now } from '../time';
@@ -46,6 +47,8 @@ export interface Ctx {
   lineup: LineupModel;
   guide: GuideCache;
   settings: SettingsModel;
+  /** The account's profiles, and the one the box plays as (D94). */
+  profiles: ProfilesModel;
   player: Player;
   /** Films and series (D63). */
   movies: LibraryModel;
@@ -78,6 +81,8 @@ export interface Ctx {
    * whether it may show.
    */
   unlock(what: string, done: (ok: boolean) => void): void;
+  /** switchProfile asks who is watching, and switches the box to that profile, with its PIN if it has one (D94). */
+  switchProfile(): void;
   /** videoChanged says that the screen wants the video somewhere else, or overlays changed. */
   videoChanged(): void;
 }

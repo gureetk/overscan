@@ -211,6 +211,12 @@ func viewOf(c store.PlaybackCheck) *checkView {
 	return v
 }
 
+// Household reports whether it is approved for the household, and so plays
+// as one of the household's profiles (D94).
+func (r deviceRow) Household() bool {
+	return r.State == store.DeviceApproved && r.AccountID == householdAccount
+}
+
 // Code is its pairing code as its screen shows it, in two groups of three
 // digits.
 func (r deviceRow) Code() string {
@@ -234,10 +240,14 @@ type devicesData struct {
 	Known    []deviceRow  // approved or blocked
 	Checks   []checkEntry // the devices' own playback checks
 	Accounts []store.Account
-	Code     string // as typed, after a mistake
-	MAC      string // as typed, after a mistake
-	Label    string // as typed, after a mistake
-	Now      time.Time
+	// Profiles are the household's (D94): the first first, then in the
+	// order they were added.
+	Profiles    []store.Profile
+	Code        string // as typed, after a mistake
+	MAC         string // as typed, after a mistake
+	Label       string // as typed, after a mistake
+	ProfileName string // as typed, after a mistake
+	Now         time.Time
 }
 
 func (a *Admin) devicesData(ctx context.Context) (devicesData, error) {
@@ -257,6 +267,10 @@ func (a *Admin) devicesData(ctx context.Context) (devicesData, error) {
 	if err != nil {
 		return devicesData{}, err
 	}
+	profiles, err := a.store.Profiles(ctx, householdAccount)
+	if err != nil {
+		return devicesData{}, err
+	}
 	// The latest check of each model, which the devices of the model that
 	// were not checked play by.
 	byID := map[int64]store.Device{}
@@ -269,7 +283,7 @@ func (a *Admin) devicesData(ctx context.Context) (devicesData, error) {
 			latest[c.Model] = c
 		}
 	}
-	data := devicesData{Accounts: accounts, Now: a.now()}
+	data := devicesData{Accounts: accounts, Profiles: profiles, Now: a.now()}
 	for _, d := range ds {
 		row := deviceRow{Device: d, Account: names[d.AccountID]}
 		if c, ok := checks[d.ID]; ok {
@@ -315,7 +329,7 @@ func (a *Admin) showDevices(w http.ResponseWriter, r *http.Request, s store.Admi
 		return
 	}
 	if typed, ok := v.Data.(devicesData); ok {
-		data.Code, data.MAC, data.Label = typed.Code, typed.MAC, typed.Label
+		data.Code, data.MAC, data.Label, data.ProfileName = typed.Code, typed.MAC, typed.Label, typed.ProfileName
 	}
 	v.Title, v.Section, v.Session, v.Data = "Devices", "devices", &s, data
 	a.render(w, r, status, "devices", v)
@@ -384,6 +398,15 @@ func (a *Admin) doDeviceAction(w http.ResponseWriter, r *http.Request, s store.A
 		if d, err = a.forgetCheck(ctx, mac); err == nil {
 			notice = "Forgot what the playback check of " + deviceName(d) + " found."
 		}
+	case "profile":
+		var d store.Device
+		var p store.Profile
+		id, perr := strconv.ParseInt(r.PostFormValue("profile"), 10, 64)
+		if perr != nil {
+			err = badDevice(http.StatusBadRequest, "no_such_profile", "Choose a profile.")
+		} else if d, p, err = a.setDeviceProfile(ctx, mac, id); err == nil {
+			notice = deviceName(d) + " plays as " + p.Name + " now."
+		}
 	default:
 		a.notFound(w, r)
 		return
@@ -393,10 +416,16 @@ func (a *Admin) doDeviceAction(w http.ResponseWriter, r *http.Request, s store.A
 		a.overviewDone(w, r, s, err, notice)
 		return
 	}
+	a.devicesDone(w, r, s, err, notice, devicesData{Code: truncate(r.PostFormValue("code"), 6), MAC: truncate(mac, 40), Label: truncate(label, 400)})
+}
+
+// devicesDone answers a form of the devices page: with htmx, the page at
+// once with what was done; without, a redirect to it; after a mistake, the
+// page with what went wrong and what was typed.
+func (a *Admin) devicesDone(w http.ResponseWriter, r *http.Request, s store.AdminSession, err error, notice string, typed devicesData) {
 	var bad *deviceError
 	switch {
 	case errors.As(err, &bad):
-		typed := devicesData{Code: truncate(r.PostFormValue("code"), 6), MAC: truncate(mac, 40), Label: truncate(label, 400)}
 		a.showDevices(w, r, s, bad.status, view{Error: bad.text, Data: typed})
 	case err != nil:
 		a.log.Error("cannot change a device", "error", err)
@@ -447,6 +476,7 @@ type apiDevice struct {
 	Label              string     `json:"label"`
 	Model              string     `json:"model"`
 	AccountID          *int64     `json:"account_id"`
+	ProfileID          *int64     `json:"profile_id"`
 	Paired             bool       `json:"paired"`
 	PairingCode        *string    `json:"pairing_code"`
 	PairingRequestedAt *time.Time `json:"pairing_requested_at"`
@@ -477,6 +507,9 @@ func deviceBody(d store.Device, c *store.PlaybackCheck) apiDevice {
 	}
 	if d.AccountID != 0 {
 		out.AccountID = &d.AccountID
+	}
+	if d.ProfileID != 0 && d.State == store.DeviceApproved {
+		out.ProfileID = &d.ProfileID
 	}
 	if d.PairingCode != "" {
 		out.PairingCode = &d.PairingCode
@@ -557,16 +590,35 @@ func (a *Admin) apiBlockDevice(w http.ResponseWriter, r *http.Request, _ store.A
 
 func (a *Admin) apiChangeDevice(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
 	var body struct {
-		Label *string `json:"label"`
+		Label     *string `json:"label"`
+		ProfileID *int64  `json:"profile_id"`
 	}
 	if !readJSON(w, r, &body) {
 		return
 	}
-	if body.Label == nil {
-		apiError(w, http.StatusBadRequest, "bad_json", "Say what to change: label.")
+	if body.Label == nil && body.ProfileID == nil {
+		apiError(w, http.StatusBadRequest, "bad_json", "Say what to change: label, profile_id or both.")
 		return
 	}
-	d, err := a.labelDevice(r.Context(), r.PathValue("mac"), *body.Label)
+	ctx := r.Context()
+	mac := r.PathValue("mac")
+	var d store.Device
+	var err error
+	if body.Label != nil {
+		if err = checkLabel(*body.Label); err != nil {
+			a.deviceAnswer(w, r, d, err)
+			return
+		}
+	}
+	if body.ProfileID != nil {
+		if d, _, err = a.setDeviceProfile(ctx, mac, *body.ProfileID); err != nil {
+			a.deviceAnswer(w, r, d, err)
+			return
+		}
+	}
+	if body.Label != nil {
+		d, err = a.labelDevice(ctx, mac, *body.Label)
+	}
 	a.deviceAnswer(w, r, d, err)
 }
 

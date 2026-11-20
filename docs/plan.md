@@ -144,9 +144,9 @@ MAG emulators are a different case. StbEmu loads the portal's own web page and e
 | `media_files` | item id, path or URL, container, codecs, duration, size, probed at |
 | `accounts` | id, name, username, password hash, playlist token, lineup id, max connections, expiry, enabled, allowed outputs |
 | `devices` | id, account id, MAC, label, model, default profile id, capability profile, state (pending, approved, blocked), pairing code, device secret hash, last seen |
-| `profiles` | id, account id, name, PIN hash, language, time zone |
-| `favorites` | profile id, item kind, item id, position |
-| `progress` | account id, title id, episode id, position, duration, finished, watched at; per account until profiles come (D65) |
+| `profiles` | id, account id, name, hash of the PIN that switching to it asks for (D94) |
+| `favorites` | profile id, lineup entry id, when added; per account until profiles came (D53, D94) |
+| `progress` | profile id, title id, episode id, position, duration, finished, watched at; per account until profiles came (D65, D94) |
 | `messages` | device id, text, created, delivered |
 | `sessions` | stream sessions: account, device, item, source, mode, started, last seen, bytes |
 | `jobs`, `job_runs` | schedule and history |
@@ -258,7 +258,7 @@ Expect most H.264 and HEVC files to direct-play. Audio codecs and image-based su
 - Image-based subtitles (PGS, VobSub) that the box cannot render need burning in, which means a full video transcode; offered per title, off by default.
 - Audio and subtitle track selection through the player API.
 - Resume positions stored per profile and updated while playing.
-- **In place (D65, D68, D69):** text subtitles beside a file in a folder, and those that Jellyfin gives, reach the box as SRT through the hub, moved earlier for a stream through ffmpeg that starts part way through; the box shows the text subtitles in a file it plays as it is itself; a converted stream carries every sound track, and the box picks among them; resume per account until profiles come.
+- **In place (D65, D68, D69):** text subtitles beside a file in a folder, and those that Jellyfin gives, reach the box as SRT through the hub, moved earlier for a stream through ffmpeg that starts part way through; the box shows the text subtitles in a file it plays as it is itself; a converted stream carries every sound track, and the box picks among them; resume per account, and per profile since M5 (D94).
 
 ### Artwork
 
@@ -493,7 +493,7 @@ Each phase ends with a pre-release of v0.3.0 (`v0.3.0-alpha.N`), as M3's phases 
 ### M5: Households (M)
 Each phase ends with a pre-release of v0.4.0 (`v0.4.0-alpha.N`), as M4's did with v0.3.0. In this order:
 - Shared-tuner mode (section 20, open question 1), off by default: one connection to a source serves every local viewer of a channel, whether boxes, Stalker clients or recordings, and counts once against the source's limit. Sharing a connection between screens is between the subscriber and their provider (section 2). **In place:** a setting on the *Settings* page that starts off; while it is on, a channel's tuner plays it from its source into a buffer on disk, as timeshift's does, and every screen on the channel reads the buffer, counting once against the source's limit, so that a box can record the channel it plays on a source that allows one stream (D93).
-- Several profiles per account, switchable on the box, each with its own favourites, resume points, language and time zone. A household that adds no profile sees no change.
+- Several profiles per account, switchable on the box, each with its own favourites and resume points. A household that adds no profile sees no change. **In place:** the admin's *Devices* page adds, renames and removes profiles, gives one a PIN, and chooses the profile each device plays as; once there are two, a box shows the one watching on Home and switches with the yellow key or from *Settings*, asking for the profile's PIN if it has one. The account's first profile took its favourites and resume points; recent channels, the box's own settings and the parental PIN stay as they were (D94).
 - Expiry: the administrator sets the account's end date; past it, boxes and Stalker clients play nothing.
 - Messages and events: the administrator sends a message to one box or to every box, which shows it once.
 - Installable themes (D41): the administrator adds a theme in the admin, for the household or for a profile.
@@ -648,11 +648,12 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 - Each source's guide is read into the database a generation at a time, and matched to its channels by guide ID, then by name (D51).
 - Films and series are read from a source when a device first asks for them, and kept in the database; details and episodes when a title is opened (D63).
 - Films and episodes play through the hub, which passes on range requests (D64).
-- How far the household got into a film or an episode belongs to its account until profiles come (D65).
+- How far the household got into a film or an episode belonged to its account until profiles came (D65); it belongs to the profile watching (D94).
 - The Stalker API serves series in a `series` module of their own, a series' seasons read when a client opens it (D74), and Stalker clients play films and episodes as they are (D75).
 - An upstream Stalker portal is a source of live channels and guides, read as the box that the provider registered, in one session that its streams keep alive (D76).
 - A Stalker portal's films and series are read a page at a time as devices browse them, each of its categories a shelf of its own (D77).
 - Shared-tuner mode: one connection to a source serves every screen on a channel, behind a setting that starts off (D93).
+- Profiles keep favourites and resume points; the first takes what the account kept, and a box switches between them, with a profile's PIN if it has one (D94).
 
 **Open**
 

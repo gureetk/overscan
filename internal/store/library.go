@@ -17,7 +17,8 @@ import (
 )
 
 // The library (schema 17): films and series, read from their sources when
-// devices ask for them (D63), and how far each account got into them (D65).
+// devices ask for them (D63), and how far each profile got into them (D65,
+// D94).
 // Xtream servers, Jellyfin servers (D66, schema 18), folders (D67, schema
 // 19), Plex servers (D72) and Stalker portals (D77, schema 23) have them.
 
@@ -976,7 +977,7 @@ func (s *Store) libraryStream(p *PlayableItem, name, typ string, sealed []byte, 
 	return err
 }
 
-// Progress is how far an account got into a film or an episode.
+// Progress is how far a profile got into a film or an episode.
 type Progress struct {
 	TitleID   int64 // the film, or the episode's series
 	EpisodeID int64 // 0 for a film
@@ -986,21 +987,21 @@ type Progress struct {
 	WatchedAt time.Time
 }
 
-// SetProgress keeps how far an account got into a film or an episode. A
+// SetProgress keeps how far a profile got into a film or an episode. A
 // finished one keeps position 0.
-func (s *Store) SetProgress(ctx context.Context, accountID int64, p Progress) error {
+func (s *Store) SetProgress(ctx context.Context, profileID int64, p Progress) error {
 	if p.Finished {
 		p.Position = 0
 	}
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO progress (account_id, title_id, episode_id, position, duration, finished, watched_at)
+		INSERT INTO progress (profile_id, title_id, episode_id, position, duration, finished, watched_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT (account_id, title_id, episode_id) DO UPDATE SET
+		ON CONFLICT (profile_id, title_id, episode_id) DO UPDATE SET
 			position = excluded.position, duration = excluded.duration, finished = excluded.finished,
 			watched_at = excluded.watched_at`,
-		accountID, p.TitleID, p.EpisodeID, max(0, p.Position), max(0, p.Duration), p.Finished, p.WatchedAt.Unix())
+		profileID, p.TitleID, p.EpisodeID, max(0, p.Position), max(0, p.Duration), p.Finished, p.WatchedAt.Unix())
 	if err != nil {
-		return fmt.Errorf("store: progress of account %d in %d/%d: %w", accountID, p.TitleID, p.EpisodeID, err)
+		return fmt.Errorf("store: progress of profile %d in %d/%d: %w", profileID, p.TitleID, p.EpisodeID, err)
 	}
 	return nil
 }
@@ -1015,13 +1016,13 @@ func scanProgress(row rowScanner) (Progress, error) {
 	return p, err
 }
 
-// TitleProgress returns how far an account got into a film, or into each
+// TitleProgress returns how far a profile got into a film, or into each
 // episode of a series that it played, the latest first.
-func (s *Store) TitleProgress(ctx context.Context, accountID, titleID int64) ([]Progress, error) {
+func (s *Store) TitleProgress(ctx context.Context, profileID, titleID int64) ([]Progress, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+progressColumns+` FROM progress p
-		WHERE p.account_id = ? AND p.title_id = ?
-		ORDER BY p.watched_at DESC, p.episode_id DESC`, accountID, titleID)
+		WHERE p.profile_id = ? AND p.title_id = ?
+		ORDER BY p.watched_at DESC, p.episode_id DESC`, profileID, titleID)
 	if err != nil {
 		return nil, fmt.Errorf("store: progress in %d: %w", titleID, err)
 	}
@@ -1040,19 +1041,19 @@ func (s *Store) TitleProgress(ctx context.Context, accountID, titleID int64) ([]
 	return out, nil
 }
 
-// Watching is a title that an account is part way through.
+// Watching is a title that a profile is part way through.
 type Watching struct {
 	Title    TitleRow
 	Progress Progress // in a series, of the episode it played last
 	Episode  *Episode // that episode, nil for a film
-	Next     *Episode // the episode after it, if the account finished that one
+	Next     *Episode // the episode after it, if the profile finished that one
 }
 
 // ContinueWatching returns, the latest first and at most limit of them,
-// the films that an account is part way through, or the series whose
+// the films that a profile is part way through, or the series whose
 // latest episode it is part way through or has an episode after it, with
-// that episode if the account finished the latest.
-func (s *Store) ContinueWatching(ctx context.Context, accountID int64, kind string, limit int) ([]Watching, error) {
+// that episode if the profile finished the latest.
+func (s *Store) ContinueWatching(ctx context.Context, profileID int64, kind string, limit int) ([]Watching, error) {
 	if err := checkKind(kind); err != nil {
 		return nil, err
 	}
@@ -1061,14 +1062,14 @@ func (s *Store) ContinueWatching(ctx context.Context, accountID int64, kind stri
 		query = `
 			SELECT ` + titleRowColumns + `, ` + progressColumns + `
 			FROM progress p JOIN titles t ON t.id = p.title_id JOIN sources s ON s.id = t.source_id
-			WHERE p.account_id = ? AND p.episode_id = 0 AND t.kind = 'movie' AND p.finished = 0 AND p.position > 0
+			WHERE p.profile_id = ? AND p.episode_id = 0 AND t.kind = 'movie' AND p.finished = 0 AND p.position > 0
 				AND ` + libraryShown + `
 			ORDER BY p.watched_at DESC LIMIT ?`
 	} else {
 		query = `
 			WITH latest AS (
 				SELECT p.*, row_number() OVER (PARTITION BY p.title_id ORDER BY p.watched_at DESC, p.episode_id DESC) AS n
-				FROM progress p WHERE p.account_id = ? AND p.episode_id <> 0)
+				FROM progress p WHERE p.profile_id = ? AND p.episode_id <> 0)
 			SELECT ` + titleRowColumns + `, ` + progressColumns + `, ` + episodeColumns + `,
 				coalesce(n.id, 0), coalesce(n.season, 0), coalesce(n.number, 0), coalesce(n.name, '')
 			FROM latest p JOIN titles t ON t.id = p.title_id JOIN sources s ON s.id = t.source_id
@@ -1081,7 +1082,7 @@ func (s *Store) ContinueWatching(ctx context.Context, accountID int64, kind stri
 				AND ((p.finished = 0 AND p.position > 0) OR n.id IS NOT NULL)
 			ORDER BY p.watched_at DESC LIMIT ?`
 	}
-	rows, err := s.db.QueryContext(ctx, query, accountID, limit)
+	rows, err := s.db.QueryContext(ctx, query, profileID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("store: continue watching %s: %w", kind, err)
 	}
@@ -1175,25 +1176,25 @@ func (s *Store) EpisodeArt(ctx context.Context, id int64) (picture string, src A
 	return picture, src, nil
 }
 
-// MovieProgress returns how far an account got into each film that it
+// MovieProgress returns how far a profile got into each film that it
 // played, by the film's title ID.
-func (s *Store) MovieProgress(ctx context.Context, accountID int64) (map[int64]Progress, error) {
+func (s *Store) MovieProgress(ctx context.Context, profileID int64) (map[int64]Progress, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT `+progressColumns+` FROM progress p WHERE p.account_id = ? AND p.episode_id = 0`, accountID)
+		SELECT `+progressColumns+` FROM progress p WHERE p.profile_id = ? AND p.episode_id = 0`, profileID)
 	if err != nil {
-		return nil, fmt.Errorf("store: progress of account %d in films: %w", accountID, err)
+		return nil, fmt.Errorf("store: progress of profile %d in films: %w", profileID, err)
 	}
 	defer rows.Close()
 	out := map[int64]Progress{}
 	for rows.Next() {
 		p, err := scanProgress(rows)
 		if err != nil {
-			return nil, fmt.Errorf("store: progress of account %d in films: %w", accountID, err)
+			return nil, fmt.Errorf("store: progress of profile %d in films: %w", profileID, err)
 		}
 		out[p.TitleID] = p
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: progress of account %d in films: %w", accountID, err)
+		return nil, fmt.Errorf("store: progress of profile %d in films: %w", profileID, err)
 	}
 	return out, nil
 }

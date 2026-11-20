@@ -121,6 +121,8 @@ func New(st *store.Store, reg *devices.Registry, h *hub.Hub, log *slog.Logger, v
 	mux.HandleFunc("GET "+Prefix+"series/{id}", a.authorized(a.openTitle(store.KindSeries)))
 	mux.HandleFunc("POST "+Prefix+"episodes/{id}/play", a.authorized(a.playItem(store.KindEpisode)))
 	mux.HandleFunc("PUT "+Prefix+"episodes/{id}/progress", a.authorized(a.putProgress(store.KindEpisode)))
+	mux.HandleFunc("GET "+Prefix+"profiles", a.authorized(a.profiles))
+	mux.HandleFunc("PUT "+Prefix+"profile", a.authorized(a.switchProfile))
 	mux.HandleFunc("GET "+Prefix+"settings", a.authorized(a.getSettings))
 	mux.HandleFunc("PATCH "+Prefix+"settings", a.authorized(a.patchSettings))
 	mux.HandleFunc("GET "+Prefix+"check", a.authorized(a.getCheck))

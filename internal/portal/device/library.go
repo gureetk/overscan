@@ -162,7 +162,7 @@ func (a *API) listShelves(w http.ResponseWriter, r *http.Request, d store.Device
 		writeJSON(w, http.StatusOK, resp)
 		return
 	}
-	watching, err := a.store.ContinueWatching(ctx, d.AccountID, kind, continueTitles)
+	watching, err := a.store.ContinueWatching(ctx, d.ProfileID, kind, continueTitles)
 	if err != nil {
 		a.internalError(w, "list what the account is watching", err)
 		return
@@ -237,7 +237,7 @@ func (a *API) listShelf(w http.ResponseWriter, r *http.Request, d store.Device, 
 	switch id {
 	case shelfContinue:
 		resp.Name = "Continue Watching"
-		watching, err := a.store.ContinueWatching(ctx, d.AccountID, kind, continueTitles)
+		watching, err := a.store.ContinueWatching(ctx, d.ProfileID, kind, continueTitles)
 		if err != nil {
 			a.internalError(w, "list what the account is watching", err)
 			return
@@ -287,7 +287,7 @@ func (a *API) listShelf(w http.ResponseWriter, r *http.Request, d store.Device, 
 		}
 		var watched map[int64]store.Progress
 		if kind == store.KindMovie {
-			if watched, err = a.store.MovieProgress(ctx, d.AccountID); err != nil {
+			if watched, err = a.store.MovieProgress(ctx, d.ProfileID); err != nil {
 				a.internalError(w, "list what the account watched", err)
 				return
 			}
@@ -330,7 +330,7 @@ func (a *API) listPortalShelf(w http.ResponseWriter, r *http.Request, d store.De
 		}
 		return
 	}
-	watched, err := a.store.MovieProgress(ctx, d.AccountID)
+	watched, err := a.store.MovieProgress(ctx, d.ProfileID)
 	if err != nil {
 		a.internalError(w, "list what the account watched", err)
 		return
@@ -477,7 +477,7 @@ func (a *API) open(w http.ResponseWriter, r *http.Request, d store.Device, kind 
 	}
 	resp.Poster = artwork.TitlePath(artwork.PosterKind, o.ID, poster)
 	resp.Backdrop = artwork.TitlePath(artwork.BackdropKind, o.ID, backdrop)
-	made, err := a.store.TitleProgress(r.Context(), d.AccountID, o.ID)
+	made, err := a.store.TitleProgress(r.Context(), d.ProfileID, o.ID)
 	if err != nil {
 		a.internalError(w, "look up progress", err)
 		return
@@ -768,7 +768,7 @@ func (a *API) keepProgress(w http.ResponseWriter, r *http.Request, d store.Devic
 	if !p.Finished && p.Position < notStarted {
 		p.Position = 0
 	}
-	if err := a.store.SetProgress(ctx, d.AccountID, p); err != nil {
+	if err := a.store.SetProgress(ctx, d.ProfileID, p); err != nil {
 		a.internalError(w, "keep progress", err)
 		return
 	}

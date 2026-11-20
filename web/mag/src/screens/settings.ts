@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Settings: this box, how the page looks on it, the parental controls,
-// reloading the page, and what it is. Appearance is a page of its own.
+// Settings: this box, who watches on it while the account has two profiles
+// or more (D94), how the page looks on it, the parental controls, reloading
+// the page, and what it is. Appearance is a page of its own.
 
 import type { Settings } from '../api';
 import { el, setHTML, setText, show } from '../dom';
@@ -21,6 +22,8 @@ interface Row {
   ok?: () => void;
   /** Changes the row's value, for a row whose value Left and Right change. */
   change?: (delta: number) => void;
+  /** Whether the row shows; always, if missing. */
+  when?: () => boolean;
 }
 
 interface Info {
@@ -91,6 +94,23 @@ export class SettingsScreen implements Screen {
         label: 'This Box',
         value: () => [ctx.server.label, ctx.platform.model].filter(Boolean).join(' · '),
         info: () => self.boxInfo(),
+      },
+      {
+        icon: 'profile',
+        label: 'Profile',
+        value: () => ctx.profiles.name(),
+        when: () => ctx.profiles.several(),
+        info: () => ({
+          icon: 'profile',
+          title: 'Profile',
+          text:
+            'Who is watching on this box. Each profile keeps its own favourite channels, and where its films and episodes stopped; this box’s appearance and the channels it played last stay the same whoever watches. OK, or the yellow key on Home, switches to another profile. The profiles are set in the admin, on the Devices page.',
+          facts: [
+            ['Watching', ctx.profiles.name()],
+            ['Profiles', String(ctx.profiles.list.length)],
+          ],
+        }),
+        ok: () => ctx.switchProfile(),
       },
       {
         icon: 'appearance',
@@ -261,13 +281,54 @@ export class SettingsScreen implements Screen {
     this.draw();
   }
 
+  /** shows says whether the row at i shows. */
+  private shows(i: number): boolean {
+    const when = this.rows[i]!.when;
+    return !when || when();
+  }
+
+  /** step moves the focus to the next row that shows, by delta, wrapping around. */
+  private step(delta: number): void {
+    const n = this.rows.length;
+    for (let k = 1; k <= n; k++) {
+      const i = (((this.focus + delta * k) % n) + n) % n;
+      if (this.shows(i)) {
+        this.focus = i;
+        return;
+      }
+    }
+  }
+
+  /** rowAt returns the place of the row with the label. */
+  private rowAt(label: string): number {
+    for (let i = 0; i < this.rows.length; i++) {
+      if (this.rows[i]!.label === label) {
+        return i;
+      }
+    }
+    return 0;
+  }
+
+  /** profilesChanged shows or hides the Profile row, and redraws its value. */
+  profilesChanged(): void {
+    if (!this.appearance) {
+      this.draw();
+    }
+  }
+
   private draw(): void {
     setText(this.back, this.appearance ? '‹ Settings' : '‹ Home');
     setText(this.title, this.appearance ? 'Appearance' : 'Settings');
     let html = '';
     if (!this.appearance) {
+      if (!this.shows(this.focus)) {
+        this.step(1);
+      }
       for (let i = 0; i < this.rows.length; i++) {
         const r = this.rows[i]!;
+        if (!this.shows(i)) {
+          continue;
+        }
         const value = r.change
           ? '<span class="arrow">' + arrows('l') + '</span><span class="choice">' + escape(r.value()) + '</span><span class="arrow">' + arrows('r') + '</span>'
           : '<span class="value">' + escape(r.value()) + '</span><span class="chev">›</span>';
@@ -367,10 +428,10 @@ export class SettingsScreen implements Screen {
     if (!this.appearance) {
       switch (p.key) {
         case 'up':
-          this.focus = (this.focus + this.rows.length - 1) % this.rows.length;
+          this.step(-1);
           break;
         case 'down':
-          this.focus = (this.focus + 1) % this.rows.length;
+          this.step(1);
           break;
         case 'left':
         case 'right':
@@ -411,7 +472,7 @@ export class SettingsScreen implements Screen {
         break;
       case 'back':
         this.appearance = false;
-        this.focus = 1;
+        this.focus = this.rowAt('Appearance');
         break;
       default:
         return false;

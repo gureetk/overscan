@@ -3,7 +3,9 @@
 // Home: Simple, six big buttons on a plain background, or With a Picture, a
 // picture behind the last channel watched, smaller buttons and the
 // favourite channels (D52). The box's settings choose. A seventh button,
-// Radio, shows when the sources list radio stations (D87).
+// Radio, shows when the sources list radio stations (D87). When the account
+// has two profiles or more, the head names the one watching, and the
+// yellow key switches to another (D94).
 
 import type { Channel } from '../api';
 import { el, Logo, setClass, setText, setWidth, show } from '../dom';
@@ -53,6 +55,8 @@ export class HomeScreen implements Screen {
   private favTitle: HTMLElement;
   private favCards: { box: HTMLElement; logo: Logo; bar: HTMLElement }[] = [];
   private clocks: Clock[] = [];
+  /** The profile watching, in each layout's head. */
+  private chips: { box: HTMLElement; name: HTMLElement }[] = [];
 
   constructor(parent: HTMLElement, ctx: Ctx) {
     this.ctx = ctx;
@@ -127,7 +131,23 @@ export class HomeScreen implements Screen {
     const brand = el('div', 'brand', head);
     el('span', 'mark', brand);
     el('span', 'word', brand, 'Overscan');
+    const chip = el('div', 'profile-chip', head);
+    el('span', 'swatch yellow', chip);
+    const name = el('span', 'name', chip);
+    show(chip, false);
+    this.chips.push({ box: chip, name: name });
     this.clocks.push(new Clock(head, true));
+  }
+
+  /** renderProfile names the profile watching, while the account has two or more. */
+  private renderProfile(): void {
+    const several = this.ctx.profiles.several();
+    const name = several ? this.ctx.profiles.name() : '';
+    for (let i = 0; i < this.chips.length; i++) {
+      const c = this.chips[i]!;
+      show(c.box, !!name);
+      setText(c.name, name);
+    }
   }
 
   private withPicture(): boolean {
@@ -188,6 +208,7 @@ export class HomeScreen implements Screen {
     this.tiles[2]!.line = stations + (stations === 1 ? ' station' : ' stations');
     const shown = this.shown();
     this.focusTile = Math.min(this.focusTile, shown.length - 1);
+    this.renderProfile();
     if (picture) {
       this.renderPicture(last, shown);
     } else {
@@ -201,14 +222,15 @@ export class HomeScreen implements Screen {
         const tile = this.tiles[i]!;
         setText(t.line, cols === 4 && tile.short ? tile.short : tile.line);
       }
-      this.footer.set(
-        [
-          { key: 'OK', text: 'Open' },
-          { key: 'lrud', text: 'Move' },
-          { key: '0–9', text: 'Go to channel' },
-        ],
-        [],
-      );
+      const keys = [
+        { key: 'OK', text: 'Open' },
+        { key: 'lrud', text: 'Move' },
+        { key: '0–9', text: 'Go to channel' },
+      ];
+      if (this.ctx.profiles.several()) {
+        keys.unshift({ key: 'yellow', text: 'Switch Profile' });
+      }
+      this.footer.set(keys, []);
       this.footer.setRightText(this.ctx.server.label);
     }
   }
@@ -272,6 +294,10 @@ export class HomeScreen implements Screen {
   }
 
   key(p: Press): boolean {
+    if (p.key === 'yellow' && this.ctx.profiles.several()) {
+      this.ctx.switchProfile();
+      return true;
+    }
     const shown = this.shown();
     const n = shown.length;
     if (!this.withPicture()) {
@@ -371,6 +397,11 @@ export class HomeScreen implements Screen {
 
   /** favouritesChanged redraws the favourites, after one is added or removed. */
   favouritesChanged(): void {
+    this.render();
+  }
+
+  /** profilesChanged redraws the profile watching, after the box switched or the profiles changed. */
+  profilesChanged(): void {
     this.render();
   }
 }

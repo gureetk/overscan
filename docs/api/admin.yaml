@@ -81,6 +81,14 @@ tags:
       The boxes and players that use Overscan (D23). A new one waits until the
       administrator approves it: a box running Overscan's page by the
       six-digit code it shows (D39), a Stalker client by its MAC address.
+  - name: profiles
+    description: >-
+      Who watches on the household's devices (D94). Each profile keeps its
+      own favourite channels, and how far it got into films and episodes. A
+      device plays as one of them, its first until it is given another; a
+      box running Overscan's page switches itself, and may need the
+      profile's PIN to. The household always has at least one profile, and
+      at most 12.
   - name: recordings
     description: >-
       Programmes that boxes record from the guide on this server (D89), once
@@ -273,7 +281,11 @@ paths:
     patch:
       tags: [devices]
       operationId: changeDevice
-      summary: Change a device's label
+      summary: Change a device's label or profile
+      description: >-
+        Gives the body's label, the profile the device plays as (D94), or
+        both. Only a device approved for the household plays as one of its
+        profiles (`not_approved`, 409).
       security:
         - session: []
           csrf: []
@@ -284,12 +296,15 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [label]
+              minProperties: 1
               properties:
                 label:
                   type: string
                   maxLength: 100
                   description: The new label; an empty one clears it.
+                profile_id:
+                  type: integer
+                  description: One of the household's profiles, which the device plays as from now on.
       responses:
         "200":
           $ref: "#/components/responses/Device"
@@ -300,7 +315,17 @@ paths:
         "403":
           $ref: "#/components/responses/CSRF"
         "404":
-          $ref: "#/components/responses/NoSuchDevice"
+          description: There is no device with that MAC address (`no_such_device`), or no such profile of the household (`no_such_profile`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: The device is not approved for the household (`not_approved`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "415":
           $ref: "#/components/responses/NotJSON"
     delete:
@@ -440,6 +465,127 @@ paths:
                 $ref: "#/components/schemas/Error"
         "415":
           $ref: "#/components/responses/NotJSON"
+
+  /profiles:
+    get:
+      tags: [profiles]
+      operationId: listProfiles
+      summary: List the household's profiles
+      description: The first first, then in the order they were added.
+      responses:
+        "200":
+          description: The profiles.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profiles]
+                properties:
+                  profiles:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Profile"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    post:
+      tags: [profiles]
+      operationId: addProfile
+      summary: Add a profile
+      description: The new profile has no favourites, nothing watched and no PIN.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  maxLength: 32
+      responses:
+        "201":
+          $ref: "#/components/responses/Profile"
+        "400":
+          $ref: "#/components/responses/ProfileMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "409":
+          $ref: "#/components/responses/ProfileConflict"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+
+  /profiles/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    patch:
+      tags: [profiles]
+      operationId: changeProfile
+      summary: Rename a profile, or set or remove its PIN
+      description: >-
+        A box asks for the profile's PIN, four to eight digits, before it
+        switches to it; an empty `pin` removes it. Overscan keeps only an
+        argon2id hash of it. Locked channels, films and series still need the
+        household's parental PIN, whatever the profile.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                name:
+                  type: string
+                  maxLength: 32
+                pin:
+                  type: string
+                  pattern: "^([0-9]{4,8})?$"
+      responses:
+        "200":
+          $ref: "#/components/responses/Profile"
+        "400":
+          $ref: "#/components/responses/ProfileMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NoSuchProfile"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+    delete:
+      tags: [profiles]
+      operationId: removeProfile
+      summary: Remove a profile
+      description: >-
+        Its favourites and how far it got into films and episodes go with
+        it, and its devices play as the first profile. The household's only
+        profile cannot be removed (`last_profile`).
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "204":
+          description: Removed.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NoSuchProfile"
+        "409":
+          $ref: "#/components/responses/ProfileConflict"
 
   /lineup/groups:
     get:
@@ -1699,7 +1845,7 @@ components:
           description: When the server started, in UTC.
     Device:
       type: object
-      required: [mac, state, label, model, account_id, paired, pairing_code, pairing_requested_at, last_seen, created_at, playback_check]
+      required: [mac, state, label, model, account_id, profile_id, paired, pairing_code, pairing_requested_at, last_seen, created_at, playback_check]
       properties:
         mac:
           type: string
@@ -1717,6 +1863,9 @@ components:
         account_id:
           type: [integer, "null"]
           description: The account it is approved for; null if it was never approved.
+        profile_id:
+          type: [integer, "null"]
+          description: The profile an approved device plays as (D94); null for a device that waits or is blocked.
         paired:
           type: boolean
           description: Whether a box is paired with its secret, so that a copied MAC address alone is not enough (D39).
@@ -1738,6 +1887,25 @@ components:
           oneOf:
             - $ref: "#/components/schemas/PlaybackCheck"
             - type: "null"
+    Profile:
+      type: object
+      required: [id, name, first, pin, devices]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          description: One to 32 characters, unlike any other profile's name, whatever their case.
+          examples: ["Alex"]
+        first:
+          type: boolean
+          description: Whether it is the household's first profile, which devices play as until they are given another.
+        pin:
+          type: boolean
+          description: Whether a box asks for its PIN before it switches to it.
+        devices:
+          type: integer
+          description: How many approved devices play as it.
     PlaybackCheck:
       type: object
       required: [checked_at, firmware, plays, does_not_play]
@@ -2610,6 +2778,36 @@ components:
             $ref: "#/components/schemas/Error"
     NoSuchDevice:
       description: There is no device with that MAC address (`no_such_device`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Profile:
+      description: The profile.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Profile"
+    ProfileMistake:
+      description: >-
+        The name is empty, longer than 32 characters, holds a control
+        character or is another profile's (`bad_name`), the PIN is not four
+        to eight digits (`bad_pin`), or the body is not the JSON the path
+        takes (`bad_json`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ProfileConflict:
+      description: >-
+        The household has 12 profiles, the most it may (`too_many_profiles`),
+        or the profile is its only one (`last_profile`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NoSuchProfile:
+      description: The household has no such profile (`no_such_profile`).
       content:
         application/json:
           schema:
