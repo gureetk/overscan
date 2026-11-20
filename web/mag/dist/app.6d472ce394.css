@@ -427,6 +427,32 @@ html.video #app {
           justify-content: space-between;
 }
 
+/* The profile watching (D94), beside the clock, with the key that switches. */
+.home .profile-chip {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+          align-items: center;
+  max-width: 18rem;
+  margin-left: auto;
+  margin-right: 1.75rem;
+  padding: 0.3125rem 0.875rem 0.3125rem 0.75rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 0.9375rem;
+  white-space: nowrap;
+}
+
+.home .with-picture .profile-chip {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.home .profile-chip .name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .big-tiles {
   position: absolute;
   left: 4rem;

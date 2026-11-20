@@ -15,12 +15,12 @@ import (
 	"overscan.gureet.ca/internal/store"
 )
 
-// The viewer's own lists and settings (D53): the account's favourites, and
-// the page's settings on the device.
+// The viewer's own lists and settings (D53): the favourites of the profile
+// the box plays as (D94), and the page's settings on the device.
 
 // favourite answers PUT and DELETE channels/{id}/favourite, which mark a
-// channel of the box's lineup as one of the account's favourites, or unmark
-// it, and say which it now is.
+// channel of the box's lineup as one of its profile's favourites, or
+// unmark it, and say which it now is.
 func (a *API) favourite(on bool) func(http.ResponseWriter, *http.Request, store.Device) {
 	return func(w http.ResponseWriter, r *http.Request, d store.Device) {
 		ctx := r.Context()
@@ -45,7 +45,7 @@ func (a *API) favourite(on bool) func(http.ResponseWriter, *http.Request, store.
 				return
 			}
 		}
-		if err := a.store.SetFavourite(ctx, acct.ID, id, on, a.now()); err != nil {
+		if err := a.store.SetFavourite(ctx, d.ProfileID, id, on, a.now()); err != nil {
 			a.internalError(w, "change a favourite", err)
 			return
 		}

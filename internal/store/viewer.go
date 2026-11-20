@@ -12,8 +12,8 @@ import (
 )
 
 // The viewer's own lists and settings (D53, schema 13): favourites, which
-// belong to an account; and what a device watched, and its page's settings,
-// which belong to the device.
+// belong to a profile (D94); and what a device watched, and its page's
+// settings, which belong to the device.
 
 // MaxWatched is how many channels a device's list of what it watched keeps.
 const MaxWatched = 30
@@ -34,27 +34,27 @@ func (s *Store) EntryShown(ctx context.Context, lineupID, entryID int64) error {
 	return nil
 }
 
-// Favourites returns the lineup entries that an account marked as
+// Favourites returns the lineup entries that a profile marked as
 // favourites, in the order they were marked. It can list entries that
 // devices no longer see.
-func (s *Store) Favourites(ctx context.Context, accountID int64) ([]int64, error) {
-	return s.entryIDs(ctx, "SELECT entry_id FROM favourites WHERE account_id = ? ORDER BY added_at, entry_id", accountID)
+func (s *Store) Favourites(ctx context.Context, profileID int64) ([]int64, error) {
+	return s.entryIDs(ctx, "SELECT entry_id FROM favourites WHERE profile_id = ? ORDER BY added_at, entry_id", profileID)
 }
 
-// SetFavourite marks a lineup entry as one of the account's favourites, or
+// SetFavourite marks a lineup entry as one of the profile's favourites, or
 // unmarks it. Marking a favourite again, or unmarking one that is not, does
 // nothing.
-func (s *Store) SetFavourite(ctx context.Context, accountID, entryID int64, on bool, at time.Time) error {
+func (s *Store) SetFavourite(ctx context.Context, profileID, entryID int64, on bool, at time.Time) error {
 	var err error
 	if on {
 		_, err = s.db.ExecContext(ctx,
-			"INSERT INTO favourites (account_id, entry_id, added_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
-			accountID, entryID, formatTime(at))
+			"INSERT INTO favourites (profile_id, entry_id, added_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
+			profileID, entryID, formatTime(at))
 	} else {
-		_, err = s.db.ExecContext(ctx, "DELETE FROM favourites WHERE account_id = ? AND entry_id = ?", accountID, entryID)
+		_, err = s.db.ExecContext(ctx, "DELETE FROM favourites WHERE profile_id = ? AND entry_id = ?", profileID, entryID)
 	}
 	if err != nil {
-		return fmt.Errorf("store: favourite %d of account %d: %w", entryID, accountID, err)
+		return fmt.Errorf("store: favourite %d of profile %d: %w", entryID, profileID, err)
 	}
 	return nil
 }

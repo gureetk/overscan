@@ -2,7 +2,7 @@
 
 Overscan's own MAG page talks to the server through the device API, a JSON API under `/api/device/v1/` built for the box ([plan](../plan.md), section 9). The page and the server ship together, so the API changes with them. It is not meant for other clients: third-party players have the Stalker API.
 
-Version 0, in M1, covers what the first page needs: a session, the channel list, and playing a channel. M2 adds what the page's new interface needs ([D52](../decisions.md)): the guide, favourites, what the box watched, search, and the box's own settings. M3 adds films and series ([D63](../decisions.md) to [D65](../decisions.md)), plays through ffmpeg those whose sound the box cannot play ([D68](../decisions.md)), checks what each box plays ([D70](../decisions.md)), and has Jellyfin transcode the video it cannot play ([D71](../decisions.md)). M4 adds past programmes from their sources' archives ([D81](../decisions.md), [D84](../decisions.md)), locks on films and series ([D85](../decisions.md)), radio stations ([D87](../decisions.md)), and recordings ([D89](../decisions.md)).
+Version 0, in M1, covers what the first page needs: a session, the channel list, and playing a channel. M2 adds what the page's new interface needs ([D52](../decisions.md)): the guide, favourites, what the box watched, search, and the box's own settings. M3 adds films and series ([D63](../decisions.md) to [D65](../decisions.md)), plays through ffmpeg those whose sound the box cannot play ([D68](../decisions.md)), checks what each box plays ([D70](../decisions.md)), and has Jellyfin transcode the video it cannot play ([D71](../decisions.md)). M4 adds past programmes from their sources' archives ([D81](../decisions.md), [D84](../decisions.md)), locks on films and series ([D85](../decisions.md)), radio stations ([D87](../decisions.md)), and recordings ([D89](../decisions.md)). M5 adds profiles ([D94](../decisions.md)).
 
 ## Conventions
 
@@ -23,7 +23,7 @@ Version 0, in M1, covers what the first page needs: a session, the channel list,
 | `too_many` | 409 | The household has 100 recordings to come or under way, the most it may. |
 | `recorded` | 409 | The programme has been recorded already: its recording was called off while it recorded, which kept what it had written. |
 | `pin_required` | 403 | The channel, film or series is locked: send the parental PIN ([D55](../decisions.md), [D85](../decisions.md)). |
-| `pin_wrong` | 403 | The PIN is not the account's. |
+| `pin_wrong` | 403 | The PIN is not the account's, or not the profile's. |
 | `pin_locked` | 429 | Five wrong PINs in 15 minutes: `Retry-After` says how many seconds the box must wait before it tries again. |
 | `limit` | 503 | The channel's, film's or episode's source has no free connection ([D36](../decisions.md)). |
 | `busy` | 503 | The film's or episode's video must be transcoded, and the server transcodes as many titles as it may at once ([D73](../decisions.md)). |
@@ -79,7 +79,7 @@ A blocked box gets `"state": "blocked"`. Neither gets a token.
 
 ### `GET /api/device/v1/channels`
 
-The whole lineup of the box's account, in one answer: the groups, in the order of their first channel, and the channels, by number. With them come the account's favourites, in the order they were marked, and the channels this box played, the latest first, at most 30 ([D53](../decisions.md)). Both lists hold only channels of the lineup.
+The whole lineup of the box's account, in one answer: the groups, in the order of their first channel, and the channels, by number. With them come the favourites of the profile the box plays as, in the order they were marked ([D94](../decisions.md)), and the channels this box played, the latest first, at most 30 ([D53](../decisions.md)). Both lists hold only channels of the lineup.
 
 ```json
 {
@@ -170,7 +170,7 @@ Calls off one of the account's recordings: one to come is `cancelled`; one under
 
 ### `PUT /api/device/v1/channels/{id}/favourite`, `DELETE` likewise
 
-Marks a channel of the box's lineup as one of the account's favourites, or unmarks it, and answers with which it now is: `{"id": 18, "favourite": true}`. Marking a favourite again, or unmarking a channel that is not one, changes nothing. A channel that the box does not see cannot be marked (`not_found`); one that has left the lineup can still be unmarked. Favourites are the account's, so the account's other boxes and its Stalker clients see the change ([D53](../decisions.md)).
+Marks a channel of the box's lineup as one of the favourites of the profile the box plays as, or unmarks it, and answers with which it now is: `{"id": 18, "favourite": true}`. Marking a favourite again, or unmarking a channel that is not one, changes nothing. A channel that the box does not see cannot be marked (`not_found`); one that has left the lineup can still be unmarked. Favourites are the profile's, so the other boxes and Stalker clients that play as it see the change ([D53](../decisions.md), [D94](../decisions.md)).
 
 ### `GET /api/device/v1/guide`
 
@@ -345,13 +345,27 @@ Either answer may list the subtitles that the page can load ([D69](../decisions.
 
 #### `PUT /api/device/v1/movies/{id}/progress`, and `PUT /api/device/v1/episodes/{id}/progress`
 
-Keeps how far the account got into a film or an episode ([D65](../decisions.md)). The page sends it now and then while one plays, and when it stops:
+Keeps how far the profile the box plays as got into a film or an episode ([D65](../decisions.md), [D94](../decisions.md)). The page sends it now and then while one plays, and when it stops:
 
 ```json
 {"position": 1260, "duration": 6730}
 ```
 
 Both are in seconds; `duration` is 0 if the box does not know it. `{"finished": true}` says that it played to its end. Within the last twentieth of it, and at most the last ten minutes, it counts as finished too; before 30 seconds, as not started. The answer is what was kept, as `progress` above.
+
+### `GET /api/device/v1/profiles`
+
+The profiles of the box's account, the first first and then in the order they were added, and the one the box plays as ([D94](../decisions.md)):
+
+```json
+{"profile": 1, "profiles": [{"id": 1, "name": "Household"}, {"id": 4, "name": "Alex"}, {"id": 5, "name": "Sam", "pin": true}]}
+```
+
+A box plays as the profile that it or the administrator chose last, or as its account's first. The favourites and the resume points that the other calls give and keep are that profile's; the recent channels, the box's settings and its playback check stay the box's own, and the parental PIN and the locks the account's. `pin` is there, and true, when switching to the profile asks for its PIN. An account always has a profile, and the page shows profiles only when it has two or more. A profile's name is text that the page shows as it is, never as markup.
+
+### `PUT /api/device/v1/profile`
+
+Makes the box play as another of its account's profiles, with the profile's PIN if it has one: `{"id": 5, "pin": "1234"}`. It answers as `GET profiles` does, or `not_found` for a profile that is not one of the account's, and `pin_required`, `pin_wrong` or `pin_locked` as a locked channel does, with the wrong PINs counted with the parental PIN's. Switching to the profile that the box plays as asks for no PIN and changes nothing. The page then loads the lineup again, for the profile's favourites.
 
 ### `GET /api/device/v1/settings`, `PATCH` likewise
 

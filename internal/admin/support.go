@@ -316,6 +316,16 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	profiles, err := a.store.Profiles(ctx, householdAccount)
+	if err != nil {
+		return "", err
+	}
+	withPIN := 0
+	for _, p := range profiles {
+		if p.PINHash != "" {
+			withPIN++
+		}
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "Channels: %s, %s shown, %s missing from their source\n", count(len(entries)), count(shown), count(missing))
 	fmt.Fprintf(&b, "Edited: %d numbers pinned, %d renamed, %d moved to another group\n", pinned, renamed, moved)
@@ -329,6 +339,7 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 		recordings[store.RecordingDone], recordings[store.RecordingFailed], recordings[store.RecordingCancelled])
 	fmt.Fprintf(&b, "Timeshift: keeps %d minutes of a box's channel (0 is off)\n", timeshift)
 	fmt.Fprintf(&b, "Shared tuner: %v\n", sharedTuner)
+	fmt.Fprintf(&b, "Profiles: %d, %d with a PIN to switch to them\n", len(profiles), withPIN)
 	fmt.Fprintf(&b, "Stream repair: every channel by default: %v; HLS too: %v; %d channels set to be repaired, %d set not to be; %s repaired in all\n",
 		repairDefault, repairHLS, repairOn, repairOff, count(repaired))
 	fmt.Fprintf(&b, "\nGroups: %d\n", len(groups))
@@ -350,11 +361,11 @@ func (a *Admin) bundleDevices(ctx context.Context, now time.Time) (string, error
 	}
 	var b strings.Builder
 	tw := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tMAC\tSTATE\tPAIRED\tMODEL\tLAST SEEN\tLABEL")
+	fmt.Fprintln(tw, "ID\tMAC\tSTATE\tPAIRED\tMODEL\tPROFILE\tLAST SEEN\tLABEL")
 	byID := map[int64]store.Device{}
 	for _, d := range devices {
 		byID[d.ID] = d
-		fmt.Fprintf(tw, "%d\t%s\t%s\t%v\t%s\t%s\t%s\n", d.ID, d.MAC, d.State, d.Paired(), d.Model, ago(d.LastSeen, now), d.Label)
+		fmt.Fprintf(tw, "%d\t%s\t%s\t%v\t%s\t%d\t%s\t%s\n", d.ID, d.MAC, d.State, d.Paired(), d.Model, d.ProfileID, ago(d.LastSeen, now), d.Label)
 	}
 	if err := tw.Flush(); err != nil {
 		return "", err

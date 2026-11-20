@@ -942,11 +942,11 @@ func (r sourceRow) DeleteQuestion() string {
 	q := "Delete " + r.Name + "? "
 	switch r.Type {
 	case source.TypeXtream, source.TypeStalker:
-		return q + "Its channels leave the lineup, with what you changed about them, and its films and series leave the boxes, with how far each account got in them."
+		return q + "Its channels leave the lineup, with what you changed about them, and its films and series leave the boxes, with how far each profile got in them."
 	case source.TypeJellyfin, source.TypePlex:
-		return q + "Its films and series leave the boxes, with how far each account got in them."
+		return q + "Its films and series leave the boxes, with how far each profile got in them."
 	case source.TypeFolder:
-		return q + "Its films and series leave the boxes, with how far each account got in them. The folder and its files stay as they are."
+		return q + "Its films and series leave the boxes, with how far each profile got in them. The folder and its files stay as they are."
 	}
 	return q + "Its channels leave the lineup, with what you changed about them."
 }

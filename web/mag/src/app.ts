@@ -4,7 +4,7 @@
 // the screens and moving between them, the remote's keys, and where the
 // video shows (D52).
 
-import { type ApiError, type Channel, Client, describe, type Lineup, type Programme, type Session } from './api';
+import { type ApiError, type Channel, Client, describe, type Lineup, type Profile, type Profiles, type Programme, type Session } from './api';
 import { PlaybackCheck } from './check';
 import { el, show } from './dom';
 import { FilmPlayer, pastProgramme, type Playing, playingName } from './film';
@@ -31,6 +31,7 @@ import { SettingsScreen } from './screens/settings';
 import { findEpisode, TitleScreen } from './screens/title';
 import { WatchScreen } from './screens/watch';
 import { keepPIN, keptPIN } from './pin';
+import { ProfilesModel } from './profiles';
 import { readSecret, writeSecret } from './secret';
 import { SettingsModel } from './settings';
 
@@ -48,6 +49,7 @@ export class App {
   private guide: GuideCache;
   private recordings: Recordings;
   private settings: SettingsModel;
+  private profiles: ProfilesModel;
   private player: Player;
   private film: FilmPlayer;
   private check: PlaybackCheck;
@@ -84,6 +86,7 @@ export class App {
     this.guide = new GuideCache(this.client);
     this.recordings = new Recordings(this.client);
     this.settings = new SettingsModel(this.client);
+    this.profiles = new ProfilesModel(this.client);
     this.lineup.numbering = function () {
       return self.settings.current.numbers;
     };
@@ -181,6 +184,7 @@ export class App {
       lineup: this.lineup,
       guide: this.guide,
       settings: this.settings,
+      profiles: this.profiles,
       player: this.player,
       movies: movies,
       series: series,
@@ -214,6 +218,9 @@ export class App {
       },
       unlock: function (what: string, done: (ok: boolean) => void) {
         self.unlock(what, '', done);
+      },
+      switchProfile: function () {
+        self.switchProfile();
       },
       videoChanged: function () {
         self.applyVideo();
@@ -323,11 +330,19 @@ export class App {
     }
   }
 
-  /** load loads the box's settings and the lineup, then shows Home. */
+  /**
+   * load loads the box's settings and its account's profiles, then the
+   * lineup, whose favourites are the profile's, then shows Home.
+   */
   private load(): void {
     const self = this;
     clearTimeout(this.timer);
-    this.settings.load(function () {
+    let waiting = 2;
+    const next = function () {
+      waiting--;
+      if (waiting > 0) {
+        return;
+      }
       self.loadLineup(function () {
         if (!self.loaded) {
           self.loaded = true;
@@ -335,7 +350,9 @@ export class App {
           self.pollVersion();
         }
       });
-    });
+    };
+    this.settings.load(next);
+    this.profiles.load(next);
   }
 
   private loadLineup(done: () => void): void {
@@ -389,7 +406,11 @@ export class App {
     }
   }
 
-  /** pollVersion asks now and then whether the lineup changed, and loads it again if it did. */
+  /**
+   * pollVersion asks now and then whether the lineup changed, and loads it
+   * again if it did, and what the account's profiles are: the
+   * administrator may have added one, or given the box another.
+   */
   private pollVersion(): void {
     const self = this;
     clearTimeout(this.versionTimer);
@@ -400,10 +421,19 @@ export class App {
           self.connect();
           return;
         }
-        if (!err && v && v.version !== self.lineup.version) {
-          self.loadLineup(function () {});
-        }
-        self.pollVersion();
+        const changed = !err && !!v && v.version !== self.lineup.version;
+        const was = self.profiles.current;
+        self.profiles.load(function () {
+          if (self.profiles.current !== was) {
+            self.profileSwitched();
+          } else {
+            if (changed) {
+              self.loadLineup(function () {});
+            }
+            self.profilesChanged();
+          }
+          self.pollVersion();
+        });
       });
     }, versionPollMs);
   }
@@ -509,6 +539,99 @@ export class App {
         done(false);
       });
     });
+  }
+
+  /** switchProfile asks who is watching, and switches the box to that profile (D94). */
+  private switchProfile(): void {
+    const self = this;
+    const list = this.profiles.list;
+    if (list.length < 2) {
+      return;
+    }
+    const items: PickItem[] = [];
+    let chosen = 0;
+    for (let i = 0; i < list.length; i++) {
+      const p = list[i]!;
+      const now = p.id === this.profiles.current;
+      if (now) {
+        chosen = i;
+      }
+      items.push({ label: p.name, detail: now ? 'Watching' : p.pin ? 'PIN' : '' });
+    }
+    this.picker.pick('Who Is Watching?', items, chosen, function (i) {
+      const p = list[i];
+      if (p && p.id !== self.profiles.current) {
+        self.toProfile(p, '');
+      }
+    });
+  }
+
+  /** toProfile switches the box to p, with its PIN if it has one, saying why it asks again. */
+  private toProfile(p: Profile, message: string): void {
+    const self = this;
+    if (!p.pin) {
+      this.sendProfile(p, '');
+      return;
+    }
+    this.pin.ask('To watch as ' + p.name, message, function (pin) {
+      if (pin) {
+        self.sendProfile(p, pin);
+      }
+    });
+  }
+
+  private sendProfile(p: Profile, pin: string): void {
+    const self = this;
+    this.client.call<Profiles>('PUT', 'profile', { id: p.id, pin: pin }, function (err, resp) {
+      if (err) {
+        if (err.code === 'pin_wrong' || err.code === 'pin_required') {
+          self.toProfile(p, 'That PIN is not right. Try again.');
+        } else if (err.code === 'pin_locked') {
+          const wait = err.retryAfter ? Math.ceil(err.retryAfter / 60) : 5;
+          self.toast('Too many wrong PINs. Try again in ' + wait + (wait === 1 ? ' minute.' : ' minutes.'));
+        } else if (err.code === 'unauthorized' || err.code === 'blocked') {
+          self.lost(err);
+        } else if (err.code === 'not_found') {
+          self.toast(p.name + ' is no longer a profile here.');
+          self.profiles.load(function () {
+            self.profilesChanged();
+          });
+        } else {
+          self.toast("Can't switch profile. " + describe(err));
+        }
+        return;
+      }
+      if (!resp) {
+        return;
+      }
+      self.profiles.set(resp);
+      self.profileSwitched();
+      self.toast('Watching as ' + self.profiles.name() + '.');
+    });
+  }
+
+  /**
+   * profileSwitched shows what the profile that the box now plays as
+   * keeps: its favourites, which come with the lineup, and where its films
+   * and episodes stopped. The parental PIN that the box kept goes with
+   * whoever typed it.
+   */
+  private profileSwitched(): void {
+    this.player.forgetPIN();
+    this.ctx.movies.forget();
+    this.ctx.series.forget();
+    this.profilesChanged();
+    this.loadLineup(function () {});
+  }
+
+  /** profilesChanged redraws what shows the profiles, after they changed. */
+  private profilesChanged(): void {
+    for (const name in this.screens) {
+      const s = this.screens[name] as any;
+      if (s.profilesChanged) {
+        s.profilesChanged();
+      }
+    }
   }
 
   private toast(text: string): void {

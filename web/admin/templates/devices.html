@@ -42,6 +42,7 @@
 </section>
 {{template "waiting" .}}
 {{template "known" .}}
+{{template "profiles" .}}
 {{template "checks" .}}
 </div>
 {{end}}
@@ -111,7 +112,7 @@
   {{- if .Data.Known}}
   <div class="table-wrap">
   <table class="list devices">
-    <thead><tr><th>Label</th><th>MAC address</th><th>State</th><th>Model</th><th>Plays</th>{{if gt (len .Data.Accounts) 1}}<th>Account</th>{{end}}<th>Last seen</th><th class="actions"><span class="sr">Actions</span></th></tr></thead>
+    <thead><tr><th>Label</th><th>MAC address</th><th>State</th><th>Model</th><th>Plays</th>{{if gt (len .Data.Accounts) 1}}<th>Account</th>{{end}}{{if gt (len .Data.Profiles) 1}}<th>Profile</th>{{end}}<th>Last seen</th><th class="actions"><span class="sr">Actions</span></th></tr></thead>
     <tbody>
     {{- range .Data.Known}}
       <tr>
@@ -138,6 +139,7 @@
         <td>{{if .Model}}{{.Model}}{{else}}<span class="muted">Unknown</span>{{end}}</td>
         <td>{{template "plays" (dict "Check" .Check "ID" .ID "Now" $.Data.Now)}}</td>
         {{- if gt (len $.Data.Accounts) 1}}<td>{{.Account}}</td>{{end}}
+        {{- if gt (len $.Data.Profiles) 1}}<td>{{template "device-profile" (dict "Device" . "Profiles" $.Data.Profiles "CSRF" $.Session.CSRFToken)}}</td>{{end}}
         <td>{{ago .LastSeen $.Data.Now}}</td>
         <td class="actions">
           <details class="popover">
@@ -160,6 +162,78 @@
   {{- else}}
   <p class="empty">No device is approved or blocked yet.</p>
   {{- end}}
+</section>
+{{end}}
+
+{{/* The profile a device plays as (D94), for the table: a household's approved device chooses among its profiles. */}}
+{{define "device-profile"}}
+{{- if .Device.Household}}
+<form method="post" action="/admin/devices/{{.Device.MAC}}/profile" hx-post="/admin/devices/{{.Device.MAC}}/profile" hx-trigger="change" hx-target="#device-sections" hx-select="#device-sections" hx-swap="outerHTML" class="cell-form">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <select name="profile" aria-label="Profile that {{if .Device.Label}}{{.Device.Label}}{{else}}{{.Device.MAC}}{{end}} plays as">
+    {{- range .Profiles}}<option value="{{.ID}}"{{if eq .ID $.Device.ProfileID}} selected{{end}}>{{.Name}}</option>{{end}}
+  </select>
+  <noscript><button class="small" type="submit">Save</button></noscript>
+</form>
+{{- else}}<span class="muted">None</span>{{end}}
+{{- end}}
+
+{{/* The household's profiles (D94): who watches, each with its own favourites and resume points. */}}
+{{define "profiles"}}
+<section id="profiles" class="card" aria-labelledby="profiles-title">
+  <h2 id="profiles-title">Profiles</h2>
+  <p class="hint">Who watches. Each profile keeps its own favourite channels, and where its films and episodes stopped. A box plays as one profile, and switches to another from Home with the yellow key, or from its Settings; a Stalker client plays as the profile chosen for it above. While there is one profile, the boxes show none of this.</p>
+  <ul class="profiles">
+    {{- range .Data.Profiles}}
+    <li id="profile-{{.ID}}">
+      <div class="profile-head">
+        <span class="tile-icon">{{template "i-user"}}</span>
+        <div class="profile-text">
+          <strong>{{.Name}}</strong>
+          <span class="muted">{{if .First}}The first profile · {{end}}{{if .Devices}}{{.Devices}} {{if eq .Devices 1}}device plays{{else}}devices play{{end}} as it{{else}}No device plays as it{{end}}</span>
+        </div>
+        {{- if .PINHash}}<span class="badge" title="Boxes ask for its PIN before they switch to it">PIN</span>{{end}}
+      </div>
+      <details class="profile-edit">
+        <summary class="button quiet small">Change</summary>
+        <div class="profile-forms">
+          <form method="post" action="/admin/profiles/{{.ID}}/rename" hx-post="/admin/profiles/{{.ID}}/rename" hx-target="#device-sections" hx-select="#device-sections" hx-swap="outerHTML" class="row-form">
+            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+            <input name="name" maxlength="32" value="{{.Name}}" aria-label="New name of {{.Name}}" required>
+            <button type="submit">Rename</button>
+          </form>
+          <form method="post" action="/admin/profiles/{{.ID}}/pin" hx-post="/admin/profiles/{{.ID}}/pin" hx-target="#device-sections" hx-select="#device-sections" hx-swap="outerHTML" class="row-form">
+            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+            <input name="pin" type="password" inputmode="numeric" pattern="[0-9]{4,8}" minlength="4" maxlength="8" autocomplete="new-password" placeholder="{{if .PINHash}}New PIN, {{end}}4 to 8 digits" aria-label="{{if .PINHash}}New PIN{{else}}PIN{{end}} to switch to {{.Name}}" required>
+            <button type="submit">{{if .PINHash}}Change the PIN{{else}}Set a PIN{{end}}</button>
+          </form>
+          {{- if or .PINHash (gt (len $.Data.Profiles) 1)}}
+          <div class="profile-more">
+            {{- if .PINHash}}
+            <form method="post" action="/admin/profiles/{{.ID}}/remove-pin" hx-post="/admin/profiles/{{.ID}}/remove-pin" hx-target="#device-sections" hx-select="#device-sections" hx-swap="outerHTML">
+              <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+              <button type="submit">Remove the PIN</button>
+            </form>
+            {{- end}}
+            {{- if gt (len $.Data.Profiles) 1}}
+            <form method="post" action="/admin/profiles/{{.ID}}/remove" hx-post="/admin/profiles/{{.ID}}/remove" hx-target="#device-sections" hx-select="#device-sections" hx-swap="outerHTML" hx-confirm="Remove the profile {{.Name}}? Its favourites and where it stopped go with it, and its devices play as the first profile.">
+              <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+              <button type="submit" class="danger">Remove the profile</button>
+            </form>
+            {{- end}}
+          </div>
+          {{- end}}
+          <p class="hint">A box asks for the PIN before it switches to {{.Name}}. Locked channels, films and series still ask for the parental PIN.</p>
+        </div>
+      </details>
+    </li>
+    {{- end}}
+  </ul>
+  <form method="post" action="/admin/profiles" hx-post="/admin/profiles" hx-target="#device-sections" hx-select="#device-sections" hx-swap="outerHTML" class="row-form add-profile">
+    <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+    <input name="name" maxlength="32" placeholder="Such as Alex" aria-label="Name of a new profile" required value="{{.Data.ProfileName}}">
+    <button type="submit">Add a profile</button>
+  </form>
 </section>
 {{end}}
 

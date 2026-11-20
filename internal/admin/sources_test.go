@@ -639,7 +639,7 @@ func TestJellyfinSourceForm(t *testing.T) {
 	mustContain(t, "the card", body, `<span class="badge">Jellyfin server</span>`, "Not checked yet", "Check now",
 		"<dt>Server</dt><dd>jellyfin.example:8096</dd>", "<dt>Last checked</dt>", "<dt>Streams at once</dt><dd>No limit</dd>",
 		"Not read yet: Overscan reads them when a box first opens Movies.",
-		"Its films and series leave the boxes, with how far each account got in them.")
+		"Its films and series leave the boxes, with how far each profile got in them.")
 	card := body[strings.Index(body, `id="source-`+fmt.Sprint(id)+`"`):]
 	card = card[:strings.Index(card, "</section>")]
 	for _, absent := range []string{key, "<dt>Channels</dt>", "<dt>Guide</dt>", "<dt>Numbers</dt>", "New categories"} {
@@ -758,7 +758,7 @@ func TestPlexSourceForm(t *testing.T) {
 	body = ta.do("GET", "/admin/sources", nil, c).Body.String()
 	mustContain(t, "the card", body, `<span class="badge">Plex server</span>`, "Not checked yet", "Check now",
 		"<dt>Server</dt><dd>plex.example:32400</dd>", "<dt>Streams at once</dt><dd>No limit</dd>",
-		"Its films and series leave the boxes, with how far each account got in them.")
+		"Its films and series leave the boxes, with how far each profile got in them.")
 	card := body[strings.Index(body, `id="source-`+fmt.Sprint(id)+`"`):]
 	card = card[:strings.Index(card, "</section>")]
 	for _, absent := range []string{token, "<dt>Channels</dt>", "<dt>Guide</dt>", "<dt>Numbers</dt>", "New categories"} {

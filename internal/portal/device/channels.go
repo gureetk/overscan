@@ -44,8 +44,8 @@ type channel struct {
 	Radio   bool   `json:"radio,omitempty"`
 }
 
-// channelsResponse is the device's whole lineup, in one answer, with the
-// account's favourites and what the device watched last (D53). Version
+// channelsResponse is the device's whole lineup, in one answer, with its
+// profile's favourites and what the device watched last (D53, D94). Version
 // changes when the lineup does, so the page can tell whether to load it again.
 // RadioApart is set when the box shows radio stations on its Radio screen
 // alone, and not among the channels of Live TV and the guide (D87).
@@ -93,12 +93,12 @@ func (a *API) lineupOf(ctx context.Context, d store.Device) (channelsResponse, s
 
 // channels answers GET channels: every channel in the device's lineup, by
 // number, and the groups they are in, in the order of their first channel;
-// the account's favourites in the order they were marked; and the channels
-// the device watched, the latest first. Both lists hold only channels that
-// the lineup shows.
+// the favourites of the profile it plays as (D94), in the order they were
+// marked; and the channels the device watched, the latest first. Both
+// lists hold only channels that the lineup shows.
 func (a *API) channels(w http.ResponseWriter, r *http.Request, d store.Device) {
 	ctx := r.Context()
-	resp, acct, err := a.lineupOf(ctx, d)
+	resp, _, err := a.lineupOf(ctx, d)
 	if err != nil {
 		a.internalError(w, "list channels", err)
 		return
@@ -116,7 +116,7 @@ func (a *API) channels(w http.ResponseWriter, r *http.Request, d store.Device) {
 		}
 		return out
 	}
-	favourites, err := a.store.Favourites(ctx, acct.ID)
+	favourites, err := a.store.Favourites(ctx, d.ProfileID)
 	if err != nil {
 		a.internalError(w, "list favourites", err)
 		return
@@ -253,6 +253,13 @@ func (a *API) checkPIN(w http.ResponseWriter, r *http.Request, d store.Device) {
 // pinOK checks the PIN that a box gives for something locked, and answers
 // the call itself when the box may not play it.
 func (a *API) pinOK(w http.ResponseWriter, r *http.Request, d store.Device, acct store.Account, pin string) bool {
+	return a.pinMatches(w, r, d, acct.PINHash, pin, "wrong parental PIN")
+}
+
+// pinMatches checks pin against hash, the parental PIN's or a profile's
+// (D94), as pinOK does, logging wrong when it is wrong. Wrong PINs of
+// either kind count together.
+func (a *API) pinMatches(w http.ResponseWriter, r *http.Request, d store.Device, hash, pin, wrong string) bool {
 	if wait := a.pins.wait(d.ID, a.now()); wait > 0 {
 		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
 		writeError(w, http.StatusTooManyRequests, errPINLocked)
@@ -262,14 +269,14 @@ func (a *API) pinOK(w http.ResponseWriter, r *http.Request, d store.Device, acct
 		writeError(w, http.StatusForbidden, errPINRequired)
 		return false
 	}
-	ok, err := admin.CheckPassword(r.Context(), acct.PINHash, pin)
+	ok, err := admin.CheckPassword(r.Context(), hash, pin)
 	if err != nil {
 		a.internalError(w, "check the PIN", err)
 		return false
 	}
 	if !ok {
 		a.pins.fail(d.ID, a.now())
-		a.log.Warn("wrong parental PIN", "mac", d.MAC, "label", d.Label)
+		a.log.Warn(wrong, "mac", d.MAC, "label", d.Label)
 		writeError(w, http.StatusForbidden, errPINWrong)
 		return false
 	}

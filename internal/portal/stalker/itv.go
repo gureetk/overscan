@@ -112,8 +112,8 @@ func (a *API) getAllChannels(w http.ResponseWriter, r *http.Request, d store.Dev
 }
 
 // getOrderedList answers itv/get_ordered_list: one page of the channels in a
-// genre ("*" for all), by number or by name. fav=1 keeps the account's
-// favourites (D53).
+// genre ("*" for all), by number or by name. fav=1 keeps the favourites
+// of the profile the device plays as (D53, D94).
 func (a *API) getOrderedList(w http.ResponseWriter, r *http.Request, d store.Device) {
 	channels, _, err := a.lineup(r, d)
 	if err != nil {
@@ -121,7 +121,7 @@ func (a *API) getOrderedList(w http.ResponseWriter, r *http.Request, d store.Dev
 		return
 	}
 	if r.Form.Get("fav") == "1" {
-		favourites, err := a.store.Favourites(r.Context(), d.AccountID)
+		favourites, err := a.store.Favourites(r.Context(), d.ProfileID)
 		if err != nil {
 			a.internalError(w, "list favourites", err)
 			return
