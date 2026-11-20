@@ -27,8 +27,17 @@ func TestRedact(t *testing.T) {
 		"x509: certificate is valid for a.example, b.example, not provider.example":  "x509: certificate is valid for [hosts], not [host]",
 		"see http://provider.example/get.php?username=u&password=p for it":           "see [address] for it",
 		"type=itv&action=create_link&token=[redacted]&sn=0123456789&auth_key=abc123": "type=itv&action=create_link&token=[redacted]&sn=[redacted]&auth_key=[redacted]",
-		"user=someone pass ok":                               "user=[redacted] pass ok",
-		"version 6.1.1 at 07:15:00 on 2026-11-16, schema 15": "version 6.1.1 at 07:15:00 on 2026-11-16, schema 15",
+		"user=someone pass ok":                                                "user=[redacted] pass ok",
+		"version 6.1.1 at 07:15:00 on 2026-11-16, schema 15":                  "version 6.1.1 at 07:15:00 on 2026-11-16, schema 15",
+		`msg="a player read its playlist" player=2001:db8::5 channels=3`:      `msg="a player read its playlist" player=[address] channels=3`,
+		"from fe80::1%eth0, fd12:3456::9 and ::1, at 21:05:14.287":            "from [local address], [local address] and [loopback], at 21:05:14.287",
+		"player=::ffff:198.51.100.7 address=2001:DB8:0:0:8:800:200C:417A":     "player=[address] address=[address]",
+		"time=2026-11-20T21:05:14Z mac=00:1A:79:12:34:56":                     "time=2026-11-20T21:05:14Z mac=00:1A:79:xx:xx:xx",
+		"asked for /playlist/q2Vx-7RkLw_3mNb8TzYh1PcA5sDf9GjU0oEiKu4HrXl.m3u": "asked for /playlist/[token].m3u",
+		"path=/epg/q2Vx-7RkLw_3mNb8TzYh1PcA5sDf9GjU0oEiKu4HrXl.xml.gz":        "path=/epg/[token].xml.gz",
+		"GET /live/alex/correct-horse-battery/101.ts":                         "GET /live/[login]/101.ts",
+		"GET /timeshift/alex/correct-horse-battery/60/2026-11-20:21-00/7.ts":  "GET /timeshift/[login]/60/2026-11-20:21-00/7.ts",
+		"the channel Live/Sport plays":                                        "the channel Live/Sport plays",
 	} {
 		if got := redact(in); got != want {
 			t.Errorf("redact(%q)\n got %q\nwant %q", in, got, want)

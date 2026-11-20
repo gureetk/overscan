@@ -126,3 +126,52 @@ func TestMessagesAPI(t *testing.T) {
 	}
 	apiErrorOf(t, ta.apiDo("DELETE", fmt.Sprintf("messages/%d", m.ID), "", c, h...), http.StatusNotFound, "no_such_message")
 }
+
+// A message goes to the boxes of every account, or to one box of any
+// account.
+func TestMessagesToEveryAccount(t *testing.T) {
+	ta := newTestAdmin(t)
+	ta.setPassword("correct horse")
+	c, csrf := ta.signIn("correct horse")
+	hx := []string{"HX-Request", "true"}
+	ctx := context.Background()
+	ta.pairedBoxes()
+	sam, err := ta.st.AddAccount(ctx, "Sam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const samBox = "00:1A:79:00:00:03"
+	if _, err := ta.st.RequestPairing(ctx, samBox, "MAG322", "135791", store.HashSecret("sam's secret"), ta.clock); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ta.approveCode(ctx, "135791", sam.ID, "Sam's room"); err != nil {
+		t.Fatal(err)
+	}
+	page := ta.do("GET", "/admin/devices", nil, c).Body.String()
+	mustContain(t, "the form", page, `To Living room (Household)</option>`, `To Sam&#39;s room (Sam)</option>`)
+
+	rec := ta.do("POST", "/admin/messages", url.Values{"csrf": {csrf}, "text": {"Dinner is ready."}, "to": {""}}, c, hx...)
+	mustContain(t, "to every box", rec.Body.String(), "Sent the message to 2 boxes.")
+	rec = ta.do("POST", "/admin/messages", url.Values{"csrf": {csrf}, "text": {"Bedtime."}, "to": {samBox}}, c, hx...)
+	mustContain(t, "to Sam's box", rec.Body.String(), "Sent the message.", "To Sam&#39;s room")
+	d, err := ta.st.Device(ctx, samBox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waiting, err := ta.st.BoxMessages(ctx, d.ID, ta.clock)
+	if err != nil || len(waiting) != 2 {
+		t.Errorf("Sam's box waits for %+v, %v", waiting, err)
+	}
+	// Deleting the message to every box takes it from both accounts' boxes.
+	list, err := ta.st.Messages(ctx, 0, 10)
+	if err != nil || len(list) != 2 {
+		t.Fatalf("messages: %+v, %v", list, err)
+	}
+	rec = ta.do("POST", fmt.Sprintf("/admin/messages/%d/delete", list[1].ID), url.Values{"csrf": {csrf}}, c, hx...)
+	if rec.Code != http.StatusOK {
+		t.Errorf("delete: status %d", rec.Code)
+	}
+	if waiting, _ := ta.st.BoxMessages(ctx, d.ID, ta.clock); len(waiting) != 1 {
+		t.Errorf("after the delete, Sam's box waits for %+v", waiting)
+	}
+}

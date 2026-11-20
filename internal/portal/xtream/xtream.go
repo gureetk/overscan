@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -199,29 +200,30 @@ func (o *Output) api(w http.ResponseWriter, r *http.Request) {
 }
 
 // capture adds an action that the output does not know to the capture
-// log, with the username and password taken out, for the administrator
-// to see what players ask for.
+// log, for the administrator to see what players ask for: the names of
+// its parameters, at most 30, and an example whose login, and whatever
+// else can carry a secret, is taken out, and whose values are cut short,
+// as the Stalker API's capture does.
 func (o *Output) capture(ctx context.Context, r *http.Request, action string) {
 	var names []string
-	q := url.Values{}
-	for k, v := range r.Form {
-		names = append(names, k)
-		if k == "username" || k == "password" {
-			q.Set(k, "REDACTED")
-		} else if len(v) > 0 {
-			q.Set(k, v[0])
-		}
+	for k := range r.Form {
+		names = append(names, truncate(k, 64))
 	}
 	sort.Strings(names)
-	example := q.Encode()
-	if len(example) > 400 {
-		example = example[:400]
+	names = slices.Compact(names)
+	if len(names) > 30 {
+		names = names[:30]
 	}
-	if len(action) > 64 {
-		action = action[:64]
+	q := url.Values{}
+	for _, k := range names {
+		v := r.Form.Get(k)
+		if store.SensitiveParam(k) {
+			v = "REDACTED"
+		}
+		q.Set(k, truncate(v, 100))
 	}
-	_, err := o.store.CaptureRequest(ctx, store.Capture{Module: "xtream", Action: action, Params: strings.Join(names, ","),
-		Example: example, UserAgent: truncate(r.UserAgent(), 200)}, o.now(), captureKinds)
+	_, err := o.store.CaptureRequest(ctx, store.Capture{Module: "xtream", Action: truncate(action, 64), Params: strings.Join(names, ","),
+		Example: q.Encode(), UserAgent: truncate(r.UserAgent(), 200)}, o.now(), captureKinds)
 	if err != nil {
 		o.log.Warn("cannot add a request to the capture log", "error", err)
 	}

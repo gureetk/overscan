@@ -91,14 +91,16 @@ func CleanMessageText(text string) (string, error) {
 	return text, nil
 }
 
-// boxesSQL selects the IDs of an account's boxes that run Overscan's page:
-// approved and paired.
-const boxesSQL = `SELECT id FROM devices WHERE account_id = ? AND state = 'approved' AND secret_hash IS NOT NULL`
+// boxesSQL selects the IDs and accounts of an account's boxes that run
+// Overscan's page, approved and paired, or with account 0 every
+// account's.
+const boxesSQL = `SELECT id, account_id FROM devices WHERE (account_id = ?1 OR ?1 = 0) AND state = 'approved' AND secret_hash IS NOT NULL`
 
 // AddMessage sends a message to one box of an account, or with deviceID 0
-// to every box of it, at the given time. It fails with ErrMessageText,
-// ErrNoBoxes, ErrTooManyMessages, or ErrNotFound when the device is not one
-// of the account's boxes.
+// to every box of it, at the given time; with accountID 0 too, to every box
+// of every account. It fails with ErrMessageText, ErrNoBoxes,
+// ErrTooManyMessages, or ErrNotFound when the device is not one of the
+// account's boxes.
 func (s *Store) AddMessage(ctx context.Context, accountID, deviceID int64, text string, at time.Time) (Message, error) {
 	text, err := CleanMessageText(text)
 	if err != nil {
@@ -107,35 +109,36 @@ func (s *Store) AddMessage(ctx context.Context, accountID, deviceID int64, text 
 	var batch int64
 	err = s.inTx(ctx, func(tx *sql.Tx) error {
 		// Messages long past their expiry leave the admin's list.
-		if _, err := tx.ExecContext(ctx, `DELETE FROM messages WHERE account_id = ? AND expires_at < ?`,
+		if _, err := tx.ExecContext(ctx, `DELETE FROM messages WHERE (account_id = ?1 OR ?1 = 0) AND expires_at < ?2`,
 			accountID, at.Add(-messagesKept).Unix()); err != nil {
 			return err
 		}
 		var waiting int
 		if err := tx.QueryRowContext(ctx, `
 			SELECT count(DISTINCT batch) FROM messages
-			WHERE account_id = ? AND read_at IS NULL AND expires_at > ?`, accountID, at.Unix()).Scan(&waiting); err != nil {
+			WHERE (account_id = ?1 OR ?1 = 0) AND read_at IS NULL AND expires_at > ?2`, accountID, at.Unix()).Scan(&waiting); err != nil {
 			return err
 		}
 		if waiting >= MaxWaitingMessages {
 			return ErrTooManyMessages
 		}
-		var boxes []int64
+		type box struct{ id, account int64 }
+		var boxes []box
 		query, args := boxesSQL, []any{accountID}
 		if deviceID != 0 {
-			query, args = boxesSQL+` AND id = ?`, []any{accountID, deviceID}
+			query, args = boxesSQL+` AND id = ?2`, []any{accountID, deviceID}
 		}
 		rows, err := tx.QueryContext(ctx, query+` ORDER BY id`, args...)
 		if err != nil {
 			return err
 		}
 		for rows.Next() {
-			var id int64
-			if err := rows.Scan(&id); err != nil {
+			var b box
+			if err := rows.Scan(&b.id, &b.account); err != nil {
 				rows.Close()
 				return err
 			}
-			boxes = append(boxes, id)
+			boxes = append(boxes, b)
 		}
 		rows.Close()
 		if err := rows.Err(); err != nil {
@@ -148,12 +151,12 @@ func (s *Store) AddMessage(ctx context.Context, accountID, deviceID int64, text 
 			return ErrNoBoxes
 		}
 		every := deviceID == 0
-		for _, box := range boxes {
+		for _, b := range boxes {
 			var id int64
 			if err := tx.QueryRowContext(ctx, `
 				INSERT INTO messages (batch, account_id, device_id, every_box, text, created_at, expires_at)
 				VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
-				batch, accountID, box, every, text, at.Unix(), at.Add(MessageLife).Unix()).Scan(&id); err != nil {
+				batch, b.account, b.id, every, text, at.Unix(), at.Add(MessageLife).Unix()).Scan(&id); err != nil {
 				return err
 			}
 			if batch == 0 {
@@ -188,12 +191,12 @@ func scanMessage(row rowScanner) (Message, error) {
 	return m, nil
 }
 
-// Message returns one of an account's messages by its batch, or
-// ErrNotFound.
+// Message returns one of an account's messages by its batch, or with
+// accountID 0 one of any account's, or ErrNotFound.
 func (s *Store) Message(ctx context.Context, accountID, id int64) (Message, error) {
 	m, err := scanMessage(s.db.QueryRowContext(ctx, `
 		SELECT `+messageColumns+` FROM messages m JOIN devices d ON d.id = m.device_id
-		WHERE m.account_id = ? AND m.batch = ? GROUP BY m.batch`, accountID, id))
+		WHERE (m.account_id = ?1 OR ?1 = 0) AND m.batch = ?2 GROUP BY m.batch`, accountID, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Message{}, ErrNotFound
 	}
@@ -203,12 +206,12 @@ func (s *Store) Message(ctx context.Context, accountID, id int64) (Message, erro
 	return m, nil
 }
 
-// Messages returns an account's last messages, the newest first, at most
-// limit of them.
+// Messages returns an account's last messages, or with accountID 0 every
+// account's, the newest first, at most limit of them.
 func (s *Store) Messages(ctx context.Context, accountID int64, limit int) ([]Message, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+messageColumns+` FROM messages m JOIN devices d ON d.id = m.device_id
-		WHERE m.account_id = ? GROUP BY m.batch ORDER BY m.batch DESC LIMIT ?`, accountID, limit)
+		WHERE (m.account_id = ?1 OR ?1 = 0) GROUP BY m.batch ORDER BY m.batch DESC LIMIT ?2`, accountID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("store: messages of account %d: %w", accountID, err)
 	}
@@ -227,10 +230,11 @@ func (s *Store) Messages(ctx context.Context, accountID int64, limit int) ([]Mes
 	return out, nil
 }
 
-// DeleteMessage takes one of an account's messages away, from the boxes
-// that have not shown it too. It fails with ErrNotFound.
+// DeleteMessage takes one of an account's messages away, or with accountID
+// 0 one of any account's, from the boxes that have not shown it too. It
+// fails with ErrNotFound.
 func (s *Store) DeleteMessage(ctx context.Context, accountID, id int64) error {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM messages WHERE account_id = ? AND batch = ?`, accountID, id)
+	res, err := s.db.ExecContext(ctx, `DELETE FROM messages WHERE (account_id = ?1 OR ?1 = 0) AND batch = ?2`, accountID, id)
 	return oneRow(res, err, "delete message", id)
 }
 

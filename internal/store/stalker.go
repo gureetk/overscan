@@ -7,6 +7,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -62,6 +64,29 @@ type Capture struct {
 	Count     int64
 	FirstSeen time.Time
 	LastSeen  time.Time
+}
+
+// Names of request parameters that can carry a login, a token or what
+// identifies a device: whole names, and parts of names.
+var (
+	sensitiveParams = []string{"sn", "mac", "login", "user", "username", "device_id", "device_id2", "hw_version_2", "prehash"}
+	sensitiveParts  = []string{"pass", "token", "secret", "sign", "auth", "key"}
+)
+
+// SensitiveParam reports whether a request's parameter of this name can
+// carry a login, a token or what identifies a device, so that the capture
+// log keeps no value of it.
+func SensitiveParam(name string) bool {
+	n := strings.ToLower(name)
+	if slices.Contains(sensitiveParams, n) {
+		return true
+	}
+	for _, part := range sensitiveParts {
+		if strings.Contains(n, part) {
+			return true
+		}
+	}
+	return false
 }
 
 // CaptureRequest adds c to the capture log, or counts it again if a request

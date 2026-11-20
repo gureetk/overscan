@@ -108,8 +108,8 @@ tags:
       its profile's, else the household's, else Overscan's own.
   - name: messages
     description: >-
-      Short messages to the household's boxes that run Overscan's page
-      (D96). A box shows a message the next time it checks, within five
+      Short messages to the boxes that run Overscan's page, of every
+      account (D96, D111). A box shows a message the next time it checks, within five
       minutes, until someone closes it, and says when it was read. A box
       that has not shown it within a week never does. Stalker clients get
       none.
@@ -659,9 +659,9 @@ paths:
       operationId: sendMessage
       summary: Send a message
       description: >-
-        To the box with the MAC address, or without one to every box of the
-        household that runs Overscan's page, as it is now: a box paired later
-        never shows it. At most 50 messages may wait to be read.
+        To the box with the MAC address, or without one to every box that
+        runs Overscan's page, of every account, as it is now: a box paired
+        later never shows it. At most 50 messages may wait to be read.
       security:
         - session: []
           csrf: []
@@ -702,8 +702,8 @@ paths:
           $ref: "#/components/responses/NoSuchDevice"
         "409":
           description: >-
-            The device does not run Overscan's page (`not_a_box`), the
-            household has no box to send it to (`no_boxes`), or 50 messages
+            The device does not run Overscan's page (`not_a_box`), no
+            account has a box to send it to (`no_boxes`), or 50 messages
             wait to be read (`too_many_messages`).
           content:
             application/json:

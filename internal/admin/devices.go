@@ -213,6 +213,12 @@ func viewOf(c store.PlaybackCheck) *checkView {
 	return v
 }
 
+// boxRow is a box as the messages' form offers it.
+type boxRow struct {
+	store.Device
+	Account string // its account's name
+}
+
 // Household reports whether it is approved for the household, and so plays
 // as one of the household's profiles (D94).
 func (r deviceRow) Household() bool {
@@ -255,9 +261,10 @@ type devicesData struct {
 	// (D102); ManyProfiles says that an account has more than one.
 	ProfileGroups []profileGroup
 	ManyProfiles  bool
-	// Boxes are the household's approved devices that run Overscan's page,
-	// which messages go to (D96); Messages are the last messages sent.
-	Boxes    []store.Device
+	// Boxes are the approved devices that run Overscan's page, of every
+	// account, which messages go to (D96); Messages are the last messages
+	// sent.
+	Boxes    []boxRow
 	Messages []messageRow
 	// OutputProfiles are the output profiles that a device can have of its
 	// own (D110), and ShowOutputProfiles says that the table offers them:
@@ -341,8 +348,8 @@ func (a *Admin) devicesData(ctx context.Context) (devicesData, error) {
 		if d.State == store.DevicePending || d.PairingCode != "" {
 			data.Waiting = append(data.Waiting, row)
 		}
-		if d.State == store.DeviceApproved && d.AccountID == householdAccount && d.Paired() {
-			data.Boxes = append(data.Boxes, d)
+		if d.State == store.DeviceApproved && d.Paired() {
+			data.Boxes = append(data.Boxes, boxRow{Device: d, Account: names[d.AccountID]})
 		}
 		if d.State != store.DevicePending {
 			data.Known = append(data.Known, row)
