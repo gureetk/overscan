@@ -21,6 +21,12 @@ type Account struct {
 	PINHash   string // the parental PIN's argon2id hash, "" if none (D55)
 }
 
+// Ended reports whether the account's end date has passed by now (D95):
+// its devices then play nothing.
+func (a Account) Ended(now time.Time) bool {
+	return !a.ExpiresAt.IsZero() && !now.Before(a.ExpiresAt)
+}
+
 // Lineup is the set of channels an account sees.
 type Lineup struct {
 	ID        int64

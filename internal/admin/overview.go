@@ -171,7 +171,9 @@ type overviewData struct {
 	PINSet                     bool // the household has a parental PIN (D55)
 	Locks                      int  // locked groups, and channels locked one by one
 	RepairDefault, CanRepair   bool // every channel is repaired; there is an ffmpeg to do it
-	Started, Now               time.Time
+	// Ended is when the household's account ended, if it has (D95).
+	Ended        time.Time
+	Started, Now time.Time
 }
 
 // Repaired counts the streams that go through ffmpeg.
@@ -230,7 +232,7 @@ func (d overviewData) RepairWaits() bool { return d.RepairDefault && !d.CanRepai
 // ToDo counts what the overview's To do list holds.
 func (d overviewData) ToDo() int {
 	n := len(d.Waiting) + len(d.SourceTroubles())
-	for _, b := range []bool{d.LocksWait(), d.RepairWaits(), len(d.Sources) == 0} {
+	for _, b := range []bool{d.LocksWait(), d.RepairWaits(), len(d.Sources) == 0, !d.Ended.IsZero()} {
 		if b {
 			n++
 		}
@@ -314,6 +316,13 @@ func (a *Admin) overview(ctx context.Context) (overviewData, error) {
 	}
 	if d.RepairDefault, err = a.store.RepairDefault(ctx); err != nil {
 		return d, err
+	}
+	acct, err := a.store.Account(ctx, householdAccount)
+	if err != nil {
+		return d, err
+	}
+	if acct.Ended(d.Now) {
+		d.Ended = acct.ExpiresAt
 	}
 	return d, nil
 }

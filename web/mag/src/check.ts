@@ -9,7 +9,7 @@
 // it plays, whatever the player says. A clip has started once the player
 // says so, the box's place in it moves, or the viewer says it plays.
 
-import { type ApiError, type CheckClip, type CheckResult, type CheckSaved, type CheckState, type Client, describe } from './api';
+import { type ApiError, type CheckClip, type CheckResult, type CheckSaved, type CheckState, type Client, describe, shutOut } from './api';
 import type { Platform, PlayerEvent } from './platform';
 
 /** How long a clip may take to start, with no answer, before it is tried again, or does not play. */
@@ -127,7 +127,7 @@ export class PlaybackCheck {
         return;
       }
       if (err || !c) {
-        if (err && (err.code === 'unauthorized' || err.code === 'blocked')) {
+        if (err && shutOut(err)) {
           self.phase = 'idle';
           self.host.lost(err);
           return;
@@ -388,7 +388,7 @@ export class PlaybackCheck {
         return;
       }
       if (err || !saved) {
-        if (err && (err.code === 'unauthorized' || err.code === 'blocked')) {
+        if (err && shutOut(err)) {
           self.phase = 'idle';
           self.host.lost(err);
           return;

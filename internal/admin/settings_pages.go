@@ -51,6 +51,8 @@ type settingsData struct {
 	RecordingsCap    int               // the room recordings may take, in gigabytes; 0 while recording is off
 	Timeshift        int               // the minutes of a box's live channel the server keeps; 0 while timeshift is off (D92)
 	SharedTuner      bool              // one connection to a source serves every screen that plays a channel (D93)
+	EndsAt           time.Time         // when the household's account ends; zero if never (D95)
+	Ended            bool              // it has ended
 	RecordingsDir    string            // the folder they are written in
 	RecordingsUsed   int64             // the room they take, in bytes
 	Upcoming         []store.Recording // recordings to come and under way, the soonest first
@@ -108,6 +110,11 @@ func (a *Admin) settings(r *http.Request) (settingsData, error) {
 	if d.PINSet, err = a.pinSet(ctx); err != nil {
 		return d, err
 	}
+	acct, err := a.store.Account(ctx, householdAccount)
+	if err != nil {
+		return d, err
+	}
+	d.EndsAt, d.Ended = acct.ExpiresAt, acct.Ended(a.now())
 	if d.Locks, err = a.lockCount(ctx); err != nil {
 		return d, err
 	}

@@ -58,8 +58,8 @@ export interface Ctx {
   check: PlaybackCheck;
   /** The household's recordings to come (D89). */
   recordings: Recordings;
-  /** The server's version, and the box's label in the admin. */
-  server: { version: string; label: string };
+  /** The server's version, the box's label in the admin, and when its account ends, in Unix seconds, or 0 (D95). */
+  server: { version: string; label: string; ends: number };
   /** go shows another screen, which Back leaves. */
   go(name: ScreenName, arg?: any): void;
   back(): void;

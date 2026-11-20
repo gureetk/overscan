@@ -412,3 +412,39 @@ func TestFileName(t *testing.T) {
 		t.Errorf("name %q", got)
 	}
 }
+
+// A recording stops when its account ends, keeping what it wrote, and none
+// begins after it (D95).
+func TestRecordingStopsWithItsAccount(t *testing.T) {
+	hub := &fakeHub{}
+	r, st, entry := newRecorder(t, hub)
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Second)
+	rec, err := st.ScheduleRecording(ctx, store.Recording{AccountID: 1, EntryID: entry, Channel: "Example News",
+		Title: "Long", Start: now.Add(-time.Second), Stop: now.Add(time.Hour), CreatedAt: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAccountExpiry(ctx, 1, now.Add(2*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	r.Check(ctx)
+	waitState(t, st, rec.ID, store.RecordingRecording)
+	got := waitState(t, st, rec.ID, store.RecordingFailed)
+	if got.Error != "its account ended while it recorded" || got.Size == 0 || got.File == "" {
+		t.Errorf("at the account's end: %+v", got)
+	}
+	if _, err := os.Stat(filepath.Join(r.Dir(), got.File)); err != nil {
+		t.Errorf("what it wrote: %v", err)
+	}
+
+	later, err := st.ScheduleRecording(ctx, store.Recording{AccountID: 1, EntryID: entry, Channel: "Example News",
+		Title: "Later", Start: time.Now().Add(-time.Second), Stop: time.Now().Add(time.Hour), CreatedAt: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Check(ctx)
+	if got := waitState(t, st, later.ID, store.RecordingFailed); got.Error != errAccountEnded || got.File != "" {
+		t.Errorf("after the account's end: %+v", got)
+	}
+}

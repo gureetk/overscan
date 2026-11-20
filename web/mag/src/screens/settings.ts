@@ -9,7 +9,7 @@ import { el, setHTML, setText, show } from '../dom';
 import { arrows, icon } from '../icons';
 import type { Press } from '../keys';
 import { accentChoices, type Choice, clockChoices, cycle, groupsChoices, homeChoices, label, numbersChoices, pictureChoices, pictureURL } from '../settings';
-import { clock, date, now } from '../time';
+import { clock, date, fullDate, now } from '../time';
 import { Clock, type Ctx, escape, type Screen, type VideoArea } from './screen';
 
 interface Row {
@@ -251,8 +251,11 @@ export class SettingsScreen implements Screen {
       ['Model', p.model + ' · ' + p.mac],
       ['Paired', 'Yes'],
       ['Server', 'Connected, ' + location.host],
-      ['Picture', w + '×' + h + ' page' + (p.outputMode ? ', ' + p.outputMode.replace(/-\d+$/, '') + ' output' : '')],
     ];
+    if (this.ctx.server.ends > 0) {
+      facts.push(['Account ends', 'End of ' + fullDate(this.ctx.server.ends - 1)]);
+    }
+    facts.push(['Picture', w + '×' + h + ' page' + (p.outputMode ? ', ' + p.outputMode.replace(/-\d+$/, '') + ' output' : '')]);
     return { icon: 'box', title: 'This Box', text: 'How this box is known to the server, and what it shows.', facts: facts };
   }
 

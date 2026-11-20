@@ -202,6 +202,54 @@ func TestEndDate(t *testing.T) {
 	}
 }
 
+// A device whose account has ended is refused as a blocked one, but still
+// reads its end date (D95).
+func TestEndedAccount(t *testing.T) {
+	h := newHarness(t)
+	h.approve(macA)
+	ends := h.now.Add(time.Hour)
+	if err := h.store.SetAccountExpiry(context.Background(), 1, ends); err != nil {
+		t.Fatal(err)
+	}
+	token := h.handshake(macA)
+	const channels = "type=itv&action=get_all_channels"
+	if rec := h.call(channels, macA, token); rec.Code != http.StatusOK {
+		t.Fatalf("before the end: status %d", rec.Code)
+	}
+
+	h.now = ends
+	wantAuthFailed(t, h.call(channels, macA, token))
+	wantAuthFailed(t, h.call("type=watchdog&action=get_events", macA, token))
+	var p profile
+	h.js(h.call("type=stb&action=get_profile", macA, token), &p)
+	if p.Blocked != "1" || p.ExpireBillingDate != ends.Format(stalkerDate) {
+		t.Errorf("profile %+v", p)
+	}
+	var info struct {
+		EndDate string `json:"end_date"`
+	}
+	h.js(h.call("type=account_info&action=get_main_info", macA, token), &info)
+	if info.EndDate != ends.Format(stalkerDate) {
+		t.Errorf("end date %q", info.EndDate)
+	}
+	// A handshake still works, so that the client can read its profile.
+	if token = h.handshake(macA); token == "" {
+		t.Fatal("no token")
+	}
+
+	// A later end date lets it in again.
+	if err := h.store.SetAccountExpiry(context.Background(), 1, ends.AddDate(0, 1, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if rec := h.call(channels, macA, token); rec.Code != http.StatusOK {
+		t.Errorf("with a later end date: status %d", rec.Code)
+	}
+	h.js(h.call("type=stb&action=get_profile", macA, token), &p)
+	if p.Blocked != "0" {
+		t.Errorf("profile %+v", p)
+	}
+}
+
 func TestTokens(t *testing.T) {
 	h := newHarness(t)
 	h.approve(macA)

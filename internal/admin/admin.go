@@ -127,6 +127,7 @@ func (a *Admin) Handler() http.Handler {
 	mux.Handle("POST /admin/settings/convert", a.page(a.convertForm))
 	mux.Handle("POST /admin/settings/server-transcode", a.page(a.serverTranscodeForm))
 	mux.Handle("POST /admin/settings/pin", a.page(a.pinForm))
+	mux.Handle("POST /admin/settings/expiry", a.page(a.expiryForm))
 	mux.Handle("POST /admin/settings/adult", a.page(a.adultForm))
 	mux.Handle("POST /admin/settings/radio", a.page(a.radioForm))
 	mux.Handle("POST /admin/settings/timeshift", a.page(a.timeshiftForm))

@@ -36,7 +36,9 @@ type profile struct {
 }
 
 // getProfile answers stb/get_profile. The hardware identity parameters the
-// client sends (sn, device_id, signature and so on) are not checked yet.
+// client sends (sn, device_id, signature and so on) are not checked yet. A
+// device whose account has ended reads that it is blocked, with its end
+// date (D95).
 func (a *API) getProfile(w http.ResponseWriter, r *http.Request, d store.Device) {
 	p := profile{
 		ID:              strconv.FormatInt(d.ID, 10),
@@ -54,6 +56,9 @@ func (a *API) getProfile(w http.ResponseWriter, r *http.Request, d store.Device)
 		}
 		if !acct.ExpiresAt.IsZero() {
 			p.ExpireBillingDate = acct.ExpiresAt.UTC().Format(stalkerDate)
+		}
+		if acct.Ended(a.now()) {
+			p.Blocked = "1" // as a blocked device is refused (D95)
 		}
 	}
 	writeJS(w, p)

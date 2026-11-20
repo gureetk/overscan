@@ -494,7 +494,7 @@ Each phase ends with a pre-release of v0.3.0 (`v0.3.0-alpha.N`), as M3's phases 
 Each phase ends with a pre-release of v0.4.0 (`v0.4.0-alpha.N`), as M4's did with v0.3.0. In this order:
 - Shared-tuner mode (section 20, open question 1), off by default: one connection to a source serves every local viewer of a channel, whether boxes, Stalker clients or recordings, and counts once against the source's limit. Sharing a connection between screens is between the subscriber and their provider (section 2). **In place:** a setting on the *Settings* page that starts off; while it is on, a channel's tuner plays it from its source into a buffer on disk, as timeshift's does, and every screen on the channel reads the buffer, counting once against the source's limit, so that a box can record the channel it plays on a source that allows one stream (D93).
 - Several profiles per account, switchable on the box, each with its own favourites and resume points. A household that adds no profile sees no change. **In place:** the admin's *Devices* page adds, renames and removes profiles, gives one a PIN, and chooses the profile each device plays as; once there are two, a box shows the one watching on Home and switches with the yellow key or from *Settings*, asking for the profile's PIN if it has one. The account's first profile took its favourites and resume points; recent channels, the box's own settings and the parental PIN stay as they were (D94).
-- Expiry: the administrator sets the account's end date; past it, boxes and Stalker clients play nothing.
+- Expiry: the administrator sets the account's end date; past it, boxes and Stalker clients play nothing. **In place:** the *Settings* page's *Household* card sets the last day the household's account plays; past it, the box says that the account has ended, with the date, and plays nothing, Stalker clients are refused as blocked devices are but still read the date, and the account's recordings stop (D95).
 - Messages and events: the administrator sends a message to one box or to every box, which shows it once.
 - Installable themes (D41): the administrator adds a theme in the admin, for the household or for a profile.
 - Compatibility matrix for third-party Stalker clients (OTT Navigator, TiviMate) and MAG emulators (StbEmu), from tests with those apps.
@@ -654,6 +654,7 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 - A Stalker portal's films and series are read a page at a time as devices browse them, each of its categories a shelf of its own (D77).
 - Shared-tuner mode: one connection to a source serves every screen on a channel, behind a setting that starts off (D93).
 - Profiles keep favourites and resume points; the first takes what the account kept, and a box switches between them, with a profile's PIN if it has one (D94).
+- An account's end date is set in the admin; past it, its boxes, Stalker clients and recordings play nothing (D95).
 
 **Open**
 

@@ -6,7 +6,7 @@
 // list it was played from. While the server keeps the channel in a
 // timeshift buffer (D92), it pauses, and plays from a while before live.
 
-import { type ApiError, type Channel, type Client, describe, type PlayLink, touch } from './api';
+import { type ApiError, type Channel, type Client, describe, type PlayLink, shutOut, touch } from './api';
 import { forgetPIN, keepPIN, keptPIN } from './pin';
 import type { Platform, PlayerEvent } from './platform';
 
@@ -313,7 +313,7 @@ export class Player {
       this.halt('Too many wrong PINs. Try again in ' + wait + (wait === 1 ? ' minute.' : ' minutes.'));
       return;
     }
-    if (err && (code === 'unauthorized' || code === 'blocked' || code === 'not_found')) {
+    if (err && (shutOut(err) || code === 'not_found')) {
       this.halt('');
       this.host.lost(err);
       return;

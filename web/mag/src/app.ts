@@ -4,7 +4,7 @@
 // the screens and moving between them, the remote's keys, and where the
 // video shows (D52).
 
-import { type ApiError, type Channel, Client, describe, type Lineup, type Profile, type Profiles, type Programme, type Session } from './api';
+import { type ApiError, type Channel, Client, describe, type Lineup, type Profile, type Profiles, type Programme, type Session, shutOut } from './api';
 import { PlaybackCheck } from './check';
 import { el, show } from './dom';
 import { FilmPlayer, pastProgramme, type Playing, playingName } from './film';
@@ -34,6 +34,7 @@ import { keepPIN, keptPIN } from './pin';
 import { ProfilesModel } from './profiles';
 import { readSecret, writeSecret } from './secret';
 import { SettingsModel } from './settings';
+import { fullDate } from './time';
 
 /** How long the page waits for another digit of a channel number. */
 const digitWaitMs = 1500;
@@ -54,7 +55,7 @@ export class App {
   private film: FilmPlayer;
   private check: PlaybackCheck;
   private ctx: Ctx;
-  private server = { version: '', label: '' };
+  private server = { version: '', label: '', ends: 0 };
 
   private screens: { [name: string]: Screen } = {};
   private stack: ScreenName[] = [];
@@ -314,9 +315,21 @@ export class App {
 
   private connected(s: Session): void {
     this.server.version = s.version;
+    this.server.ends = s.ends || 0;
     if (s.state === 'approved') {
       this.server.label = s.label || '';
       this.load();
+    } else if (s.state === 'expired') {
+      // The account has passed its end date (D95): the box plays nothing,
+      // and comes back by itself once the account has a later one.
+      this.loaded = false;
+      this.showMessage({
+        title: 'This account has ended',
+        text: s.ends
+          ? 'Its end date was ' + fullDate(s.ends - 1) + '. It plays again once the account has a later end date, or none, in the admin.'
+          : 'It plays again once the account has a later end date, or none, in the admin.',
+      });
+      this.later(30000, this.connect);
     } else if (s.state === 'pending') {
       this.showMessage({
         title: 'Waiting for approval',
@@ -358,7 +371,7 @@ export class App {
   private loadLineup(done: () => void): void {
     const self = this;
     this.client.call<Lineup>('GET', 'channels', null, function (err, lineup) {
-      if (err && (err.code === 'unauthorized' || err.code === 'blocked')) {
+      if (shutOut(err)) {
         self.loaded = false;
         self.connect();
         return;
@@ -416,7 +429,7 @@ export class App {
     clearTimeout(this.versionTimer);
     this.versionTimer = setTimeout(function () {
       self.client.call<{ version: string }>('GET', 'channels/version', null, function (err, v) {
-        if (err && (err.code === 'unauthorized' || err.code === 'blocked')) {
+        if (shutOut(err)) {
           self.loaded = false;
           self.connect();
           return;
@@ -531,7 +544,7 @@ export class App {
         if (err.code === 'pin_locked') {
           const wait = err.retryAfter ? Math.ceil(err.retryAfter / 60) : 5;
           self.toast('Too many wrong PINs. Try again in ' + wait + (wait === 1 ? ' minute.' : ' minutes.'));
-        } else if (err.code === 'unauthorized' || err.code === 'blocked') {
+        } else if (shutOut(err)) {
           self.lost(err);
         } else {
           self.toast("Can't check the PIN. " + describe(err));
@@ -589,7 +602,7 @@ export class App {
         } else if (err.code === 'pin_locked') {
           const wait = err.retryAfter ? Math.ceil(err.retryAfter / 60) : 5;
           self.toast('Too many wrong PINs. Try again in ' + wait + (wait === 1 ? ' minute.' : ' minutes.'));
-        } else if (err.code === 'unauthorized' || err.code === 'blocked') {
+        } else if (shutOut(err)) {
           self.lost(err);
         } else if (err.code === 'not_found') {
           self.toast(p.name + ' is no longer a profile here.');
