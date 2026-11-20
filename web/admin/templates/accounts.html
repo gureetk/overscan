@@ -1,0 +1,138 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+{{define "content"}}
+<div class="page-head">
+  <div>
+    <h1>Accounts</h1>
+    <p class="lead">Who uses Overscan. Each account has its own devices and profiles, end date, parental PIN, theme and limit on streams. A household needs only one.</p>
+  </div>
+</div>
+<div id="account-sections">
+{{template "alerts" .}}
+<section class="card" id="accounts" aria-labelledby="accounts-title">
+  <h2 id="accounts-title">Accounts <span class="count quiet">{{len .Data.Accounts}}</span></h2>
+  <ul class="profiles accounts">
+    {{- range .Data.Accounts}}
+    {{- $id := .ID}}
+    <li id="account-{{.ID}}">
+      <div class="profile-head">
+        <span class="tile-icon{{if .IsEnded}} bad{{end}}">{{template "i-user"}}</span>
+        <div class="profile-text">
+          <strong>{{.Name}}</strong>
+          <span class="muted">{{.Devices}} {{plural .Devices "device"}} · {{.Profiles}} {{plural .Profiles "profile"}} · {{if .MaxStreams}}up to {{.MaxStreams}} {{plural .MaxStreams "stream"}} at once{{else}}any number of streams at once{{end}}</span>
+        </div>
+        <div class="chips">
+          {{- if .Username}}<span class="badge" title="Players sign in as {{.Username}}">Login</span>{{end}}
+          {{- if .PINHash}}<span class="badge" title="Locked channels, films and series ask for its PIN">PIN</span>{{end}}
+          {{- if .IsEnded}}<span class="badge bad">Ended</span>{{else if .EndText}}<span class="badge">Until {{.EndText}}</span>{{end}}
+        </div>
+      </div>
+      <details class="profile-edit"{{if eq .ID $.Data.Open}} open{{end}}>
+        <summary class="button quiet small">Change</summary>
+        <div class="profile-forms account-forms">
+          <form method="post" action="/admin/accounts/{{.ID}}/rename" hx-post="/admin/accounts/{{.ID}}/rename" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="row-form">
+            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+            <input name="name" maxlength="50" value="{{.Name}}" aria-label="New name of {{.Name}}" required>
+            <button type="submit">Rename</button>
+          </form>
+
+          <h3>Streams at once</h3>
+          <form method="post" action="/admin/accounts/{{.ID}}/streams" hx-post="/admin/accounts/{{.ID}}/streams" hx-trigger="change" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="row-form">
+            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+            <select name="streams" aria-label="Streams that {{.Name}} plays at once">
+              <option value="0"{{if eq .MaxStreams 0}} selected{{end}}>Any number</option>
+              {{- $max := .MaxStreams}}
+              {{- range $.Data.Streams}}<option value="{{.}}"{{if eq . $max}} selected{{end}}>{{.}}</option>{{end}}
+            </select>
+            <noscript><button type="submit">Save</button></noscript>
+          </form>
+          <p class="hint">What its devices and players play at once, whatever their sources. A device that starts another stream at the limit stops its own first; another device of the account is told that the account plays as many streams as it may. Each source's own limit still holds.</p>
+
+          <h3>End date</h3>
+          <form method="post" action="/admin/accounts/{{.ID}}/expiry" hx-post="/admin/accounts/{{.ID}}/expiry" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="row-form">
+            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+            <input type="date" name="date" value="{{.EndDay}}" aria-label="The last day {{.Name}} plays" required>
+            <button type="submit">Set the end date</button>
+          </form>
+          {{- if .EndText}}
+          <form method="post" action="/admin/accounts/{{.ID}}/expiry" hx-post="/admin/accounts/{{.ID}}/expiry" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML">
+            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+            <input type="hidden" name="remove" value="1">
+            <button type="submit">Remove the end date</button>
+          </form>
+          {{- end}}
+          <p class="hint">The last day it plays, in this server's time zone. After it, its devices play nothing.</p>
+
+          <h3>Parental PIN</h3>
+          <form method="post" action="/admin/accounts/{{.ID}}/pin" hx-post="/admin/accounts/{{.ID}}/pin" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="row-form">
+            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+            <input name="pin" type="password" inputmode="numeric" pattern="[0-9]{4,8}" minlength="4" maxlength="8" autocomplete="new-password" placeholder="{{if .PINHash}}New PIN, {{end}}4 to 8 digits" aria-label="{{if .PINHash}}New parental PIN{{else}}Parental PIN{{end}} of {{.Name}}" required>
+            <button type="submit">{{if .PINHash}}Change the PIN{{else}}Set a PIN{{end}}</button>
+          </form>
+          {{- if .PINHash}}
+          <form method="post" action="/admin/accounts/{{.ID}}/remove-pin" hx-post="/admin/accounts/{{.ID}}/remove-pin" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML">
+            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+            <button type="submit">Remove the PIN</button>
+          </form>
+          {{- end}}
+          <p class="hint">Locked channels, films and series ask for it on the account's boxes. Without a PIN, locks do nothing.</p>
+
+          {{- if $.Data.Themes}}
+          <h3>Theme</h3>
+          <form method="post" action="/admin/accounts/{{.ID}}/theme" hx-post="/admin/accounts/{{.ID}}/theme" hx-trigger="change" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="row-form">
+            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+            {{- $theme := .ThemeID}}
+            <select name="theme" aria-label="Theme of {{.Name}}'s boxes">
+              <option value="0"{{if eq $theme 0}} selected{{end}}>Overscan</option>
+              {{- range $.Data.Themes}}<option value="{{.ID}}"{{if eq .ID $theme}} selected{{end}}>{{.Name}}</option>{{end}}
+            </select>
+            <noscript><button type="submit">Save</button></noscript>
+          </form>
+          {{- end}}
+
+          <h3>Login</h3>
+          <form method="post" action="/admin/accounts/{{.ID}}/login" hx-post="/admin/accounts/{{.ID}}/login" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="login-form">
+            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+            <div class="field">
+              <label for="username-{{.ID}}">Username</label>
+              <input id="username-{{.ID}}" name="username" maxlength="64" value="{{.Username}}" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+            </div>
+            <div class="field">
+              <label for="password-{{.ID}}">Password</label>
+              <input id="password-{{.ID}}" name="password" type="password" minlength="8" maxlength="128" autocomplete="new-password" {{if .PasswordHash}}placeholder="Leave empty to keep it"{{else}}required{{end}}>
+            </div>
+            <button type="submit">Save the login</button>
+          </form>
+          {{- if .Username}}
+          <form method="post" action="/admin/accounts/{{.ID}}/remove-login" hx-post="/admin/accounts/{{.ID}}/remove-login" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML">
+            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+            <button type="submit">Remove the login</button>
+          </form>
+          {{- end}}
+          <p class="hint">For players other than the boxes, such as TiviMate or Kodi, which sign in with it through Overscan's outputs; they start off. Players send the password in the addresses they ask for, so give it a password of its own, never this admin's or a source's. A password holds letters without accents, digits, '.', '_', '-' and '~'.</p>
+
+          {{- if not .Household}}
+          <div class="profile-more">
+            {{- if .Devices}}
+            <p class="hint">To remove {{.Name}}, move its devices to another account on the Devices page, or remove them.</p>
+            {{- else}}
+            <form method="post" action="/admin/accounts/{{.ID}}/remove" hx-post="/admin/accounts/{{.ID}}/remove" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" hx-confirm="Remove the account {{.Name}}? Its profiles go with it, with their favourites and where they stopped.">
+              <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+              <button type="submit" class="danger">Remove the account</button>
+            </form>
+            {{- end}}
+          </div>
+          {{- end}}
+        </div>
+      </details>
+    </li>
+    {{- end}}
+  </ul>
+  <form method="post" action="/admin/accounts" hx-post="/admin/accounts" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="row-form add-profile">
+    <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+    <input name="name" maxlength="50" placeholder="Such as Alex" aria-label="Name of a new account" required value="{{.Data.Name}}">
+    <button type="submit">Add an account</button>
+  </form>
+  <p class="hint">A new account sees the same lineup, films and series, and starts with the household's parental PIN and theme. Approve devices for it on the Devices page, or move devices to it there.</p>
+</section>
+</div>
+{{end}}

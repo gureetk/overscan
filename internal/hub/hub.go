@@ -305,6 +305,7 @@ const (
 type Stream struct {
 	Kind      string // PlaysChannel, PlaysMovie, PlaysEpisode or PlaysArchive
 	DeviceID  int64
+	AccountID int64 // the account of the device or player, or of the box that asked for a recording; 0 if none (D102)
 	EntryID   int64 // the lineup entry that plays, or whose past programme plays; 0 for a film or an episode
 	ItemID    int64 // the film's title ID or the episode's ID, 0 for a channel
 	SourceID  int64
@@ -357,7 +358,7 @@ func (h *Hub) Streams() []Stream {
 			from = s.tuner
 		}
 		st := Stream{
-			Kind: PlaysChannel, DeviceID: s.deviceID, EntryID: s.entryID, SourceID: s.sourceID, Source: h.source(s.sourceID).Name,
+			Kind: PlaysChannel, DeviceID: s.deviceID, AccountID: s.account, EntryID: s.entryID, SourceID: s.sourceID, Source: h.source(s.sourceID).Name,
 			Channel: s.channel, Started: s.started, Bytes: from.bytes.Load(), HLS: from.hls, Repaired: from.repairing.Load() > 0,
 			Converted: s.converting.Load() > 0, Playing: s.active(now), Timeshift: s.shift != nil || s.canShift,
 			Shared: s.tuner != nil,
@@ -494,6 +495,12 @@ type session struct {
 	// shared marks a shared tuner's own session (D93): it plays its
 	// channel from the source into its buffer for the screens in screens.
 	shared bool
+
+	// account is the account that the device's streams count against,
+	// and accountLimit that account's limit of streams at once, 0 for
+	// none (D102).
+	account      int64
+	accountLimit int
 
 	started   time.Time
 	repair    bool // its channel is set to be repaired (D57)
@@ -667,6 +674,9 @@ func (h *Hub) admit(c claims, s *session) (*session, error) {
 	if open, ok := h.sessions[c.nonce]; ok && !open.shared {
 		return open, nil
 	}
+	if !h.accountRoom(s.account, s.accountLimit, c.deviceID, now) {
+		return nil, ErrAccountLimit
+	}
 	if !h.makeRoom(s.sourceID, c.deviceID, now) {
 		return nil, ErrLimit
 	}
@@ -765,6 +775,7 @@ var ErrNoLink = errors.New("the source gave no address for it")
 // fails with ErrLimit, or with ErrNoLink and the Resolver's reason.
 func (h *Hub) openItem(ctx context.Context, c claims, token string, item store.PlayableItem) (*session, error) {
 	s := itemSession(token, item)
+	s.account, s.accountLimit = h.viewer(ctx, c.deviceID)
 	if h.source(item.SourceID).Resolves {
 		if open := h.lookup(c.nonce); open != nil {
 			return open, nil
@@ -802,6 +813,8 @@ func (h *Hub) resolveFailed(w http.ResponseWriter, r *http.Request, what, name s
 	src := h.source(sourceID)
 	switch {
 	case r.Context().Err() != nil:
+	case errors.Is(err, ErrAccountLimit):
+		h.refused(w, err, what, name, sourceID, deviceID)
 	case errors.Is(err, ErrLimit):
 		args := []any{what, name, "source", src.Name, "limit", src.MaxConnections, "device", deviceID}
 		if err != ErrLimit {
@@ -939,6 +952,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		opening := &session{token: token, channelID: entry.ChannelID, sourceID: entry.SourceID,
 			channel: entry.Name, streamURL: entry.StreamURL, repair: entry.Repair, repairHLS: entry.RepairHLS}
+		opening.account, opening.accountLimit = h.viewer(r.Context(), c.deviceID)
 		if h.source(entry.SourceID).Resolves {
 			if !h.roomFor(entry.SourceID, c.deviceID) {
 				h.resolveFailed(w, r, "channel", entry.Name, entry.SourceID, c.deviceID, ErrLimit)
@@ -968,10 +982,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if err != nil {
-			src := h.source(entry.SourceID)
-			h.log.Warn("stream refused: the source is at its connection limit",
-				"channel", entry.Name, "source", src.Name, "limit", src.MaxConnections, "device", c.deviceID)
-			http.Error(w, "the source has no free connection", http.StatusServiceUnavailable)
+			h.refused(w, err, "channel", entry.Name, entry.SourceID, c.deviceID)
 			return
 		}
 		if s.shift != nil {

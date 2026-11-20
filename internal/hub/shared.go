@@ -74,8 +74,9 @@ func (h *Hub) AvailableChannel(ctx context.Context, entry store.PlayableEntry, d
 func (h *Hub) openShared(ctx context.Context, c claims, token string, entry store.PlayableEntry) (*session, error) {
 	screen := &session{token: token, channelID: entry.ChannelID, sourceID: entry.SourceID, channel: entry.Name,
 		streamURL: entry.StreamURL, repair: entry.Repair, repairHLS: entry.RepairHLS, canShift: c.shift}
-	if s, ok := h.joinTuner(c, screen); ok {
-		return s, nil
+	screen.account, screen.accountLimit = h.viewer(ctx, c.deviceID)
+	if s, ok, err := h.joinTuner(c, screen); ok || err != nil {
+		return s, err
 	}
 
 	t := &session{channelID: entry.ChannelID, sourceID: entry.SourceID, channel: entry.Name,
@@ -115,21 +116,25 @@ func (h *Hub) openShared(ctx context.Context, c claims, token string, entry stor
 
 // joinTuner opens screen, the session that c starts, on its channel's
 // shared tuner if one runs, and reports whether it did. If c's session is
-// open already, it returns that.
-func (h *Hub) joinTuner(c claims, screen *session) (*session, bool) {
+// open already, it returns that. It fails with ErrAccountLimit while the
+// screen's account plays as many streams as it may (D102).
+func (h *Hub) joinTuner(c claims, screen *session) (*session, bool, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	now := h.now()
 	h.sweep(now)
 	if open, ok := h.sessions[c.nonce]; ok && !open.shared {
-		return open, true
+		return open, true, nil
 	}
 	t := h.shared[screen.channelID]
 	if t == nil {
-		return nil, false
+		return nil, false, nil
+	}
+	if !h.accountRoom(screen.account, screen.accountLimit, c.deviceID, now) {
+		return nil, false, ErrAccountLimit
 	}
 	h.attach(c, screen, t, now)
-	return screen, true
+	return screen, true, nil
 }
 
 // startTuner starts t, a new shared tuner, with screen, the session that c
@@ -149,6 +154,10 @@ func (h *Hub) startTuner(c claims, screen, t *session) (*session, error) {
 	if open, ok := h.sessions[c.nonce]; ok && !open.shared {
 		drop()
 		return open, nil
+	}
+	if !h.accountRoom(screen.account, screen.accountLimit, c.deviceID, now) {
+		drop()
+		return nil, ErrAccountLimit
 	}
 	if other := h.shared[t.channelID]; other != nil {
 		drop()

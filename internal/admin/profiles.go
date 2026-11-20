@@ -12,12 +12,13 @@ import (
 	"overscan.gureet.ca/internal/store"
 )
 
-// Profiles (D94): who watches on the household's devices. Each keeps its
-// own favourites and how far it got into films and episodes. The Devices
-// page lists the household's profiles, adds, renames and removes them,
-// sets or removes the PIN that a box asks for before it switches to one,
-// and chooses the profile a device plays as, which is how a Stalker client
-// gets one. These wrap the store's functions, as the device functions do.
+// Profiles (D94): who watches on an account's devices. Each keeps its own
+// favourites and how far it got into films and episodes. The Devices page
+// lists each account's profiles, adds, renames and removes them, sets or
+// removes the PIN that a box asks for before it switches to one, and
+// chooses the profile a device plays as, one of its account's, which is
+// how a Stalker client gets one. These wrap the store's functions, as the
+// device functions do.
 
 // profileStoreError turns the store's errors about a profile into mistakes
 // that the request can put right.
@@ -27,31 +28,39 @@ func profileStoreError(err error) error {
 		return badDevice(http.StatusBadRequest, "bad_name",
 			"A profile's name has 1 to %d characters, none of them control characters, and is not another profile's.", store.MaxProfileName)
 	case errors.Is(err, store.ErrTooManyProfiles):
-		return badDevice(http.StatusConflict, "too_many_profiles", "A household can have at most %d profiles.", store.MaxProfiles)
+		return badDevice(http.StatusConflict, "too_many_profiles", "An account can have at most %d profiles.", store.MaxProfiles)
 	case errors.Is(err, store.ErrLastProfile):
-		return badDevice(http.StatusConflict, "last_profile", "The household's only profile cannot be removed.")
+		return badDevice(http.StatusConflict, "last_profile", "An account's only profile cannot be removed.")
 	case errors.Is(err, store.ErrNotFound):
 		return badDevice(http.StatusNotFound, "no_such_profile", "There is no such profile.")
 	}
 	return err
 }
 
-// householdProfile returns one of the household's profiles.
+// householdProfile returns one of the profiles of an account.
 func (a *Admin) householdProfile(ctx context.Context, id int64) (store.Profile, error) {
 	p, err := a.store.Profile(ctx, id)
-	if errors.Is(err, store.ErrNotFound) || err == nil && p.AccountID != householdAccount {
+	if errors.Is(err, store.ErrNotFound) {
 		return store.Profile{}, badDevice(http.StatusNotFound, "no_such_profile", "There is no profile %d.", id)
 	}
 	return p, err
 }
 
-// addProfile adds a profile to the household.
-func (a *Admin) addProfile(ctx context.Context, name string) (store.Profile, error) {
-	p, err := a.store.AddProfile(ctx, householdAccount, name)
+// addProfile adds a profile to an account.
+func (a *Admin) addProfile(ctx context.Context, accountID int64, name string) (store.Profile, error) {
+	acct, err := a.account(ctx, accountID)
+	if err != nil {
+		return store.Profile{}, err
+	}
+	p, err := a.store.AddProfile(ctx, accountID, name)
 	if err != nil {
 		return store.Profile{}, profileStoreError(err)
 	}
-	a.log.Info("profile added in the admin", "profile", p.Name)
+	if accountID == householdAccount {
+		a.log.Info("profile added in the admin", "profile", p.Name)
+	} else {
+		a.log.Info("profile added in the admin", "profile", p.Name, "account", acct.Name)
+	}
 	return p, nil
 }
 
@@ -120,20 +129,24 @@ func (a *Admin) removeProfile(ctx context.Context, id int64) (store.Profile, err
 	return p, nil
 }
 
-// setDeviceProfile makes an approved device of the household play as one of
-// its profiles.
+// setDeviceProfile makes an approved device play as one of its account's
+// profiles.
 func (a *Admin) setDeviceProfile(ctx context.Context, mac string, id int64) (store.Device, store.Profile, error) {
 	d, err := a.store.Device(ctx, mac)
 	if err != nil {
 		return store.Device{}, store.Profile{}, deviceStoreError(err, mac)
 	}
-	if d.State != store.DeviceApproved || d.AccountID != householdAccount {
+	if d.State != store.DeviceApproved {
 		return store.Device{}, store.Profile{}, badDevice(http.StatusConflict, "not_approved",
-			"%s is not approved for the household, so it plays as no profile.", deviceName(d))
+			"%s is not approved, so it plays as no profile.", deviceName(d))
 	}
 	p, err := a.householdProfile(ctx, id)
 	if err != nil {
 		return store.Device{}, store.Profile{}, err
+	}
+	if p.AccountID != d.AccountID {
+		return store.Device{}, store.Profile{}, badDevice(http.StatusConflict, "other_account",
+			"%s is a profile of another account than %s's.", p.Name, deviceName(d))
 	}
 	if err := a.store.SetDeviceProfile(ctx, d.ID, p.ID); err != nil {
 		return store.Device{}, store.Profile{}, profileStoreError(err)
@@ -167,7 +180,14 @@ func (a *Admin) profileAction(w http.ResponseWriter, r *http.Request, s store.Ad
 	var p store.Profile
 	switch action {
 	case "":
-		if p, err = a.addProfile(ctx, r.PostFormValue("name")); err == nil {
+		account := int64(householdAccount)
+		if v := r.PostFormValue("account"); v != "" {
+			if account, err = strconv.ParseInt(v, 10, 64); err != nil {
+				err = badDevice(http.StatusBadRequest, "no_such_account", "Choose an account.")
+				break
+			}
+		}
+		if p, err = a.addProfile(ctx, account, r.PostFormValue("name")); err == nil {
 			notice = "Added the profile " + p.Name + ". Boxes can switch to it now."
 		}
 	case "rename":
@@ -200,16 +220,17 @@ func (a *Admin) profileAction(w http.ResponseWriter, r *http.Request, s store.Ad
 
 // apiProfile is a profile as the API describes it.
 type apiProfile struct {
-	ID      int64  `json:"id"`
-	Name    string `json:"name"`
-	First   bool   `json:"first"`
-	PIN     bool   `json:"pin"`
-	Devices int    `json:"devices"`
-	ThemeID int64  `json:"theme_id"` // its own theme, 0 for the household's (D97)
+	ID        int64  `json:"id"`
+	AccountID int64  `json:"account_id"`
+	Name      string `json:"name"`
+	First     bool   `json:"first"`
+	PIN       bool   `json:"pin"`
+	Devices   int    `json:"devices"`
+	ThemeID   int64  `json:"theme_id"` // its own theme, 0 for the household's (D97)
 }
 
 func profileBody(p store.Profile) apiProfile {
-	return apiProfile{ID: p.ID, Name: p.Name, First: p.First, PIN: p.PINHash != "", Devices: p.Devices, ThemeID: p.ThemeID}
+	return apiProfile{ID: p.ID, AccountID: p.AccountID, Name: p.Name, First: p.First, PIN: p.PINHash != "", Devices: p.Devices, ThemeID: p.ThemeID}
 }
 
 // profileAnswer answers with one of the household's profiles, as it is now,
@@ -244,7 +265,19 @@ func (a *Admin) apiFailed(w http.ResponseWriter, err error) bool {
 }
 
 func (a *Admin) apiProfiles(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
-	list, err := a.store.Profiles(r.Context(), householdAccount)
+	account := int64(householdAccount)
+	if v := r.URL.Query().Get("account_id"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			apiError(w, http.StatusBadRequest, "no_such_account", "Give account_id as a number.")
+			return
+		}
+		if _, err := a.account(r.Context(), n); a.apiFailed(w, err) {
+			return
+		}
+		account = n
+	}
+	list, err := a.store.Profiles(r.Context(), account)
 	if err != nil {
 		a.apiInternal(w, "cannot list the profiles", err)
 		return
@@ -260,12 +293,17 @@ func (a *Admin) apiProfiles(w http.ResponseWriter, r *http.Request, _ store.Admi
 
 func (a *Admin) apiAddProfile(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
 	var body struct {
-		Name string `json:"name"`
+		Name      string `json:"name"`
+		AccountID *int64 `json:"account_id"`
 	}
 	if !readJSON(w, r, &body) {
 		return
 	}
-	p, err := a.addProfile(r.Context(), body.Name)
+	account := int64(householdAccount)
+	if body.AccountID != nil {
+		account = *body.AccountID
+	}
+	p, err := a.addProfile(r.Context(), account, body.Name)
 	if a.apiFailed(w, err) {
 		return
 	}

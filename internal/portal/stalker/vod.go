@@ -497,7 +497,7 @@ func (a *API) createTitleLink(w http.ResponseWriter, r *http.Request, d store.De
 			return
 		}
 	}
-	if !a.hub.Available(item.SourceID, d.ID) {
+	if a.hub.Room(r.Context(), item.SourceID, d.ID) != nil {
 		reply("", "limit")
 		return
 	}

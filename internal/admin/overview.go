@@ -68,10 +68,11 @@ func (a *Admin) deviceNames(ctx context.Context) (map[int64]string, error) {
 // streamRow is a stream as the overview shows it.
 type streamRow struct {
 	hub.Stream
-	Device string
-	Model  string // the device's model, "" if unknown
-	Number int    // the channel's number in the lineup, 0 if it has none
-	Now    time.Time
+	Device  string
+	Model   string // the device's model, "" if unknown
+	Account string // the account's name, while there is more than one (D102)
+	Number  int    // the channel's number in the lineup, 0 if it has none
+	Now     time.Time
 }
 
 // Since says how long ago it started.
@@ -126,10 +127,20 @@ func (a *Admin) streamRowsOf(ctx context.Context, devices []store.Device, lineup
 	for _, d := range devices {
 		byID[d.ID] = d
 	}
+	accounts, err := a.store.Accounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	accountNames := map[int64]string{}
+	if len(accounts) > 1 {
+		for _, acct := range accounts {
+			accountNames[acct.ID] = acct.Name
+		}
+	}
 	now := a.now()
 	rows := make([]streamRow, len(streams))
 	for i, s := range streams {
-		rows[i] = streamRow{Stream: s, Device: "a removed device", Now: now}
+		rows[i] = streamRow{Stream: s, Device: "a removed device", Account: accountNames[s.AccountID], Now: now}
 		switch {
 		case s.DeviceID == 0:
 			rows[i].Device = "the debug playlist" // which plays as no device
@@ -440,6 +451,7 @@ type apiStream struct {
 	Kind      string    `json:"kind"`
 	DeviceID  int64     `json:"device_id"`
 	Device    string    `json:"device"`
+	AccountID int64     `json:"account_id"` // 0 for none (D102)
 	EntryID   int64     `json:"entry_id"`
 	ItemID    int64     `json:"item_id"`
 	Channel   string    `json:"channel"`
@@ -475,7 +487,7 @@ func (a *Admin) apiStreams(w http.ResponseWriter, r *http.Request, _ store.Admin
 	}
 	out := make([]apiStream, len(rows))
 	for i, s := range rows {
-		out[i] = apiStream{Kind: s.Kind, DeviceID: s.DeviceID, Device: s.Device, EntryID: s.EntryID, ItemID: s.ItemID,
+		out[i] = apiStream{Kind: s.Kind, DeviceID: s.DeviceID, Device: s.Device, AccountID: s.AccountID, EntryID: s.EntryID, ItemID: s.ItemID,
 			Channel: s.Channel, SourceID: s.SourceID, Source: s.Source, StartedAt: s.Started.UTC().Truncate(time.Second),
 			Bytes: s.Bytes, HLS: s.HLS, Repaired: s.Repaired, Converted: s.Converted, Transcoded: s.Transcoded,
 			TranscodedBy: s.TranscodedBy, Playing: s.Playing, Timeshift: s.Timeshift, Shared: s.Shared, Programme: s.Programme}

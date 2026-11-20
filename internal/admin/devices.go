@@ -179,6 +179,8 @@ func deviceStoreError(err error, mac string) error {
 type deviceRow struct {
 	store.Device
 	Account string // the account's name, "" if none
+	// Profiles are its account's profiles, which it can play as (D94).
+	Profiles []store.Profile
 	// Check is what a playback check found that the device plays films by
 	// (D70); nil if none.
 	Check *checkView
@@ -234,6 +236,12 @@ type checkEntry struct {
 	*checkView
 }
 
+// profileGroup is an account's profiles, as the devices page lists them.
+type profileGroup struct {
+	Account  store.Account
+	Profiles []store.Profile
+}
+
 // devicesData is what the devices page shows.
 type devicesData struct {
 	Waiting  []deviceRow  // pending, or asking to pair again
@@ -243,6 +251,10 @@ type devicesData struct {
 	// Profiles are the household's (D94): the first first, then in the
 	// order they were added.
 	Profiles []store.Profile
+	// ProfileGroups are every account's profiles, the household's first
+	// (D102); ManyProfiles says that an account has more than one.
+	ProfileGroups []profileGroup
+	ManyProfiles  bool
 	// Boxes are the household's approved devices that run Overscan's page,
 	// which messages go to (D96); Messages are the last messages sent.
 	Boxes       []store.Device
@@ -294,8 +306,20 @@ func (a *Admin) devicesData(ctx context.Context) (devicesData, error) {
 		return devicesData{}, err
 	}
 	data := devicesData{Accounts: accounts, Profiles: profiles, Messages: messages, Now: a.now()}
+	profilesOf := map[int64][]store.Profile{}
+	for _, acct := range accounts {
+		list := profiles
+		if acct.ID != householdAccount {
+			if list, err = a.store.Profiles(ctx, acct.ID); err != nil {
+				return devicesData{}, err
+			}
+		}
+		profilesOf[acct.ID] = list
+		data.ProfileGroups = append(data.ProfileGroups, profileGroup{Account: acct, Profiles: list})
+		data.ManyProfiles = data.ManyProfiles || len(list) > 1
+	}
 	for _, d := range ds {
-		row := deviceRow{Device: d, Account: names[d.AccountID]}
+		row := deviceRow{Device: d, Account: names[d.AccountID], Profiles: profilesOf[d.AccountID]}
 		if c, ok := checks[d.ID]; ok {
 			row.Check = viewOf(c)
 			data.Checks = append(data.Checks, checkEntry{ID: d.ID, MAC: d.MAC, Name: deviceName(d), Model: c.Model, checkView: row.Check})
@@ -411,6 +435,12 @@ func (a *Admin) doDeviceAction(w http.ResponseWriter, r *http.Request, s store.A
 		var d store.Device
 		if d, err = a.forgetCheck(ctx, mac); err == nil {
 			notice = "Forgot what the playback check of " + deviceName(d) + " found."
+		}
+	case "account":
+		var d store.Device
+		var acct store.Account
+		if d, acct, err = a.moveDevice(ctx, mac, account); err == nil {
+			notice = deviceName(d) + " belongs to " + acct.Name + " now, and plays as its first profile."
 		}
 	case "profile":
 		var d store.Device
@@ -605,13 +635,14 @@ func (a *Admin) apiBlockDevice(w http.ResponseWriter, r *http.Request, _ store.A
 func (a *Admin) apiChangeDevice(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
 	var body struct {
 		Label     *string `json:"label"`
+		AccountID *int64  `json:"account_id"`
 		ProfileID *int64  `json:"profile_id"`
 	}
 	if !readJSON(w, r, &body) {
 		return
 	}
-	if body.Label == nil && body.ProfileID == nil {
-		apiError(w, http.StatusBadRequest, "bad_json", "Say what to change: label, profile_id or both.")
+	if body.Label == nil && body.ProfileID == nil && body.AccountID == nil {
+		apiError(w, http.StatusBadRequest, "bad_json", "Say what to change: label, account_id, profile_id, or more than one.")
 		return
 	}
 	ctx := r.Context()
@@ -620,6 +651,12 @@ func (a *Admin) apiChangeDevice(w http.ResponseWriter, r *http.Request, _ store.
 	var err error
 	if body.Label != nil {
 		if err = checkLabel(*body.Label); err != nil {
+			a.deviceAnswer(w, r, d, err)
+			return
+		}
+	}
+	if body.AccountID != nil {
+		if d, _, err = a.moveDevice(ctx, mac, *body.AccountID); err != nil {
 			a.deviceAnswer(w, r, d, err)
 			return
 		}

@@ -58,7 +58,7 @@ func (a *API) createArchiveLink(w http.ResponseWriter, r *http.Request, d store.
 		a.internalError(w, "look up a programme", err)
 		return
 	}
-	if !a.hub.Available(entry.SourceID, d.ID) {
+	if a.hub.Room(r.Context(), entry.SourceID, d.ID) != nil {
 		reply("", "limit")
 		return
 	}

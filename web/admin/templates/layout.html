@@ -30,6 +30,7 @@
     <a href="/admin/movies"{{if eq .Section "movies"}} aria-current="page"{{end}} title="Movies">{{template "i-film"}}<span>Movies</span></a>
     <a href="/admin/series"{{if eq .Section "series"}} aria-current="page"{{end}} title="Series">{{template "i-series"}}<span>Series</span></a>
     {{template "nav-devices" .}}
+    <a href="/admin/accounts"{{if eq .Section "accounts"}} aria-current="page"{{end}} title="Accounts">{{template "i-user"}}<span>Accounts</span></a>
   </div>
   <div class="rail-links">
     <a href="/admin/capture"{{if eq .Section "capture"}} aria-current="page"{{end}} title="Capture log">{{template "i-capture"}}<span>Capture log</span></a>
@@ -58,11 +59,12 @@
   <a href="/admin/lineup"{{if eq .Section "lineup"}} aria-current="page"{{end}}><span class="tab-icon">{{template "i-live"}}</span>Live TV</a>
   {{template "tab-devices" .}}
   <a href="/admin/sources"{{if eq .Section "sources"}} aria-current="page"{{end}}><span class="tab-icon">{{template "i-sources"}}</span>Sources</a>
-  <details{{if or (eq .Section "settings") (eq .Section "capture") (eq .Section "movies") (eq .Section "series")}} class="current"{{end}}>
+  <details{{if or (eq .Section "settings") (eq .Section "capture") (eq .Section "movies") (eq .Section "series") (eq .Section "accounts")}} class="current"{{end}}>
     <summary><span class="tab-icon">{{template "i-more"}}</span>More</summary>
     <div class="menu">
       <a href="/admin/movies">{{template "i-film"}}Movies</a>
       <a href="/admin/series">{{template "i-series"}}Series</a>
+      <a href="/admin/accounts">{{template "i-user"}}Accounts</a>
       <hr>
       <a href="/admin/capture">{{template "i-capture"}}Capture log</a>
       <a href="/admin/settings">{{template "i-settings"}}Settings</a>

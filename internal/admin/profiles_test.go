@@ -79,7 +79,7 @@ func TestProfilesPage(t *testing.T) {
 	}
 	// A device that waits plays as no profile.
 	rec = ta.do("POST", "/admin/devices/"+clientMAC+"/profile", url.Values{"csrf": {csrf}, "profile": {fmt.Sprint(alex.ID)}}, c, hx...)
-	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "is not approved for the household") {
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "is not approved, so it plays as no profile") {
 		t.Errorf("a waiting device: status %d", rec.Code)
 	}
 	rec = ta.do("POST", "/admin/devices/"+boxMAC+"/profile", url.Values{"csrf": {csrf}, "profile": {"999"}}, c, hx...)
@@ -182,7 +182,7 @@ func TestProfilesAPI(t *testing.T) {
 		Profiles []apiProfile `json:"profiles"`
 	}
 	if status := decode(ta.apiDo("GET", "profiles", "", c), &list); status != http.StatusOK || len(list.Profiles) != 1 ||
-		list.Profiles[0] != (apiProfile{ID: list.Profiles[0].ID, Name: "Household", First: true, Devices: 1}) {
+		list.Profiles[0] != (apiProfile{ID: list.Profiles[0].ID, AccountID: 1, Name: "Household", First: true, Devices: 1}) {
 		t.Fatalf("status %d, %+v", status, list)
 	}
 	first := list.Profiles[0]
