@@ -59,7 +59,9 @@ tags:
       once the household has a parental PIN, Overscan's page asks for it
       before it plays them, and Stalker clients do not see them (D55). A
       channel's stream can be set to go through ffmpeg, which rebuilds its
-      timestamps (D57).
+      timestamps (D57). A lineup's rules (D107) show, hide, rename, regroup,
+      number or give a logo to the channels that they match, in order, after
+      every refresh; the administrator's own edits of a channel win over them.
   - name: lineups
     description: >-
       The lineups (D106). Each account sees one. A new one starts as a copy
@@ -1804,6 +1806,149 @@ paths:
           $ref: "#/components/responses/CSRF"
         "404":
           $ref: "#/components/responses/NotFound"
+  /lineup/rules:
+    parameters:
+      - $ref: "#/components/parameters/Lineup"
+    get:
+      tags: [lineup]
+      operationId: listRules
+      summary: List the lineup's rules
+      description: >-
+        In the order that they run (D107), each with how many of the lineup's
+        channels it matches, whether it is on or off.
+      responses:
+        "200":
+          description: The rules.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rules]
+                properties:
+                  rules:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Rule"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NoSuchLineup"
+    post:
+      tags: [lineup]
+      operationId: addRule
+      summary: Add a rule after the others
+      description: >-
+        The lineup's rules run again at once. A lineup has at most 200 rules
+        (`too_many_rules`, 409).
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuleBody"
+      responses:
+        "201":
+          $ref: "#/components/responses/Rule"
+        "400":
+          $ref: "#/components/responses/RuleMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NoSuchLineup"
+        "409":
+          $ref: "#/components/responses/TooManyRules"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+  /lineup/rules/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/Lineup"
+    put:
+      tags: [lineup]
+      operationId: replaceRule
+      summary: Replace a rule
+      description: It keeps its place; the lineup's rules run again at once.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuleBody"
+      responses:
+        "200":
+          $ref: "#/components/responses/Rule"
+        "400":
+          $ref: "#/components/responses/RuleMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+    delete:
+      tags: [lineup]
+      operationId: removeRule
+      summary: Remove a rule
+      description: What it did to channels is undone, as the lineup's rules run again at once.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "204":
+          description: Removed.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /lineup/rules/{id}/move:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/Lineup"
+    post:
+      tags: [lineup]
+      operationId: moveRule
+      summary: Move a rule to another place
+      description: >-
+        Places count from 1; a place after the last moves it to the end. The
+        lineup's rules run again at once.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [position]
+              properties:
+                position:
+                  type: integer
+                  minimum: 1
+      responses:
+        "200":
+          $ref: "#/components/responses/Rule"
+        "400":
+          $ref: "#/components/responses/RuleMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "415":
           $ref: "#/components/responses/NotJSON"
 
@@ -2714,7 +2859,7 @@ components:
   schemas:
     LineupSummary:
       type: object
-      required: [id, name, created_at, accounts, shown]
+      required: [id, name, created_at, accounts, shown, rules]
       properties:
         id:
           type: integer
@@ -2731,6 +2876,9 @@ components:
         shown:
           type: integer
           description: How many channels it shows.
+        rules:
+          type: integer
+          description: How many rules it has (D107), on or off.
     Credentials:
       type: object
       additionalProperties: false
@@ -3108,7 +3256,7 @@ components:
                 type: string
     Channel:
       type: object
-      required: [id, channel_id, source_id, source, number, pinned, name, channel_name, renamed, group_id, group, moved, category, visibility, hidden, missing, locked, group_locked, repair, repair_own, adult, radio]
+      required: [id, channel_id, source_id, source, number, pinned, name, channel_name, renamed, group_id, group, moved, category, visibility, hidden, missing, locked, group_locked, repair, repair_own, adult, radio, rules]
       properties:
         id:
           type: integer
@@ -3175,6 +3323,129 @@ components:
         radio:
           type: boolean
           description: Its source lists it as a radio station (D87).
+        rules:
+          type: array
+          description: >-
+            What the lineup's rules do to it, by their actions (D107), even
+            where the administrator's own edits win over them.
+          items:
+            $ref: "#/components/schemas/RuleAction"
+    RuleMatch:
+      type: object
+      additionalProperties: false
+      description: >-
+        The channels that a rule matches: those that meet everything given,
+        every channel if nothing is. A pattern matches the whole text, whatever
+        its case, with `*` for any characters and `?` for one; between
+        slashes, such as `/^UK[: ]/`, it is a regular expression, which can
+        match anywhere.
+      properties:
+        source_id:
+          type: integer
+          minimum: 1
+          description: The channel's source. Removing the source removes the rule.
+        group:
+          type: string
+          maxLength: 200
+          description: A pattern for the channel's category in its source.
+        name:
+          type: string
+          maxLength: 200
+          description: A pattern for the channel's name in its source.
+        guide:
+          type: string
+          maxLength: 200
+          description: A pattern for the channel's guide ID.
+        quality:
+          type: string
+          enum: [SD, HD, FHD, UHD, 4K, 8K, HEVC, H264, H265, 1080p, 720p, 50fps, 60fps]
+          description: A word that the channel's name holds, whatever its case.
+    RuleBody:
+      type: object
+      additionalProperties: false
+      required: [action]
+      description: >-
+        A rule of a lineup (D107). Its fields other than `match`, `action` and
+        `off` are those of its action; the others are left out.
+      properties:
+        match:
+          $ref: "#/components/schemas/RuleMatch"
+        action:
+          $ref: "#/components/schemas/RuleAction"
+        "off":
+          type: boolean
+          description: An off rule does nothing until it is on again.
+        name:
+          type: string
+          maxLength: 200
+          description: For `rename`, a new name.
+        replace:
+          type: string
+          maxLength: 200
+          description: >-
+            For `rename`, in place of `name`: text to replace in the name,
+            whatever its case; between slashes, a regular expression.
+        with:
+          type: string
+          maxLength: 200
+          description: What replaces it, "" to take it out; `$1` and so on are a regular expression's groups.
+        group:
+          type: string
+          maxLength: 100
+          description: For `regroup`, the group's name; a group of that name is made if the lineup has none.
+        from:
+          type: integer
+          minimum: 1
+          maximum: 999999
+          description: For `renumber`, the first number.
+        logo:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: For `logo`, the logo's address, http or https.
+    RuleAction:
+      type: string
+      enum: [include, exclude, rename, regroup, renumber, logo]
+      description: >-
+        `include` shows the channels, even in a hidden group; `exclude` hides
+        them; `rename` names them anew or replaces text in their names, from
+        the names that the rules before it gave; `regroup` moves them to a
+        group; `renumber` numbers them in a row, in their order, keeping the
+        numbers it gave before for the channels that it still matches and
+        skipping numbers that the administrator pinned; `logo` gives them a
+        logo. Where two rules do the same to a channel, the later one wins;
+        what the administrator set on a channel wins over every rule.
+    Rule:
+      type: object
+      required: [id, position, matches, match, action, "off"]
+      properties:
+        id:
+          type: integer
+        position:
+          type: integer
+          minimum: 1
+          description: Its place among the lineup's rules, which run in this order.
+        matches:
+          type: integer
+          description: How many of the lineup's channels it matches, whether it is on or off.
+        match:
+          $ref: "#/components/schemas/RuleMatch"
+        action:
+          $ref: "#/components/schemas/RuleAction"
+        "off":
+          type: boolean
+        name:
+          type: string
+        replace:
+          type: string
+        with:
+          type: string
+        group:
+          type: string
+        from:
+          type: integer
+        logo:
+          type: string
     Visibility:
       type: string
       enum: [group, shown, hidden]
@@ -3621,6 +3892,27 @@ components:
   responses:
     NoSuchLineup:
       description: There is no such lineup (`not_found`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Rule:
+      description: The rule.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Rule"
+    RuleMistake:
+      description: >-
+        The rule cannot be saved (`bad_rule`, with what is wrong), a place is
+        not one (`bad_position`), or the body is not the JSON the path takes
+        (`bad_json`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TooManyRules:
+      description: The lineup has as many rules as it may, 200 (`too_many_rules`).
       content:
         application/json:
           schema:

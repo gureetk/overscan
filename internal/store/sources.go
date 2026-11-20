@@ -489,7 +489,8 @@ func (s *Store) SetSourceEnabled(ctx context.Context, id int64, enabled bool) er
 
 // DeleteSource removes a source with its address, categories and channels,
 // and the channels' lineup entries. The groups that Overscan made for its
-// categories go, unless the administrator has changed them.
+// categories go, unless the administrator has changed them, and so do the
+// rules that name it (D107).
 func (s *Store) DeleteSource(ctx context.Context, id int64) error {
 	fail := func(err error) error { return fmt.Errorf("store: delete source %d: %w", id, err) }
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -506,6 +507,9 @@ func (s *Store) DeleteSource(ctx context.Context, id int64) error {
 		lineups, err = lineupIDs(ctx, tx)
 	}
 	for _, lineupID := range lineups {
+		if err == nil {
+			err = dropSourceRules(ctx, tx, lineupID, id)
+		}
 		if err == nil {
 			err = removeEmptyGroups(ctx, tx, lineupID)
 		}

@@ -13,6 +13,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"overscan.gureet.ca/internal/rules"
 	"overscan.gureet.ca/internal/store"
 )
 
@@ -317,6 +318,9 @@ type apiEntry struct {
 	RepairOwn   *bool   `json:"repair_own"`
 	Adult       bool    `json:"adult"` // its source marks it for adults (D86)
 	Radio       bool    `json:"radio"` // its source lists it as a radio station (D87)
+	// Rules lists what the lineup's rules do to it, by their actions
+	// (D107); the administrator's own edits win over them.
+	Rules []string `json:"rules"`
 }
 
 func entryBody(e store.LineupEntry) apiEntry {
@@ -332,6 +336,16 @@ func entryBody(e store.LineupEntry) apiEntry {
 	}
 	if e.Category != "" {
 		out.Category = &e.Category
+	}
+	out.Rules = []string{}
+	for _, did := range []struct {
+		yes    bool
+		action string
+	}{{e.RuleShown, rules.Include}, {e.RuleHidden, rules.Exclude}, {e.RuleRenamed, rules.Rename}, {e.RuleMoved, rules.Regroup},
+		{e.RuleNumbered, rules.Renumber}, {e.RuleLogo, rules.Logo}} {
+		if did.yes {
+			out.Rules = append(out.Rules, did.action)
+		}
 	}
 	return out
 }

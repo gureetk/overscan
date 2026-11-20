@@ -52,7 +52,7 @@ func (s *Store) PlayableArchive(ctx context.Context, entryID int64) (ArchiveEntr
 	var sealed, catchupSealed, sourceSealed []byte
 	var sourceType, setZone, serverZone string
 	err := s.db.QueryRowContext(ctx, `
-		SELECT e.id, e.lineup_id, c.id, c.source_id, COALESCE(e.name, c.name), c.identity_key, c.stream_url, c.stream_secret,
+		SELECT e.id, e.lineup_id, c.id, c.source_id, `+entryName+`, c.identity_key, c.stream_url, c.stream_secret,
 			c.catchup_secret, s.type, s.catchup_zone, s.account_time_zone,
 			(SELECT secret FROM source_secrets WHERE source_id = s.id), `+lockedEntry+`,
 			COALESCE(c.repair, `+repairDefaultSQL+`), `+repairHLSSQL+`, `+archiveDaysSQL+

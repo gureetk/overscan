@@ -406,8 +406,16 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 	fmt.Fprintf(&b, "Shared tuner: %v\n", sharedTuner)
 	fmt.Fprintf(&b, "The household's end date: %s\n", ends)
 	fmt.Fprintf(&b, "Accounts: %d; with a login: %d; with a limit on streams: %d\n", len(accounts), logins, limited)
+	allRules, householdRules := 0, 0
+	for _, l := range lineups {
+		allRules += l.Rules
+		if l.ID == lineup {
+			householdRules = l.Rules
+		}
+	}
 	fmt.Fprintf(&b, "Lineups: %d; accounts that see another than the household's: %d (this file describes the household's)\n",
 		len(lineups), otherLineup)
+	fmt.Fprintf(&b, "Rules: %d in all lineups; %d in the household's\n", allRules, householdRules)
 	fmt.Fprintf(&b, "Outputs for players: on: %v; anywhere: %v; playlists on: %d; Xtream logins on: %d\n",
 		outputsOn, anywhere, playlists, xtreams)
 	fmt.Fprintf(&b, "Profiles: %d, %d with a PIN to switch to them\n", len(profiles), withPIN)
