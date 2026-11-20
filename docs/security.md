@@ -58,6 +58,6 @@ What M5 added was checked against the plan's section 11, text and themes from th
 - **What a device can reach.** A box reads and marks only its own messages, and switches only among its own account's profiles, with wrong profile PINs counted with the parental PIN's. Past the household's end date, a box gets no session and a Stalker client only its profile and the end date.
 - **The shared tuner** stays off until the administrator turns it on.
 - **The support bundle** now counts themes and messages, without their names or text.
-- **Upgrades:** the database of v0.3.0 upgrades to M5's last pre-release directly, as each pre-release did from the one before.
+- **Upgrades:** the database of v0.3.0 upgrades to v0.4.0 directly, as each of M5's pre-releases did from the one before.
 
 Candidates for later: refusing the characters that change the direction of text in names and messages; a cap on how many themes may be installed.
