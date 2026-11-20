@@ -20,6 +20,25 @@ type Account struct {
 	CreatedAt time.Time
 	PINHash   string // the parental PIN's argon2id hash, "" if none (D55)
 	ThemeID   int64  // the theme its boxes show, 0 for Overscan's own (D97)
+
+	// Its login, for the outputs that players use (D102): the username,
+	// "" while it has none, and the password's argon2id hash.
+	Username     string
+	PasswordHash string
+	// HasToken says that it has a playlist token, which names it in the
+	// addresses of its playlist and guide.
+	HasToken bool
+	// MaxStreams is the most streams that its devices and players play at
+	// once, 0 for no limit.
+	MaxStreams int
+	// Outputs are the outputs that it may use.
+	Outputs Outputs
+}
+
+// Outputs are the outputs that an account may use (D102). Each starts off.
+type Outputs struct {
+	M3U    bool // its playlist and guide
+	Xtream bool // the Xtream-compatible API
 }
 
 // Ended reports whether the account's end date has passed by now (D95):
@@ -37,24 +56,36 @@ type Lineup struct {
 
 // Account returns the account with the given ID, or ErrNotFound.
 func (s *Store) Account(ctx context.Context, id int64) (Account, error) {
-	var a Account
-	var expires sql.NullString
-	var created string
-	err := s.db.QueryRowContext(ctx,
-		"SELECT id, name, lineup_id, expires_at, created_at, COALESCE(pin_hash, ''), COALESCE(theme_id, 0) FROM accounts WHERE id = ?", id,
-	).Scan(&a.ID, &a.Name, &a.LineupID, &expires, &created, &a.PINHash, &a.ThemeID)
+	a, err := scanAccount(s.db.QueryRowContext(ctx, "SELECT "+accountColumns+" FROM accounts WHERE id = ?", id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Account{}, ErrNotFound
 	}
 	if err != nil {
 		return Account{}, fmt.Errorf("store: account %d: %w", id, err)
 	}
+	return a, nil
+}
+
+// accountColumns are what scanAccount reads.
+const accountColumns = "id, name, lineup_id, expires_at, created_at, COALESCE(pin_hash, ''), COALESCE(theme_id, 0), " +
+	"COALESCE(username, ''), password_hash, token_hash IS NOT NULL, max_streams, output_m3u, output_xtream"
+
+// scanAccount reads a row of accountColumns.
+func scanAccount(row rowScanner) (Account, error) {
+	var a Account
+	var expires sql.NullString
+	var created string
+	err := row.Scan(&a.ID, &a.Name, &a.LineupID, &expires, &created, &a.PINHash, &a.ThemeID,
+		&a.Username, &a.PasswordHash, &a.HasToken, &a.MaxStreams, &a.Outputs.M3U, &a.Outputs.Xtream)
+	if err != nil {
+		return Account{}, err
+	}
 	if a.CreatedAt, err = parseTime(created); err != nil {
-		return Account{}, fmt.Errorf("store: account %d: %w", id, err)
+		return Account{}, err
 	}
 	if expires.Valid {
 		if a.ExpiresAt, err = parseTime(expires.String); err != nil {
-			return Account{}, fmt.Errorf("store: account %d: %w", id, err)
+			return Account{}, err
 		}
 	}
 	return a, nil

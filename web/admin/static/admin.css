@@ -1100,6 +1100,13 @@ button.big { height: 3rem; padding: 0 1.5rem; font-size: 0.9375rem; }
 .profile-more { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .profile-more form { margin: 0; }
 .add-profile { max-width: 34rem; }
+.profile-group { margin: 1rem 0 0; font-size: 0.875rem; font-weight: 600; color: var(--text3); }
+.account-forms h3 { margin: 0.75rem 0 0; font-size: 0.875rem; font-weight: 600; }
+.account-forms h3:first-of-type { margin-top: 0.25rem; }
+.account-forms > form { margin: 0; }
+.login-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.5rem; }
+.login-form .field { flex: 1 1 12rem; margin: 0; }
+.accounts .chips { flex: 0 0 auto; }
 
 /* Themes (D97). */
 .themes { margin: 0.75rem 0; padding: 0; list-style: none; }
@@ -1123,6 +1130,9 @@ button.big { height: 3rem; padding: 0 1.5rem; font-size: 0.9375rem; }
 .message-foot form { margin: 0; }
 @media (max-width: 47.5rem) {
   .profile-edit { margin-left: 0; }
+  .accounts .profile-head { flex-wrap: wrap; }
+  .accounts .profile-text { flex: 1 1 calc(100% - 3.25rem); }
+  .accounts .profile-head .chips { flex: 1 1 100%; padding-left: 3.25rem; }
 }
 .cell-form { margin: 0; }
 .cell-form select { max-width: 12rem; }

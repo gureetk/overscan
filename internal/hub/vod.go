@@ -97,10 +97,7 @@ func (h *Hub) serveItem(w http.ResponseWriter, r *http.Request, rest string) {
 			return
 		}
 		if err != nil {
-			src := h.source(item.SourceID)
-			h.log.Warn("stream refused: the source is at its connection limit",
-				"title", item.Name, "source", src.Name, "limit", src.MaxConnections, "device", c.deviceID)
-			http.Error(w, "the source has no free connection", http.StatusServiceUnavailable)
+			h.refused(w, err, "title", item.Name, item.SourceID, c.deviceID)
 			return
 		}
 		// What the file held when it was read, if it was, so that a file

@@ -534,6 +534,8 @@ export function describe(err: ApiError | null): string {
       return 'The server did not answer.';
     case 'limit':
       return "All connections to this source are in use.";
+    case 'account_limit':
+      return 'This account plays as many streams at once as it may. Stop one elsewhere first.';
     case 'busy':
       return 'The server is transcoding as many films as it may at once.';
     case 'no_archive':

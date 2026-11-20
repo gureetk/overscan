@@ -63,6 +63,11 @@ var convertFirstOutput = 30 * time.Second
 // limit, and none of the device's own streams there can make room.
 var ErrLimit = errors.New("the source is at its connection limit")
 
+// ErrAccountLimit is why a stream cannot start: the device's account plays
+// as many streams as it may at once, and none of the device's own streams
+// can make room (D102).
+var ErrAccountLimit = errors.New("the account plays as many streams as it may")
+
 // UseFFprobe gives the hub the ffprobe program, path, that reads what the
 // files of films and episodes hold. With it and ffmpeg, the hub converts
 // what a box cannot play; without, files play as they are. It is called

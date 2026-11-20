@@ -207,8 +207,7 @@ func (a *API) play(w http.ResponseWriter, r *http.Request, d store.Device) {
 	if entry.Locked && acct.PINHash != "" && !a.pinOK(w, r, d, acct, req.PIN) {
 		return
 	}
-	if !a.hub.AvailableChannel(r.Context(), entry, d.ID) {
-		writeError(w, http.StatusServiceUnavailable, errLimit)
+	if !a.room(w, a.hub.RoomForChannel(r.Context(), entry, d.ID)) {
 		return
 	}
 	// While timeshift is on, a channel plays through a buffer that keeps
@@ -369,8 +368,7 @@ func (a *API) playArchive(w http.ResponseWriter, r *http.Request, d store.Device
 	if entry.Locked && acct.PINHash != "" && !a.pinOK(w, r, d, acct, req.PIN) {
 		return
 	}
-	if !a.hub.Available(entry.SourceID, d.ID) {
-		writeError(w, http.StatusServiceUnavailable, errLimit)
+	if !a.room(w, a.hub.Room(r.Context(), entry.SourceID, d.ID)) {
 		return
 	}
 	link, start := a.hub.ArchiveLink(d.ID, entry.PlayableEntry, p.Start, p.Stop)

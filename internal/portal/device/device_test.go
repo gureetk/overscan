@@ -563,3 +563,36 @@ func TestSessionNeedsJSON(t *testing.T) {
 		t.Errorf("with JSON: status %d, %+v", code, s)
 	}
 }
+
+// An account's limit holds across its boxes: while one plays, another box
+// of the account is refused with account_limit, and the box that plays can
+// still change channel (D102).
+func TestPlayAccountLimit(t *testing.T) {
+	h := newHarness(t)
+	h.approve(macA)
+	h.approve(macB)
+	if err := h.store.SetAccountStreams(context.Background(), store.HouseholdAccount, 1); err != nil {
+		t.Fatal(err)
+	}
+	tokenA, tokenB := h.session(macA).Token, h.session(macB).Token
+	var list channelsResponse
+	h.call("GET", Prefix+"channels", tokenA, "", &list)
+	var p playResponse
+	if code := h.call("POST", fmt.Sprintf("%schannels/%d/play", Prefix, list.Channels[0].ID), tokenA, "", &p); code != http.StatusOK {
+		t.Fatalf("status %d", code)
+	}
+	resp, err := http.Get(p.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if _, err := io.ReadFull(resp.Body, make([]byte, 188)); err != nil {
+		t.Fatal(err)
+	}
+	if code, e := h.errorCode("POST", fmt.Sprintf("%schannels/%d/play", Prefix, list.Channels[1].ID), tokenB); code != http.StatusServiceUnavailable || e != errAccountLimit {
+		t.Errorf("the account's second box: status %d, error %q", code, e)
+	}
+	if code, _ := h.errorCode("POST", fmt.Sprintf("%schannels/%d/play", Prefix, list.Channels[1].ID), tokenA); code != http.StatusOK {
+		t.Errorf("the same box, another channel: status %d", code)
+	}
+}

@@ -1,0 +1,881 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package admin
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"overscan.gureet.ca/internal/store"
+)
+
+// Accounts (D102): who uses Overscan. A household starts with one account,
+// and the administrator can add more, for people who watch on devices and
+// players of their own. Each account has its devices and profiles, its end
+// date (D95), its parental PIN (D55) and theme (D97), a limit on its streams
+// at once, and may have a login and a playlist token for the outputs that
+// players use. The Accounts page and the API's accounts/ paths change them;
+// the household's account cannot be removed.
+
+// maxOutputPassword caps a login's password, in bytes.
+const maxOutputPassword = 128
+
+// checkOutputPassword says why password cannot be a login's, or returns
+// nil. Players put a login's password into the addresses that they ask
+// for, often without escaping it, so it holds only what needs no escaping
+// there: ASCII letters, digits, '.', '_', '-' and '~'.
+func checkOutputPassword(password string) error {
+	switch {
+	case utf8.RuneCountInString(password) < MinPasswordChars:
+		return badDevice(http.StatusBadRequest, "bad_password", "A password needs at least %d characters.", MinPasswordChars)
+	case len(password) > maxOutputPassword:
+		return badDevice(http.StatusBadRequest, "bad_password", "A password can have at most %d characters.", maxOutputPassword)
+	}
+	for _, r := range password {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '_', r == '-', r == '~':
+		default:
+			return badDevice(http.StatusBadRequest, "bad_password",
+				"A password can hold letters without accents, digits, '.', '_', '-' and '~': players put it into addresses, where other characters can break it.")
+		}
+	}
+	return nil
+}
+
+// accountStoreError turns the store's errors about an account into
+// mistakes that the request can put right.
+func accountStoreError(err error) error {
+	switch {
+	case errors.Is(err, store.ErrAccountName):
+		return badDevice(http.StatusBadRequest, "bad_name",
+			"An account's name has 1 to %d characters, none of them control characters, and is not another account's.", store.MaxAccountName)
+	case errors.Is(err, store.ErrTooManyAccounts):
+		return badDevice(http.StatusConflict, "too_many_accounts", "A server can have at most %d accounts.", store.MaxAccounts)
+	case errors.Is(err, store.ErrHousehold):
+		return badDevice(http.StatusConflict, "household", "The household's account cannot be removed.")
+	case errors.Is(err, store.ErrAccountInUse):
+		return badDevice(http.StatusConflict, "has_devices", "Devices are approved for the account: move them to another account, or remove them, first.")
+	case errors.Is(err, store.ErrUsername):
+		return badDevice(http.StatusBadRequest, "bad_username",
+			"A username has 1 to %d letters without accents, digits, '.', '_', '-' or '@'.", store.MaxUsername)
+	case errors.Is(err, store.ErrUsernameTaken):
+		return badDevice(http.StatusConflict, "username_taken", "Another account has this username.")
+	case errors.Is(err, store.ErrNoPassword):
+		return badDevice(http.StatusBadRequest, "bad_password", "Give the login a password.")
+	case errors.Is(err, store.ErrAccountStreams):
+		return badDevice(http.StatusBadRequest, "bad_streams", "An account plays from 1 to %d streams at once, or any number.", store.MaxAccountStreams)
+	case errors.Is(err, store.ErrNoKey):
+		return badDevice(http.StatusConflict, "no_key", "This server has no key file to keep a token with.")
+	case errors.Is(err, store.ErrNotFound):
+		return badDevice(http.StatusNotFound, "no_such_account", "There is no such account.")
+	}
+	return err
+}
+
+// account returns an account, or a mistake if there is none.
+func (a *Admin) account(ctx context.Context, id int64) (store.Account, error) {
+	acct, err := a.store.Account(ctx, id)
+	if err != nil {
+		return store.Account{}, accountStoreError(err)
+	}
+	return acct, nil
+}
+
+// addAccount adds an account, which sees the household's lineup.
+func (a *Admin) addAccount(ctx context.Context, name string) (store.Account, error) {
+	acct, err := a.store.AddAccount(ctx, name)
+	if err != nil {
+		return store.Account{}, accountStoreError(err)
+	}
+	a.log.Info("account added in the admin", "account", acct.Name)
+	return acct, nil
+}
+
+// renameAccount gives an account another name.
+func (a *Admin) renameAccount(ctx context.Context, id int64, name string) (store.Account, error) {
+	old, err := a.account(ctx, id)
+	if err != nil {
+		return store.Account{}, err
+	}
+	if err := a.store.RenameAccount(ctx, id, name); err != nil {
+		return store.Account{}, accountStoreError(err)
+	}
+	acct, err := a.account(ctx, id)
+	if err == nil && acct.Name != old.Name {
+		a.log.Info("account renamed in the admin", "account", acct.Name, "was", old.Name)
+	}
+	return acct, err
+}
+
+// removeAccount removes an account that no device is approved for.
+func (a *Admin) removeAccount(ctx context.Context, id int64) (store.Account, error) {
+	acct, err := a.account(ctx, id)
+	if err != nil {
+		return store.Account{}, err
+	}
+	if err := a.store.RemoveAccount(ctx, id); err != nil {
+		return store.Account{}, accountStoreError(err)
+	}
+	a.log.Info("account removed in the admin", "account", acct.Name)
+	return acct, nil
+}
+
+// samePassword reports whether password is one that the server already
+// uses elsewhere: the administrator's, or a source's. A login's password is
+// never one of those (plan, section 21): it travels in players' addresses.
+func (a *Admin) samePassword(ctx context.Context, password string) (string, error) {
+	if user, err := a.store.AdminUser(ctx); err == nil {
+		same, err := CheckPassword(ctx, user.PasswordHash, password)
+		if err != nil && !errors.Is(err, ErrBadHash) {
+			return "", err
+		}
+		if same {
+			return "the admin's", nil
+		}
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return "", err
+	}
+	sources, err := a.store.Sources(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, src := range sources {
+		settings, err := a.store.SourceSettings(ctx, src.ID)
+		if err != nil {
+			continue // one that cannot be opened is not compared
+		}
+		if settings.Password != "" && settings.Password == password {
+			return "a source's", nil
+		}
+	}
+	return "", nil
+}
+
+// setLogin sets an account's login. With an empty password, the login
+// keeps the one it has.
+func (a *Admin) setLogin(ctx context.Context, id int64, username, password string) (store.Account, error) {
+	old, err := a.account(ctx, id)
+	if err != nil {
+		return store.Account{}, err
+	}
+	hash := ""
+	if password != "" {
+		if err := checkOutputPassword(password); err != nil {
+			return store.Account{}, err
+		}
+		whose, err := a.samePassword(ctx, password)
+		if err != nil {
+			return store.Account{}, err
+		}
+		if whose != "" {
+			return store.Account{}, badDevice(http.StatusBadRequest, "password_in_use",
+				"That password is %s. Give the login a password of its own: players send it in their addresses.", whose)
+		}
+		if hash, err = HashPassword(ctx, password, a.params); err != nil {
+			return store.Account{}, err
+		}
+	}
+	if err := a.store.SetAccountLogin(ctx, id, username, hash); err != nil {
+		return store.Account{}, accountStoreError(err)
+	}
+	acct, err := a.account(ctx, id)
+	if err != nil {
+		return store.Account{}, err
+	}
+	a.log.Info("an account's login set in the admin", "account", acct.Name, "new_login", old.Username == "",
+		"new_password", password != "")
+	return acct, nil
+}
+
+// removeLogin takes an account's login away.
+func (a *Admin) removeLogin(ctx context.Context, id int64) (store.Account, error) {
+	acct, err := a.account(ctx, id)
+	if err != nil {
+		return store.Account{}, err
+	}
+	if err := a.store.RemoveAccountLogin(ctx, id); err != nil {
+		return store.Account{}, accountStoreError(err)
+	}
+	a.log.Info("an account's login removed in the admin", "account", acct.Name)
+	acct.Username, acct.PasswordHash = "", ""
+	return acct, nil
+}
+
+// newToken gives an account a new playlist token, which replaces the one
+// it had.
+func (a *Admin) newToken(ctx context.Context, id int64) (store.Account, string, error) {
+	acct, err := a.account(ctx, id)
+	if err != nil {
+		return store.Account{}, "", err
+	}
+	token, err := a.store.NewAccountToken(ctx, id)
+	if err != nil {
+		return store.Account{}, "", accountStoreError(err)
+	}
+	a.log.Info("an account's playlist token made in the admin", "account", acct.Name, "replaced", acct.HasToken)
+	acct.HasToken = true
+	return acct, token, nil
+}
+
+// setStreams sets the most streams an account plays at once, 0 for any
+// number.
+func (a *Admin) setStreams(ctx context.Context, id int64, n int) (store.Account, error) {
+	acct, err := a.account(ctx, id)
+	if err != nil {
+		return store.Account{}, err
+	}
+	if err := a.store.SetAccountStreams(ctx, id, n); err != nil {
+		return store.Account{}, accountStoreError(err)
+	}
+	if n != acct.MaxStreams {
+		a.log.Info("an account's limit of streams set in the admin", "account", acct.Name, "streams", n)
+	}
+	acct.MaxStreams = n
+	return acct, nil
+}
+
+// setAccountExpiry sets when an account ends; the zero time means never
+// (D95).
+func (a *Admin) setAccountExpiry(ctx context.Context, id int64, t time.Time) (store.Account, error) {
+	if id == householdAccount {
+		if err := a.setExpiry(ctx, t); err != nil {
+			return store.Account{}, accountStoreError(err)
+		}
+		return a.account(ctx, id)
+	}
+	acct, err := a.account(ctx, id)
+	if err != nil {
+		return store.Account{}, err
+	}
+	if err := a.store.SetAccountExpiry(ctx, id, t); err != nil {
+		return store.Account{}, accountStoreError(err)
+	}
+	if t.IsZero() {
+		a.log.Info("an account's end date removed in the admin", "account", acct.Name)
+	} else {
+		a.log.Info("an account's end date set in the admin", "account", acct.Name,
+			"ends", t.UTC().Format(time.RFC3339), "ended", !a.now().Before(t))
+	}
+	acct.ExpiresAt = t
+	return acct, nil
+}
+
+// setAccountPIN sets an account's parental PIN, or with "" takes it away
+// (D55).
+func (a *Admin) setAccountPIN(ctx context.Context, id int64, pin string) (store.Account, error) {
+	acct, err := a.account(ctx, id)
+	if err != nil {
+		return store.Account{}, err
+	}
+	hash := ""
+	if pin != "" {
+		if err := checkPIN(pin); err != nil {
+			return store.Account{}, err
+		}
+		if hash, err = HashPassword(ctx, pin, a.params); err != nil {
+			return store.Account{}, err
+		}
+	}
+	if err := a.store.SetAccountPIN(ctx, id, hash); err != nil {
+		return store.Account{}, accountStoreError(err)
+	}
+	if pin == "" {
+		a.log.Info("an account's parental PIN removed in the admin", "account", acct.Name)
+	} else {
+		a.log.Info("an account's parental PIN set in the admin", "account", acct.Name)
+	}
+	acct.PINHash = hash
+	return acct, nil
+}
+
+// setAccountTheme chooses the theme of an account's boxes, 0 for
+// Overscan's own (D97).
+func (a *Admin) setAccountTheme(ctx context.Context, id, themeID int64) (store.Account, error) {
+	acct, err := a.account(ctx, id)
+	if err != nil {
+		return store.Account{}, err
+	}
+	if themeID != 0 {
+		if _, err := a.store.Theme(ctx, themeID); errors.Is(err, store.ErrNotFound) {
+			return store.Account{}, badDevice(http.StatusNotFound, "no_such_theme", "There is no such theme.")
+		} else if err != nil {
+			return store.Account{}, err
+		}
+	}
+	if err := a.store.SetAccountTheme(ctx, id, themeID); err != nil {
+		return store.Account{}, accountStoreError(err)
+	}
+	a.log.Info("an account's theme chosen in the admin", "account", acct.Name, "theme", themeID)
+	acct.ThemeID = themeID
+	return acct, nil
+}
+
+// setOutputs sets the outputs that an account may use.
+func (a *Admin) setOutputs(ctx context.Context, id int64, o store.Outputs) (store.Account, error) {
+	acct, err := a.account(ctx, id)
+	if err != nil {
+		return store.Account{}, err
+	}
+	if err := a.store.SetAccountOutputs(ctx, id, o); err != nil {
+		return store.Account{}, accountStoreError(err)
+	}
+	if o != acct.Outputs {
+		a.log.Info("an account's outputs set in the admin", "account", acct.Name, "m3u", o.M3U, "xtream", o.Xtream)
+	}
+	acct.Outputs = o
+	return acct, nil
+}
+
+// moveDevice moves an approved device to another account, whose first
+// profile it plays as from then on.
+func (a *Admin) moveDevice(ctx context.Context, mac string, accountID int64) (store.Device, store.Account, error) {
+	acct, err := a.account(ctx, accountID)
+	if err != nil {
+		return store.Device{}, store.Account{}, err
+	}
+	d, err := a.store.Device(ctx, mac)
+	if err != nil {
+		return store.Device{}, store.Account{}, deviceStoreError(err, mac)
+	}
+	if d.State != store.DeviceApproved {
+		return store.Device{}, store.Account{}, badDevice(http.StatusConflict, "not_approved",
+			"%s is not approved, so it belongs to no account. Approve it for one instead.", deviceName(d))
+	}
+	if d.AccountID == accountID {
+		return d, acct, nil
+	}
+	moved, err := a.store.SetDeviceAccount(ctx, mac, accountID)
+	if err != nil {
+		return store.Device{}, store.Account{}, deviceStoreError(err, mac)
+	}
+	a.log.Info("a device moved to another account in the admin", "mac", moved.MAC, "label", moved.Label,
+		"account", acct.Name, "from", d.AccountID)
+	return moved, acct, nil
+}
+
+// The page.
+
+// accountRow is an account as the Accounts page shows it.
+type accountRow struct {
+	store.Account
+	Devices   int    // approved devices
+	Profiles  int    // its profiles
+	Token     string // its playlist token, "" if none
+	ThemeName string // its theme's, "" for Overscan's own
+	EndText   string // the last day it plays, "" if it never ends
+	EndDay    string // the same, as a date input takes it
+	IsEnded   bool
+}
+
+// Household says that it is the household's account, which cannot be
+// removed.
+func (r accountRow) Household() bool { return r.ID == householdAccount }
+
+// accountsData is what the Accounts page shows.
+type accountsData struct {
+	Accounts []accountRow
+	Themes   []store.Theme
+	Name     string // typed into the form that adds an account
+	Open     int64  // the account whose forms are open
+	Streams  []int  // the limits the page offers
+}
+
+// accountsData returns what the Accounts page shows.
+func (a *Admin) accountsData(ctx context.Context) (accountsData, error) {
+	accounts, err := a.store.Accounts(ctx)
+	if err != nil {
+		return accountsData{}, err
+	}
+	devices, err := a.store.Devices(ctx)
+	if err != nil {
+		return accountsData{}, err
+	}
+	themes, err := a.store.Themes(ctx)
+	if err != nil {
+		return accountsData{}, err
+	}
+	themeNames := map[int64]string{}
+	for _, th := range themes {
+		themeNames[th.ID] = th.Name
+	}
+	approved := map[int64]int{}
+	for _, d := range devices {
+		if d.State == store.DeviceApproved {
+			approved[d.AccountID]++
+		}
+	}
+	now := a.now()
+	data := accountsData{Themes: themes, Streams: []int{1, 2, 3, 4, 5, 6, 8, 10}}
+	for _, acct := range accounts {
+		row := accountRow{Account: acct, Devices: approved[acct.ID], ThemeName: themeNames[acct.ThemeID], IsEnded: acct.Ended(now)}
+		profiles, err := a.store.Profiles(ctx, acct.ID)
+		if err != nil {
+			return accountsData{}, err
+		}
+		row.Profiles = len(profiles)
+		if acct.HasToken {
+			if row.Token, err = a.store.AccountToken(ctx, acct.ID); err != nil {
+				a.log.Warn("cannot read an account's playlist token", "account", acct.Name, "error", err)
+			}
+		}
+		if !acct.ExpiresAt.IsZero() {
+			day := lastDay(acct.ExpiresAt, time.Local)
+			row.EndText, row.EndDay = day.Format("2 January 2006"), day.Format(dayForm)
+		}
+		data.Accounts = append(data.Accounts, row)
+	}
+	return data, nil
+}
+
+// accountsPage shows the accounts.
+func (a *Admin) accountsPage(w http.ResponseWriter, r *http.Request, s store.AdminSession) {
+	a.showAccounts(w, r, s, http.StatusOK, view{})
+}
+
+// showAccounts renders the Accounts page with v's error or notice.
+func (a *Admin) showAccounts(w http.ResponseWriter, r *http.Request, s store.AdminSession, status int, v view) {
+	data, err := a.accountsData(r.Context())
+	if err != nil {
+		a.log.Error("cannot list the accounts", "error", err)
+		a.message(w, r, http.StatusInternalServerError, "Something went wrong", "The server's log says what.", &s)
+		return
+	}
+	if typed, ok := v.Data.(accountsData); ok {
+		data.Name, data.Open = typed.Name, typed.Open
+	}
+	v.Title, v.Section, v.Session, v.Data = "Accounts", "accounts", &s, data
+	a.render(w, r, status, "accounts", v)
+}
+
+// accountAction serves the Accounts page's forms: adding an account, and
+// the path's last part for one of them.
+func (a *Admin) accountAction(w http.ResponseWriter, r *http.Request, s store.AdminSession) {
+	ctx := r.Context()
+	action := r.PathValue("action")
+	var id int64
+	if action != "" {
+		n, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			a.notFound(w, r)
+			return
+		}
+		id = n
+	}
+	var acct store.Account
+	var notice string
+	var err error
+	switch action {
+	case "":
+		if acct, err = a.addAccount(ctx, r.PostFormValue("name")); err == nil {
+			id = acct.ID
+			notice = "Added the account " + acct.Name + ". Approve devices for it, or move devices to it on the Devices page."
+		}
+	case "rename":
+		if acct, err = a.renameAccount(ctx, id, r.PostFormValue("name")); err == nil {
+			notice = "Renamed the account " + acct.Name + "."
+		}
+	case "login":
+		if acct, err = a.setLogin(ctx, id, r.PostFormValue("username"), r.PostFormValue("password")); err == nil {
+			notice = "Saved the login of " + acct.Name + ": " + acct.Username + "."
+		}
+	case "remove-login":
+		if acct, err = a.removeLogin(ctx, id); err == nil {
+			notice = "Removed the login of " + acct.Name + "."
+		}
+	case "token":
+		if acct, _, err = a.newToken(ctx, id); err == nil {
+			notice = "Made a new playlist token for " + acct.Name + ". Addresses with the old one stop working."
+		}
+	case "streams":
+		n, perr := strconv.Atoi(r.PostFormValue("streams"))
+		if perr != nil {
+			err = badDevice(http.StatusBadRequest, "bad_streams", "Choose how many streams it plays at once.")
+		} else if acct, err = a.setStreams(ctx, id, n); err == nil {
+			notice = acct.Name + " plays " + streamsText(n) + " at once now."
+		}
+	case "expiry":
+		day := strings.TrimSpace(r.PostFormValue("date"))
+		if r.PostFormValue("remove") != "" || day == "" {
+			if acct, err = a.setAccountExpiry(ctx, id, time.Time{}); err == nil {
+				notice = "Removed the end date of " + acct.Name + ": it never ends."
+			}
+			break
+		}
+		d, perr := time.ParseInLocation(dayForm, day, time.Local)
+		if perr != nil || d.Year() < 2000 || d.Year() > 9998 {
+			err = badDevice(http.StatusBadRequest, "bad_date", "Give the end date as a day, such as 2027-12-31.")
+			break
+		}
+		ends := endOfDay(d, time.Local)
+		if acct, err = a.setAccountExpiry(ctx, id, ends); err == nil {
+			notice = acct.Name + " plays until the end of " + d.Format("2 January 2006") + "."
+			if !a.now().Before(ends) {
+				notice = acct.Name + " has ended: its devices play nothing."
+			}
+		}
+	case "pin":
+		pin := r.PostFormValue("pin")
+		if pin == "" {
+			err = badDevice(http.StatusBadRequest, "bad_pin", "Type the PIN.")
+		} else if acct, err = a.setAccountPIN(ctx, id, pin); err == nil {
+			notice = "Set the parental PIN of " + acct.Name + "."
+		}
+	case "remove-pin":
+		if acct, err = a.setAccountPIN(ctx, id, ""); err == nil {
+			notice = "Removed the parental PIN of " + acct.Name + ": its locks do nothing until it has one."
+		}
+	case "theme":
+		themeID, terr := themeID(r.PostFormValue("theme"))
+		if terr != nil {
+			err = terr
+		} else if acct, err = a.setAccountTheme(ctx, id, themeID); err == nil {
+			notice = "Chose the theme of " + acct.Name + ". Its boxes show it within five minutes."
+		}
+	case "remove":
+		if acct, err = a.removeAccount(ctx, id); err == nil {
+			notice = "Removed the account " + acct.Name + ", with its profiles."
+			id = 0
+		}
+	default:
+		a.notFound(w, r)
+		return
+	}
+	a.accountsDone(w, r, s, err, notice, accountsData{Name: truncate(strings.TrimSpace(r.PostFormValue("name")), 400), Open: id})
+}
+
+// streamsText says how many streams an account plays at once.
+func streamsText(n int) string {
+	if n == 0 {
+		return "any number of streams"
+	}
+	return strconv.Itoa(n) + " " + plural(n, "stream")
+}
+
+// accountsDone answers a form of the Accounts page, as devicesDone does.
+func (a *Admin) accountsDone(w http.ResponseWriter, r *http.Request, s store.AdminSession, err error, notice string, typed accountsData) {
+	var bad *deviceError
+	var badEditErr *editError
+	switch {
+	case errors.As(err, &bad):
+		a.showAccounts(w, r, s, bad.status, view{Error: bad.text, Data: typed})
+	case errors.As(err, &badEditErr):
+		a.showAccounts(w, r, s, badEditErr.status, view{Error: badEditErr.text, Data: typed})
+	case err != nil:
+		a.log.Error("cannot change an account", "error", err)
+		a.showAccounts(w, r, s, http.StatusInternalServerError, view{Error: "Something went wrong; the server's log says what."})
+	case r.Header.Get("HX-Request") == "true":
+		a.showAccounts(w, r, s, http.StatusOK, view{Notice: notice, Data: accountsData{Open: typed.Open}})
+	default:
+		http.Redirect(w, r, "/admin/accounts", http.StatusSeeOther)
+	}
+}
+
+// The API.
+
+// accountJSON is an account as the API describes it. It never holds the
+// password's hash; the token only on asking for one.
+type accountJSON struct {
+	ID         int64      `json:"id"`
+	Name       string     `json:"name"`
+	LineupID   int64      `json:"lineup_id"`
+	Username   *string    `json:"username"` // null without a login
+	Token      bool       `json:"token"`    // it has a playlist token
+	MaxStreams int        `json:"max_streams"`
+	Outputs    apiOutputs `json:"outputs"`
+	ExpiresAt  *time.Time `json:"expires_at"`
+	Ended      bool       `json:"ended"`
+	PIN        bool       `json:"pin"`
+	ThemeID    int64      `json:"theme_id"`
+	Devices    int        `json:"devices"`
+	Profiles   int        `json:"profiles"`
+}
+
+// apiOutputs are the outputs that an account may use.
+type apiOutputs struct {
+	M3U    bool `json:"m3u"`
+	Xtream bool `json:"xtream"`
+}
+
+// accountBody returns an account as the API describes it.
+func (a *Admin) accountBody(ctx context.Context, acct store.Account) (accountJSON, error) {
+	out := accountJSON{ID: acct.ID, Name: acct.Name, LineupID: acct.LineupID, Token: acct.HasToken, MaxStreams: acct.MaxStreams,
+		Outputs: apiOutputs{M3U: acct.Outputs.M3U, Xtream: acct.Outputs.Xtream}, Ended: acct.Ended(a.now()),
+		PIN: acct.PINHash != "", ThemeID: acct.ThemeID}
+	if acct.Username != "" {
+		u := acct.Username
+		out.Username = &u
+	}
+	if !acct.ExpiresAt.IsZero() {
+		t := acct.ExpiresAt.UTC()
+		out.ExpiresAt = &t
+	}
+	devices, err := a.store.Devices(ctx)
+	if err != nil {
+		return accountJSON{}, err
+	}
+	for _, d := range devices {
+		if d.State == store.DeviceApproved && d.AccountID == acct.ID {
+			out.Devices++
+		}
+	}
+	profiles, err := a.store.Profiles(ctx, acct.ID)
+	if err != nil {
+		return accountJSON{}, err
+	}
+	out.Profiles = len(profiles)
+	return out, nil
+}
+
+// accountAnswer answers with an account as it is now, or with what went
+// wrong.
+func (a *Admin) accountAnswer(w http.ResponseWriter, r *http.Request, id int64, err error) {
+	if a.apiFailed(w, err) {
+		return
+	}
+	acct, err := a.account(r.Context(), id)
+	if a.apiFailed(w, err) {
+		return
+	}
+	out, err := a.accountBody(r.Context(), acct)
+	if a.apiFailed(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// pathAccount returns the account ID in the path, answering 404 if it is
+// not one.
+func pathAccount(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		apiError(w, http.StatusNotFound, "no_such_account", "There is no such account.")
+		return 0, false
+	}
+	return id, true
+}
+
+func (a *Admin) apiAccounts(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
+	accounts, err := a.store.Accounts(r.Context())
+	if err != nil {
+		a.apiInternal(w, "cannot list the accounts", err)
+		return
+	}
+	out := make([]accountJSON, 0, len(accounts))
+	for _, acct := range accounts {
+		body, err := a.accountBody(r.Context(), acct)
+		if err != nil {
+			a.apiInternal(w, "cannot list the accounts", err)
+			return
+		}
+		out = append(out, body)
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Accounts []accountJSON `json:"accounts"`
+	}{out})
+}
+
+func (a *Admin) apiAccount(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
+	if id, ok := pathAccount(w, r); ok {
+		a.accountAnswer(w, r, id, nil)
+	}
+}
+
+func (a *Admin) apiAddAccount(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
+	var body struct {
+		Name string `json:"name"`
+	}
+	if !readJSON(w, r, &body) {
+		return
+	}
+	acct, err := a.addAccount(r.Context(), body.Name)
+	if a.apiFailed(w, err) {
+		return
+	}
+	out, err := a.accountBody(r.Context(), acct)
+	if a.apiFailed(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusCreated, out)
+}
+
+func (a *Admin) apiChangeAccount(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
+	id, ok := pathAccount(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		Name       *string     `json:"name"`
+		MaxStreams *int        `json:"max_streams"`
+		Outputs    *apiOutputs `json:"outputs"`
+		ThemeID    *int64      `json:"theme_id"`
+	}
+	if !readJSON(w, r, &body) {
+		return
+	}
+	if body.Name == nil && body.MaxStreams == nil && body.Outputs == nil && body.ThemeID == nil {
+		apiError(w, http.StatusBadRequest, "bad_json", "Say what to change: name, max_streams, outputs or theme_id.")
+		return
+	}
+	ctx := r.Context()
+	if _, err := a.account(ctx, id); a.apiFailed(w, err) {
+		return
+	}
+	var err error
+	if body.MaxStreams != nil {
+		if _, err = a.setStreams(ctx, id, *body.MaxStreams); err != nil {
+			a.accountAnswer(w, r, id, err)
+			return
+		}
+	}
+	if body.ThemeID != nil {
+		if _, err = a.setAccountTheme(ctx, id, *body.ThemeID); err != nil {
+			a.accountAnswer(w, r, id, err)
+			return
+		}
+	}
+	if body.Outputs != nil {
+		if _, err = a.setOutputs(ctx, id, store.Outputs{M3U: body.Outputs.M3U, Xtream: body.Outputs.Xtream}); err != nil {
+			a.accountAnswer(w, r, id, err)
+			return
+		}
+	}
+	if body.Name != nil {
+		_, err = a.renameAccount(ctx, id, *body.Name)
+	}
+	a.accountAnswer(w, r, id, err)
+}
+
+func (a *Admin) apiRemoveAccount(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
+	id, ok := pathAccount(w, r)
+	if !ok {
+		return
+	}
+	if _, err := a.removeAccount(r.Context(), id); a.apiFailed(w, err) {
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *Admin) apiSetLogin(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
+	id, ok := pathAccount(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if !readJSON(w, r, &body) {
+		return
+	}
+	_, err := a.setLogin(r.Context(), id, body.Username, body.Password)
+	a.accountAnswer(w, r, id, err)
+}
+
+func (a *Admin) apiRemoveLogin(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
+	id, ok := pathAccount(w, r)
+	if !ok {
+		return
+	}
+	_, err := a.removeLogin(r.Context(), id)
+	a.accountAnswer(w, r, id, err)
+}
+
+func (a *Admin) apiNewToken(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
+	id, ok := pathAccount(w, r)
+	if !ok {
+		return
+	}
+	_, token, err := a.newToken(r.Context(), id)
+	if a.apiFailed(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Token string `json:"token"`
+	}{token})
+}
+
+func (a *Admin) apiToken(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
+	id, ok := pathAccount(w, r)
+	if !ok {
+		return
+	}
+	if _, err := a.account(r.Context(), id); a.apiFailed(w, err) {
+		return
+	}
+	token, err := a.store.AccountToken(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		apiError(w, http.StatusNotFound, "no_token", "The account has no playlist token yet.")
+		return
+	}
+	if err != nil {
+		a.apiInternal(w, "cannot read an account's token", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Token string `json:"token"`
+	}{token})
+}
+
+func (a *Admin) apiSetAccountExpiry(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
+	id, ok := pathAccount(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		ExpiresAt json.RawMessage `json:"expires_at"`
+	}
+	if !readJSON(w, r, &body) {
+		return
+	}
+	var t time.Time
+	if len(body.ExpiresAt) == 0 || string(body.ExpiresAt) == "null" || json.Unmarshal(body.ExpiresAt, &t) != nil || t.IsZero() {
+		apiError(w, http.StatusBadRequest, "bad_date", "Give expires_at as a time, such as 2028-01-01T00:00:00Z; to remove the end date, use DELETE.")
+		return
+	}
+	_, err := a.setAccountExpiry(r.Context(), id, t)
+	a.accountAnswer(w, r, id, err)
+}
+
+func (a *Admin) apiRemoveAccountExpiry(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
+	id, ok := pathAccount(w, r)
+	if !ok {
+		return
+	}
+	_, err := a.setAccountExpiry(r.Context(), id, time.Time{})
+	a.accountAnswer(w, r, id, err)
+}
+
+func (a *Admin) apiSetAccountPIN(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
+	id, ok := pathAccount(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		PIN string `json:"pin"`
+	}
+	if !readJSON(w, r, &body) {
+		return
+	}
+	if body.PIN == "" {
+		apiError(w, http.StatusBadRequest, "bad_pin", "Give the PIN; to remove it, use DELETE.")
+		return
+	}
+	_, err := a.setAccountPIN(r.Context(), id, body.PIN)
+	a.accountAnswer(w, r, id, err)
+}
+
+func (a *Admin) apiRemoveAccountPIN(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
+	id, ok := pathAccount(w, r)
+	if !ok {
+		return
+	}
+	_, err := a.setAccountPIN(r.Context(), id, "")
+	a.accountAnswer(w, r, id, err)
+}

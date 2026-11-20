@@ -81,6 +81,13 @@ tags:
       The boxes and players that use Overscan (D23). A new one waits until the
       administrator approves it: a box running Overscan's page by the
       six-digit code it shows (D39), a Stalker client by its MAC address.
+  - name: accounts
+    description: >-
+      Who uses Overscan (D102). A household starts with one account; more
+      can be added, each with its devices and profiles, its end date,
+      parental PIN and theme, a limit on its streams at once, and a login
+      and a playlist token for the outputs that players other than the
+      boxes use.
   - name: themes
     description: >-
       How the boxes that run Overscan's page look (D97). A theme is a small
@@ -298,11 +305,14 @@ paths:
     patch:
       tags: [devices]
       operationId: changeDevice
-      summary: Change a device's label or profile
+      summary: Change a device's label, account or profile
       description: >-
-        Gives the body's label, the profile the device plays as (D94), or
-        both. Only a device approved for the household plays as one of its
-        profiles (`not_approved`, 409).
+        Gives the body's label, the account it belongs to (D102), the
+        profile it plays as (D94), or more than one. Only an approved device
+        belongs to an account and plays as one of its profiles
+        (`not_approved`, 409); a device moved to another account plays as
+        that account's first profile, and a profile of another account is
+        refused (`other_account`, 409).
       security:
         - session: []
           csrf: []
@@ -319,9 +329,12 @@ paths:
                   type: string
                   maxLength: 100
                   description: The new label; an empty one clears it.
+                account_id:
+                  type: integer
+                  description: The account it belongs to from now on.
                 profile_id:
                   type: integer
-                  description: One of the household's profiles, which the device plays as from now on.
+                  description: One of its account's profiles, which the device plays as from now on.
       responses:
         "200":
           $ref: "#/components/responses/Device"
@@ -705,12 +718,414 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /accounts:
+    get:
+      tags: [accounts]
+      operationId: listAccounts
+      summary: List the accounts
+      description: >-
+        The household's first, then in the order they were added (D102).
+        An account never shows its password; it shows its playlist token
+        only on `GET /accounts/{id}/token`.
+      responses:
+        "200":
+          description: The accounts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accounts]
+                properties:
+                  accounts:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/OverscanAccount"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    post:
+      tags: [accounts]
+      operationId: addAccount
+      summary: Add an account
+      description: >-
+        The new account sees the household's lineup, takes the household's
+        parental PIN and theme, and has a first profile named after it. It
+        starts without a login, a token, an end date, a limit or an output.
+        A server has at most 50 accounts (`too_many_accounts`, 409).
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  maxLength: 50
+      responses:
+        "201":
+          $ref: "#/components/responses/OverscanAccount"
+        "400":
+          $ref: "#/components/responses/AccountMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "409":
+          $ref: "#/components/responses/AccountConflict"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+
+  /accounts/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [accounts]
+      operationId: getAccount
+      summary: Get an account
+      description: >-
+        The account as the list shows it.
+      responses:
+        "200":
+          $ref: "#/components/responses/OverscanAccount"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NoSuchAccount"
+    patch:
+      tags: [accounts]
+      operationId: changeAccount
+      summary: Rename an account, or change its limit, outputs or theme
+      description: >-
+        `max_streams` is the most streams that its devices and players play at once, 1 to 100, or 0 for any number;
+        a device that starts another stream at the limit replaces its own oldest, and another device's is refused
+        (`account_limit` in the device API, `limit` in the Stalker API). `outputs` says which outputs it may use, all
+        off at first; `theme_id` is the theme of its boxes, 0 for Overscan's own (D97).
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                name:
+                  type: string
+                  maxLength: 50
+                max_streams:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                outputs:
+                  $ref: "#/components/schemas/AccountOutputs"
+                theme_id:
+                  type: integer
+                  minimum: 0
+      responses:
+        "200":
+          $ref: "#/components/responses/OverscanAccount"
+        "400":
+          $ref: "#/components/responses/AccountMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NoSuchAccount"
+        "409":
+          $ref: "#/components/responses/AccountConflict"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+    delete:
+      tags: [accounts]
+      operationId: removeAccount
+      summary: Remove an account
+      description: >-
+        Its profiles go with it, with their favourites and resume points, and so do its messages. The household's
+        account cannot be removed (`household`), nor one that a device is approved for (`has_devices`): move the
+        device to another account first.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "204":
+          description: Done.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NoSuchAccount"
+        "409":
+          $ref: "#/components/responses/AccountConflict"
+
+  /accounts/{id}/login:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    put:
+      tags: [accounts]
+      operationId: setAccountLogin
+      summary: Set an account's login
+      description: >-
+        Players other than the boxes sign in with it through the outputs. The username has 1 to 64 ASCII letters,
+        digits, '.', '_', '-' or '@', and no other account has it, whatever its case (`username_taken`, 409). The
+        password has 8 to 128 ASCII letters, digits, '.', '_', '-' or '~', which need no escaping in an address;
+        it cannot be the administrator's or a source's (`password_in_use`). Overscan keeps only an argon2id hash of
+        it. Without a password, the login keeps the one it has (`bad_password` if it has none).
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [username]
+              properties:
+                username:
+                  type: string
+                  maxLength: 64
+                password:
+                  type: string
+                  maxLength: 128
+      responses:
+        "200":
+          $ref: "#/components/responses/OverscanAccount"
+        "400":
+          $ref: "#/components/responses/AccountMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NoSuchAccount"
+        "409":
+          $ref: "#/components/responses/AccountConflict"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+    delete:
+      tags: [accounts]
+      operationId: removeAccountLogin
+      summary: Remove an account's login
+      description: >-
+        Players can no longer sign in as it.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "200":
+          $ref: "#/components/responses/OverscanAccount"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NoSuchAccount"
+        "409":
+          $ref: "#/components/responses/AccountConflict"
+
+  /accounts/{id}/token:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [accounts]
+      operationId: getAccountToken
+      summary: Get an account's playlist token
+      description: >-
+        The token names the account in the addresses of its playlist and guide. An account without one answers
+        `no_token` (404).
+      responses:
+        "200":
+          description: The account's playlist token.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token]
+                properties:
+                  token:
+                    type: string
+                    description: 43 characters of URL-safe Base64.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NoSuchAccount"
+    post:
+      tags: [accounts]
+      operationId: newAccountToken
+      summary: Make an account a new playlist token
+      description: >-
+        It replaces the one the account had: addresses made with the old one stop working. A server without a key
+        file cannot keep one (`no_key`, 409).
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "200":
+          description: The account's playlist token.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token]
+                properties:
+                  token:
+                    type: string
+                    description: 43 characters of URL-safe Base64.
+        "400":
+          $ref: "#/components/responses/AccountMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NoSuchAccount"
+        "409":
+          $ref: "#/components/responses/AccountConflict"
+
+  /accounts/{id}/expiry:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    put:
+      tags: [accounts]
+      operationId: setAccountExpiry
+      summary: Set when an account ends
+      description: >-
+        From then on, its devices play nothing (D95).
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expires_at]
+              properties:
+                expires_at:
+                  type: string
+                  format: date-time
+      responses:
+        "200":
+          $ref: "#/components/responses/OverscanAccount"
+        "400":
+          $ref: "#/components/responses/AccountMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NoSuchAccount"
+        "409":
+          $ref: "#/components/responses/AccountConflict"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+    delete:
+      tags: [accounts]
+      operationId: removeAccountExpiry
+      summary: Remove an account's end date
+      description: >-
+        It never ends.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "200":
+          $ref: "#/components/responses/OverscanAccount"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NoSuchAccount"
+        "409":
+          $ref: "#/components/responses/AccountConflict"
+
+  /accounts/{id}/pin:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    put:
+      tags: [accounts]
+      operationId: setAccountPIN
+      summary: Set an account's parental PIN
+      description: >-
+        Four to eight digits (`bad_pin`), kept as an argon2id hash. Locked channels, films and series ask for it
+        on the account's boxes (D55).
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [pin]
+              properties:
+                pin:
+                  type: string
+                  pattern: "^[0-9]{4,8}$"
+      responses:
+        "200":
+          $ref: "#/components/responses/OverscanAccount"
+        "400":
+          $ref: "#/components/responses/AccountMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NoSuchAccount"
+        "409":
+          $ref: "#/components/responses/AccountConflict"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+    delete:
+      tags: [accounts]
+      operationId: removeAccountPIN
+      summary: Remove an account's parental PIN
+      description: >-
+        Its locks do nothing until it has one.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "200":
+          $ref: "#/components/responses/OverscanAccount"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NoSuchAccount"
+        "409":
+          $ref: "#/components/responses/AccountConflict"
+
   /profiles:
     get:
       tags: [profiles]
       operationId: listProfiles
-      summary: List the household's profiles
-      description: The first first, then in the order they were added.
+      summary: List an account's profiles
+      description: The first first, then in the order they were added; the household's, unless `account_id` names another account.
+      parameters:
+        - name: account_id
+          in: query
+          required: false
+          schema:
+            type: integer
       responses:
         "200":
           description: The profiles.
@@ -746,6 +1161,9 @@ paths:
                 name:
                   type: string
                   maxLength: 32
+                account_id:
+                  type: integer
+                  description: The account it is for; the household's if not given.
       responses:
         "201":
           $ref: "#/components/responses/Profile"
@@ -2288,10 +2706,61 @@ components:
         read:
           type: integer
           description: How many of them read it.
+    OverscanAccount:
+      type: object
+      required: [id, name, lineup_id, username, token, max_streams, outputs, expires_at, ended, pin, theme_id, devices, profiles]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          description: One to 50 characters, unlike any other account's name, whatever their case.
+          examples: ["Alex"]
+        lineup_id:
+          type: integer
+        username:
+          type: ["string", "null"]
+          description: Its login's username, or null while it has none.
+        token:
+          type: boolean
+          description: Whether it has a playlist token.
+        max_streams:
+          type: integer
+          description: The most streams its devices and players play at once, or 0 for any number.
+        outputs:
+          $ref: "#/components/schemas/AccountOutputs"
+        expires_at:
+          type: ["string", "null"]
+          format: date-time
+        ended:
+          type: boolean
+        pin:
+          type: boolean
+          description: Whether it has a parental PIN.
+        theme_id:
+          type: integer
+        devices:
+          type: integer
+          description: How many approved devices belong to it.
+        profiles:
+          type: integer
+    AccountOutputs:
+      type: object
+      additionalProperties: false
+      properties:
+        m3u:
+          type: boolean
+          description: Its playlist and guide.
+        xtream:
+          type: boolean
+          description: The Xtream-compatible API.
     Profile:
       type: object
-      required: [id, name, first, pin, devices, theme_id]
+      required: [id, account_id, name, first, pin, devices, theme_id]
       properties:
+        account_id:
+          type: integer
+          description: The account whose profile it is.
         theme_id:
           type: integer
           description: Its own theme, or 0 for the household's.
@@ -2686,6 +3155,9 @@ components:
           description: What plays, a channel, a film, an episode of a series, or a past programme of a channel from its source's archive (D81).
         device_id:
           type: integer
+        account_id:
+          type: integer
+          description: The account of the device, or of the box that asked for a recording; 0 for none (D102).
         device:
           type: string
           description: The device's label, or else its MAC address.
@@ -3247,6 +3719,38 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Profile"
+    OverscanAccount:
+      description: The account.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/OverscanAccount"
+    AccountMistake:
+      description: >-
+        A name, username, password, PIN, date or limit that the account
+        cannot have (`bad_name`, `bad_username`, `bad_password`,
+        `password_in_use`, `bad_pin`, `bad_date`, `bad_streams`), or a body
+        that is not the JSON the path takes (`bad_json`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    AccountConflict:
+      description: >-
+        There are 50 accounts, the most there may be (`too_many_accounts`);
+        the account is the household's (`household`) or has devices
+        (`has_devices`); another account has the username
+        (`username_taken`); or the server has no key file (`no_key`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NoSuchAccount:
+      description: There is no such account (`no_such_account`), or it has no playlist token (`no_token`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     ProfileMistake:
       description: >-
         The name is empty, longer than 32 characters, holds a control

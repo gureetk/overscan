@@ -98,6 +98,9 @@ func (a *Admin) Handler() http.Handler {
 	mux.Handle("POST /admin/devices/pair", a.page(a.deviceAction("pair")))
 	mux.Handle("POST /admin/devices/approve", a.page(a.deviceAction("approve")))
 	mux.Handle("POST /admin/devices/{mac}/{action}", a.page(a.deviceAction("")))
+	mux.Handle("GET /admin/accounts", a.page(a.accountsPage))
+	mux.Handle("POST /admin/accounts", a.page(a.accountAction))
+	mux.Handle("POST /admin/accounts/{id}/{action}", a.page(a.accountAction))
 	mux.Handle("POST /admin/profiles", a.page(a.profileAction))
 	mux.Handle("POST /admin/profiles/{id}/{action}", a.page(a.profileAction))
 	mux.Handle("POST /admin/messages", a.page(a.messageAction))
@@ -179,7 +182,7 @@ type view struct {
 
 // pageNames are the pages in admin/templates, each of which defines
 // "content" for the layout.
-var pageNames = []string{"sign-in", "home", "password", "message", "devices", "lineup", "library", "sources", "capture", "settings"}
+var pageNames = []string{"sign-in", "home", "password", "message", "devices", "accounts", "lineup", "library", "sources", "capture", "settings"}
 
 func (a *Admin) parsePages() map[string]*template.Template {
 	funcs := template.FuncMap{"asset": a.assetPath, "csrfHeaders": csrfHeaders, "ago": ago, "dict": dict, "count": count, "plural": plural, "initial": initial, "size": sizeText,

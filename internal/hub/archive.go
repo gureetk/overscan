@@ -137,6 +137,7 @@ func (h *Hub) serveArchive(w http.ResponseWriter, r *http.Request, rest string) 
 		opening := &session{token: token, channelID: entry.ChannelID, sourceID: entry.SourceID, channel: entry.Name,
 			repair: entry.Repair, repairHLS: entry.RepairHLS, archive: &entry.Archive,
 			aired: time.Unix(c.start, 0).UTC()}
+		opening.account, opening.accountLimit = h.viewer(r.Context(), c.deviceID)
 		if p, err := h.store.ProgrammeAt(r.Context(), entry.LineupID, entry.EntryID, opening.aired); err == nil {
 			opening.programme = p.Title
 		}
@@ -162,10 +163,7 @@ func (h *Hub) serveArchive(w http.ResponseWriter, r *http.Request, rest string) 
 			opening.release()
 		}
 		if err != nil {
-			src := h.source(entry.SourceID)
-			h.log.Warn("stream refused: the source is at its connection limit",
-				"channel", entry.Name, "source", src.Name, "limit", src.MaxConnections, "device", c.deviceID)
-			http.Error(w, "the source has no free connection", http.StatusServiceUnavailable)
+			h.refused(w, err, "channel", entry.Name, entry.SourceID, c.deviceID)
 			return
 		}
 		if s == opening {

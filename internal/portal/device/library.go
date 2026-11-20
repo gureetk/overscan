@@ -658,8 +658,7 @@ func (a *API) playTitle(w http.ResponseWriter, r *http.Request, d store.Device, 
 			return
 		}
 	}
-	if !a.hub.Available(item.SourceID, d.ID) {
-		writeError(w, http.StatusServiceUnavailable, errLimit)
+	if !a.room(w, a.hub.Room(r.Context(), item.SourceID, d.ID)) {
 		return
 	}
 	if !req.Restart {
@@ -672,8 +671,8 @@ func (a *API) playTitle(w http.ResponseWriter, r *http.Request, d store.Device, 
 		subs = a.library.Subtitles(r.Context(), item)
 	}
 	pb, err := a.hub.Prepare(r.Context(), d.ID, item, a.profile(r.Context(), d), subs)
-	if errors.Is(err, hub.ErrLimit) {
-		writeError(w, http.StatusServiceUnavailable, errLimit)
+	if errors.Is(err, hub.ErrLimit) || errors.Is(err, hub.ErrAccountLimit) {
+		a.room(w, err)
 		return
 	}
 	if errors.Is(err, hub.ErrBusy) {

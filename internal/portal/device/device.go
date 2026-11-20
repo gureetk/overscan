@@ -56,9 +56,10 @@ const (
 	errBlocked      = "blocked"
 	errExpired      = "expired" // the box's account has passed its end date (D95)
 	errNotFound     = "not_found"
-	errLimit        = "limit"  // the source has no free connection
-	errBusy         = "busy"   // the server transcodes as many films as it may at once (D73)
-	errSource       = "source" // the source could not be read, or gave no address (D77)
+	errLimit        = "limit"         // the source has no free connection
+	errAccountLimit = "account_limit" // the account plays as many streams as it may (D102)
+	errBusy         = "busy"          // the server transcodes as many films as it may at once (D73)
+	errSource       = "source"        // the source could not be read, or gave no address (D77)
 	errInternal     = "internal"
 	errPINRequired  = "pin_required" // what it asks for is locked (D55, D85)
 	errPINWrong     = "pin_wrong"
@@ -387,4 +388,18 @@ func unauthorized(w http.ResponseWriter) {
 func (a *API) internalError(w http.ResponseWriter, what string, err error) {
 	a.log.Error("device API failed", "while", what, "error", err)
 	writeError(w, http.StatusInternalServerError, errInternal)
+}
+
+// room answers a call whose stream cannot start, err saying why
+// (hub.Room), and reports whether it can.
+func (a *API) room(w http.ResponseWriter, err error) bool {
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, hub.ErrAccountLimit):
+		writeError(w, http.StatusServiceUnavailable, errAccountLimit)
+	default:
+		writeError(w, http.StatusServiceUnavailable, errLimit)
+	}
+	return false
 }
