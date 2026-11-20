@@ -257,15 +257,20 @@ type devicesData struct {
 	ManyProfiles  bool
 	// Boxes are the household's approved devices that run Overscan's page,
 	// which messages go to (D96); Messages are the last messages sent.
-	Boxes       []store.Device
-	Messages    []messageRow
-	Code        string // as typed, after a mistake
-	MAC         string // as typed, after a mistake
-	Label       string // as typed, after a mistake
-	ProfileName string // as typed, after a mistake
-	MessageText string // as typed, after a mistake
-	MessageTo   string // as chosen, after a mistake
-	Now         time.Time
+	Boxes    []store.Device
+	Messages []messageRow
+	// OutputProfiles are the output profiles that a device can have of its
+	// own (D110), and ShowOutputProfiles says that the table offers them:
+	// this server transcodes, or a device has one of its own.
+	OutputProfiles     []profileOption
+	ShowOutputProfiles bool
+	Code               string // as typed, after a mistake
+	MAC                string // as typed, after a mistake
+	Label              string // as typed, after a mistake
+	ProfileName        string // as typed, after a mistake
+	MessageText        string // as typed, after a mistake
+	MessageTo          string // as chosen, after a mistake
+	Now                time.Time
 }
 
 func (a *Admin) devicesData(ctx context.Context) (devicesData, error) {
@@ -305,7 +310,13 @@ func (a *Admin) devicesData(ctx context.Context) (devicesData, error) {
 	if err != nil {
 		return devicesData{}, err
 	}
-	data := devicesData{Accounts: accounts, Profiles: profiles, Messages: messages, Now: a.now()}
+	data := devicesData{Accounts: accounts, Profiles: profiles, Messages: messages, Now: a.now(), OutputProfiles: profileOptions()}
+	if data.ShowOutputProfiles, err = a.liveTranscodes(ctx); err != nil {
+		return devicesData{}, err
+	}
+	for _, d := range ds {
+		data.ShowOutputProfiles = data.ShowOutputProfiles || d.OutputProfile != ""
+	}
 	profilesOf := map[int64][]store.Profile{}
 	for _, acct := range accounts {
 		list := profiles
@@ -442,6 +453,11 @@ func (a *Admin) doDeviceAction(w http.ResponseWriter, r *http.Request, s store.A
 		if d, acct, err = a.moveDevice(ctx, mac, account); err == nil {
 			notice = deviceName(d) + " belongs to " + acct.Name + " now, and plays as its first profile."
 		}
+	case "live":
+		var d store.Device
+		if d, err = a.setDeviceOutputProfile(ctx, mac, r.PostFormValue("output_profile")); err == nil {
+			notice = deviceName(d) + " gets live channels " + deviceProfileText(d) + ", from the next channel it starts."
+		}
 	case "profile":
 		var d store.Device
 		var p store.Profile
@@ -527,6 +543,9 @@ type apiDevice struct {
 	LastSeen           *time.Time `json:"last_seen"`
 	CreatedAt          time.Time  `json:"created_at"`
 	PlaybackCheck      *apiCheck  `json:"playback_check"`
+	// OutputProfile names its own output profile (D110), "" for its
+	// account's.
+	OutputProfile string `json:"output_profile"`
 }
 
 // apiCheck is what a device's playback check found (D70).
@@ -542,7 +561,7 @@ type apiCheck struct {
 func deviceBody(d store.Device, c *store.PlaybackCheck) apiDevice {
 	out := apiDevice{
 		MAC: d.MAC, State: string(d.State), Label: d.Label, Model: d.Model,
-		Paired: d.Paired(), CreatedAt: d.CreatedAt,
+		Paired: d.Paired(), CreatedAt: d.CreatedAt, OutputProfile: d.OutputProfile,
 	}
 	if c != nil {
 		v := viewOf(*c)
@@ -637,12 +656,14 @@ func (a *Admin) apiChangeDevice(w http.ResponseWriter, r *http.Request, _ store.
 		Label     *string `json:"label"`
 		AccountID *int64  `json:"account_id"`
 		ProfileID *int64  `json:"profile_id"`
+		Output    *string `json:"output_profile"`
 	}
 	if !readJSON(w, r, &body) {
 		return
 	}
-	if body.Label == nil && body.ProfileID == nil && body.AccountID == nil {
-		apiError(w, http.StatusBadRequest, "bad_json", "Say what to change: label, account_id, profile_id, or more than one.")
+	if body.Label == nil && body.ProfileID == nil && body.AccountID == nil && body.Output == nil {
+		apiError(w, http.StatusBadRequest, "bad_json",
+			"Say what to change: label, account_id, profile_id, output_profile, or more than one.")
 		return
 	}
 	ctx := r.Context()
@@ -663,6 +684,12 @@ func (a *Admin) apiChangeDevice(w http.ResponseWriter, r *http.Request, _ store.
 	}
 	if body.ProfileID != nil {
 		if d, _, err = a.setDeviceProfile(ctx, mac, *body.ProfileID); err != nil {
+			a.deviceAnswer(w, r, d, err)
+			return
+		}
+	}
+	if body.Output != nil {
+		if d, err = a.setDeviceOutputProfile(ctx, mac, *body.Output); err != nil {
 			a.deviceAnswer(w, r, d, err)
 			return
 		}

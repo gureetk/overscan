@@ -113,7 +113,7 @@
   {{- if .Data.Known}}
   <div class="table-wrap">
   <table class="list devices">
-    <thead><tr><th>Label</th><th>MAC address</th><th>State</th><th>Model</th><th>Plays</th>{{if gt (len .Data.Accounts) 1}}<th>Account</th>{{end}}{{if .Data.ManyProfiles}}<th>Profile</th>{{end}}<th>Last seen</th><th class="actions"><span class="sr">Actions</span></th></tr></thead>
+    <thead><tr><th>Label</th><th>MAC address</th><th>State</th><th>Model</th><th>Plays</th>{{if gt (len .Data.Accounts) 1}}<th>Account</th>{{end}}{{if .Data.ManyProfiles}}<th>Profile</th>{{end}}{{if .Data.ShowOutputProfiles}}<th>Live streams</th>{{end}}<th>Last seen</th><th class="actions"><span class="sr">Actions</span></th></tr></thead>
     <tbody>
     {{- range .Data.Known}}
       <tr>
@@ -141,6 +141,7 @@
         <td>{{template "plays" (dict "Check" .Check "ID" .ID "Now" $.Data.Now)}}</td>
         {{- if gt (len $.Data.Accounts) 1}}<td>{{template "device-account" (dict "Device" . "Accounts" $.Data.Accounts "CSRF" $.Session.CSRFToken)}}</td>{{end}}
         {{- if $.Data.ManyProfiles}}<td>{{template "device-profile" (dict "Device" . "CSRF" $.Session.CSRFToken)}}</td>{{end}}
+        {{- if $.Data.ShowOutputProfiles}}<td>{{template "device-live" (dict "Device" . "Profiles" $.Data.OutputProfiles "CSRF" $.Session.CSRFToken)}}</td>{{end}}
         <td>{{ago .LastSeen $.Data.Now}}</td>
         <td class="actions">
           <details class="popover">
@@ -177,6 +178,20 @@
   <noscript><button class="small" type="submit">Save</button></noscript>
 </form>
 {{- else}}<span class="muted">{{if .Device.Account}}{{.Device.Account}}{{else}}None{{end}}</span>{{end}}
+{{- end}}
+
+{{/* How a device gets live channels (D110), for the table: its account's output profile, or one of its own. */}}
+{{define "device-live"}}
+{{- if eq (print .Device.State) "approved"}}
+<form method="post" action="/admin/devices/{{.Device.MAC}}/live" hx-post="/admin/devices/{{.Device.MAC}}/live" hx-trigger="change" hx-target="#device-sections" hx-select="#device-sections" hx-swap="outerHTML" class="cell-form">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <select name="output_profile" aria-label="How {{if .Device.Label}}{{.Device.Label}}{{else}}{{.Device.MAC}}{{end}} gets live channels">
+    <option value=""{{if not .Device.OutputProfile}} selected{{end}}>As its account's</option>
+    {{- range .Profiles}}<option value="{{.Name}}"{{if eq .Name $.Device.OutputProfile}} selected{{end}}>{{.Label}}</option>{{end}}
+  </select>
+  <noscript><button class="small" type="submit">Save</button></noscript>
+</form>
+{{- else}}<span class="muted">None</span>{{end}}
 {{- end}}
 
 {{/* The profile a device plays as (D94), for the table: an approved device chooses among its account's profiles. */}}

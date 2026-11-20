@@ -346,6 +346,14 @@ paths:
                 profile_id:
                   type: integer
                   description: One of its account's profiles, which the device plays as from now on.
+                output_profile:
+                  description: >-
+                    Its own output profile (D110), or "" to take its account's.
+                    Unknown names are refused (`bad_output_profile`).
+                  oneOf:
+                    - $ref: "#/components/schemas/OutputProfile"
+                    - type: string
+                      enum: [""]
       responses:
         "200":
           $ref: "#/components/responses/Device"
@@ -845,6 +853,8 @@ paths:
                 lineup_id:
                   type: integer
                   minimum: 1
+                output_profile:
+                  $ref: "#/components/schemas/OutputProfile"
       responses:
         "200":
           $ref: "#/components/responses/OverscanAccount"
@@ -3035,6 +3045,19 @@ components:
           oneOf:
             - $ref: "#/components/schemas/PlaybackCheck"
             - type: "null"
+        output_profile:
+          type: string
+          description: Its own output profile (D110), or "" while it takes its account's.
+    OutputProfile:
+      type: string
+      enum: [source, h264-720p, h264-1080p]
+      description: >-
+        How live channels reach a device or a player (D110): `source` as the
+        source sends them; `h264-720p` and `h264-1080p` made H.264, at up to
+        1280×720 or 1920×1080, with AAC sound in stereo, by this server's
+        ffmpeg, while transcoding is on (`transcode_video` in the settings,
+        each such stream counting against its number at a time), and as the
+        source sends them otherwise.
     Theme:
       type: object
       required: [id, name, uses, file]
@@ -3114,7 +3137,7 @@ components:
           description: How many of them read it.
     OverscanAccount:
       type: object
-      required: [id, name, lineup_id, username, token, max_streams, outputs, expires_at, ended, pin, theme_id, devices, profiles]
+      required: [id, name, lineup_id, username, token, max_streams, outputs, expires_at, ended, pin, theme_id, devices, profiles, output_profile]
       properties:
         id:
           type: integer
@@ -3148,6 +3171,8 @@ components:
         devices:
           type: integer
           description: How many approved devices belong to it.
+        output_profile:
+          $ref: "#/components/schemas/OutputProfile"
         profiles:
           type: integer
     AccountOutputs:

@@ -49,6 +49,10 @@ type Device struct {
 	// ProfileID is the profile it plays as (D94): its own, or its
 	// account's first; 0 if it has no account.
 	ProfileID int64
+
+	// OutputProfile names its own output profile (D110), "" for its
+	// account's.
+	OutputProfile string
 }
 
 // Paired reports whether the device is paired with a secret.
@@ -103,7 +107,7 @@ func truncate(s string, n int) string {
 }
 
 var deviceColumns = "id, mac, state, account_id, label, model, last_seen, created_at, " +
-	"secret_hash, paired_at, pairing_code, pairing_hash, pairing_at, " + deviceProfile("devices")
+	"secret_hash, paired_at, pairing_code, pairing_hash, pairing_at, output_profile, " + deviceProfile("devices")
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -116,7 +120,7 @@ func scanDevice(row rowScanner) (Device, error) {
 	var lastSeen, secretHash, pairedAt, pairingCode, pairingHash, pairingAt sql.NullString
 	var created string
 	if err := row.Scan(&d.ID, &d.MAC, &state, &account, &d.Label, &d.Model, &lastSeen, &created,
-		&secretHash, &pairedAt, &pairingCode, &pairingHash, &pairingAt, &d.ProfileID); err != nil {
+		&secretHash, &pairedAt, &pairingCode, &pairingHash, &pairingAt, &d.OutputProfile, &d.ProfileID); err != nil {
 		return Device{}, err
 	}
 	d.State = DeviceState(state)

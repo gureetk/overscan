@@ -40,6 +40,7 @@ import (
 	"overscan.gureet.ca/internal/catchup"
 	"overscan.gureet.ca/internal/media"
 	"overscan.gureet.ca/internal/store"
+	"overscan.gureet.ca/internal/streamprofile"
 	"overscan.gureet.ca/internal/subtitles"
 )
 
@@ -236,7 +237,8 @@ func (h *Hub) link(deviceID int64, entry store.PlayableEntry, shift bool) (strin
 	// A source that resolves gives the address only when the stream
 	// starts, so its links are continuous, which the relay makes of HLS.
 	ext := ".ts"
-	if !h.source(entry.SourceID).Resolves && hlsAddress(entry.StreamURL) && !h.relaysToRepair(entry) {
+	if !h.source(entry.SourceID).Resolves && hlsAddress(entry.StreamURL) && !h.relaysToRepair(entry) &&
+		!h.transcodesLive(deviceID) {
 		ext = ".m3u8"
 	}
 	c.shift = shift && ext == ".ts" && h.shiftDir != ""
@@ -530,6 +532,9 @@ type session struct {
 	cancel    context.CancelFunc
 	bytes     atomic.Int64
 	repairing atomic.Int32 // its requests going through ffmpeg now
+	// profile is, for a live channel, the output profile that its device
+	// or player gets it through (D110).
+	profile streamprofile.Profile
 
 	// mu: Hub.mu
 	lastActive time.Time

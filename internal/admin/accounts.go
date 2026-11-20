@@ -14,6 +14,7 @@ import (
 
 	"overscan.gureet.ca/internal/portal/output"
 	"overscan.gureet.ca/internal/store"
+	"overscan.gureet.ca/internal/streamprofile"
 )
 
 // Accounts (D102): who uses Overscan. A household starts with one account,
@@ -75,6 +76,8 @@ func accountStoreError(err error) error {
 		return badDevice(http.StatusConflict, "no_key", "This server has no key file to keep a token with.")
 	case errors.Is(err, store.ErrNotFound):
 		return badDevice(http.StatusNotFound, "no_such_account", "There is no such account.")
+	case errors.Is(err, store.ErrNoSuchProfile):
+		return badDevice(http.StatusBadRequest, "bad_output_profile", "Choose an output profile: %s.", profileNames())
 	}
 	return err
 }
@@ -246,6 +249,23 @@ func (a *Admin) setStreams(ctx context.Context, id int64, n int) (store.Account,
 		a.log.Info("an account's limit of streams set in the admin", "account", acct.Name, "streams", n)
 	}
 	acct.MaxStreams = n
+	return acct, nil
+}
+
+// setOutputProfile sets the output profile of an account's devices and
+// players (D110). Their streams take it from their next channel.
+func (a *Admin) setOutputProfile(ctx context.Context, id int64, name string) (store.Account, error) {
+	acct, err := a.account(ctx, id)
+	if err != nil {
+		return store.Account{}, err
+	}
+	if err := a.store.SetAccountOutputProfile(ctx, id, name); err != nil {
+		return store.Account{}, accountStoreError(err)
+	}
+	if name != acct.OutputProfile {
+		a.log.Info("an account's output profile set in the admin", "account", acct.Name, "output_profile", name)
+	}
+	acct.OutputProfile = name
 	return acct, nil
 }
 
@@ -434,6 +454,16 @@ type accountRow struct {
 // removed.
 func (r accountRow) Household() bool { return r.ID == householdAccount }
 
+// LiveText says how its devices and players get live channels, if not as
+// their sources send them (D110), for its card's summary.
+func (r accountRow) LiveText() string {
+	p, ok := streamprofile.Find(r.OutputProfile)
+	if !ok || !p.Transcodes() {
+		return ""
+	}
+	return "live as " + p.Label
+}
+
 // accountsData is what the Accounts page shows.
 type accountsData struct {
 	Accounts []accountRow
@@ -445,6 +475,10 @@ type accountsData struct {
 	Open                int64  // the account whose forms are open
 	Streams             []int  // the limits the page offers
 	Lineups             []store.LineupInfo
+	// OutputProfiles are the output profiles that the page offers (D110),
+	// and TranscodeNote says why they would transcode nothing now.
+	OutputProfiles []profileOption
+	TranscodeNote  string
 }
 
 // accountsData returns what the Accounts page shows; base is the portal's
@@ -481,7 +515,10 @@ func (a *Admin) accountsData(ctx context.Context, base string) (accountsData, er
 		lineupNames[l.ID] = l.Name
 	}
 	now := a.now()
-	data := accountsData{Themes: themes, Streams: []int{1, 2, 3, 4, 5, 6, 8, 10}, Lineups: lineups}
+	data := accountsData{Themes: themes, Streams: []int{1, 2, 3, 4, 5, 6, 8, 10}, Lineups: lineups, OutputProfiles: profileOptions()}
+	if data.TranscodeNote, err = a.transcodeNote(ctx); err != nil {
+		return accountsData{}, err
+	}
 	if data.OutputsOn, err = a.store.Outputs(ctx); err != nil {
 		return accountsData{}, err
 	}
@@ -628,6 +665,11 @@ func (a *Admin) accountAction(w http.ResponseWriter, r *http.Request, s store.Ad
 				notice = acct.Name + "'s players can read its playlist and guide at the addresses below."
 			}
 		}
+	case "live":
+		if acct, err = a.setOutputProfile(ctx, id, r.PostFormValue("output_profile")); err == nil {
+			notice = acct.Name + "'s devices and players get live channels " + profileText(acct.OutputProfile) +
+				", from the next channel they start."
+		}
 	case "lineup":
 		lineupID, _, ok := formInt(r, "lineup")
 		if !ok || lineupID <= 0 {
@@ -704,6 +746,9 @@ type accountJSON struct {
 	ThemeID    int64      `json:"theme_id"`
 	Devices    int        `json:"devices"`
 	Profiles   int        `json:"profiles"`
+	// OutputProfile names how its devices and players get live channels
+	// (D110).
+	OutputProfile string `json:"output_profile"`
 }
 
 // apiOutputs are the outputs that an account may use.
@@ -716,7 +761,7 @@ type apiOutputs struct {
 func (a *Admin) accountBody(ctx context.Context, acct store.Account) (accountJSON, error) {
 	out := accountJSON{ID: acct.ID, Name: acct.Name, LineupID: acct.LineupID, Token: acct.HasToken, MaxStreams: acct.MaxStreams,
 		Outputs: apiOutputs{M3U: acct.Outputs.M3U, Xtream: acct.Outputs.Xtream}, Ended: acct.Ended(a.now()),
-		PIN: acct.PINHash != "", ThemeID: acct.ThemeID}
+		PIN: acct.PINHash != "", ThemeID: acct.ThemeID, OutputProfile: acct.OutputProfile}
 	if acct.Username != "" {
 		u := acct.Username
 		out.Username = &u
@@ -825,12 +870,15 @@ func (a *Admin) apiChangeAccount(w http.ResponseWriter, r *http.Request, _ store
 		Outputs    *apiOutputs `json:"outputs"`
 		ThemeID    *int64      `json:"theme_id"`
 		LineupID   *int64      `json:"lineup_id"`
+		Profile    *string     `json:"output_profile"`
 	}
 	if !readJSON(w, r, &body) {
 		return
 	}
-	if body.Name == nil && body.MaxStreams == nil && body.Outputs == nil && body.ThemeID == nil && body.LineupID == nil {
-		apiError(w, http.StatusBadRequest, "bad_json", "Say what to change: name, max_streams, outputs, theme_id or lineup_id.")
+	if body.Name == nil && body.MaxStreams == nil && body.Outputs == nil && body.ThemeID == nil && body.LineupID == nil &&
+		body.Profile == nil {
+		apiError(w, http.StatusBadRequest, "bad_json",
+			"Say what to change: name, max_streams, outputs, theme_id, lineup_id or output_profile.")
 		return
 	}
 	ctx := r.Context()
@@ -852,6 +900,12 @@ func (a *Admin) apiChangeAccount(w http.ResponseWriter, r *http.Request, _ store
 	}
 	if body.LineupID != nil {
 		if _, err = a.setAccountLineup(ctx, id, *body.LineupID); err != nil {
+			a.accountAnswer(w, r, id, err)
+			return
+		}
+	}
+	if body.Profile != nil {
+		if _, err = a.setOutputProfile(ctx, id, *body.Profile); err != nil {
 			a.accountAnswer(w, r, id, err)
 			return
 		}

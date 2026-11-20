@@ -33,6 +33,9 @@ type Account struct {
 	MaxStreams int
 	// Outputs are the outputs that it may use.
 	Outputs Outputs
+	// OutputProfile names the output profile of its devices and players
+	// (D110): how they get live channels, unless a device has its own.
+	OutputProfile string
 }
 
 // Outputs are the outputs that an account may use (D102). Each starts off.
@@ -68,7 +71,7 @@ func (s *Store) Account(ctx context.Context, id int64) (Account, error) {
 
 // accountColumns are what scanAccount reads.
 const accountColumns = "id, name, lineup_id, expires_at, created_at, COALESCE(pin_hash, ''), COALESCE(theme_id, 0), " +
-	"COALESCE(username, ''), password_hash, token_hash IS NOT NULL, max_streams, output_m3u, output_xtream"
+	"COALESCE(username, ''), password_hash, token_hash IS NOT NULL, max_streams, output_m3u, output_xtream, output_profile"
 
 // scanAccount reads a row of accountColumns.
 func scanAccount(row rowScanner) (Account, error) {
@@ -76,7 +79,7 @@ func scanAccount(row rowScanner) (Account, error) {
 	var expires sql.NullString
 	var created string
 	err := row.Scan(&a.ID, &a.Name, &a.LineupID, &expires, &created, &a.PINHash, &a.ThemeID,
-		&a.Username, &a.PasswordHash, &a.HasToken, &a.MaxStreams, &a.Outputs.M3U, &a.Outputs.Xtream)
+		&a.Username, &a.PasswordHash, &a.HasToken, &a.MaxStreams, &a.Outputs.M3U, &a.Outputs.Xtream, &a.OutputProfile)
 	if err != nil {
 		return Account{}, err
 	}

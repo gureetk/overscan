@@ -115,14 +115,66 @@ type sink interface {
 }
 
 // sink returns where a stream for s goes, given that the response's header
-// has been written: through ffmpeg if it is continuous and the hub repairs
-// it, and to the player otherwise.
+// has been written: through ffmpeg if it is continuous and the hub
+// transcodes it to its output profile (D110) or repairs it, and to the
+// player otherwise.
 func (h *Hub) sink(ctx context.Context, w http.ResponseWriter, s *session, continuous bool) sink {
 	rc := http.NewResponseController(w)
-	if continuous && h.repairs(s) {
-		return &repairSink{h: h, s: s, ctx: ctx, w: w, rc: rc}
+	if continuous {
+		// A stream that fills a buffer is transcoded as it leaves it
+		// (shiftSink), not as it goes in.
+		if job, ok := h.transcodeJob(ctx, s); ok && s.shift == nil {
+			return &repairSink{h: h, s: s, ctx: ctx, w: w, rc: rc, job: job}
+		}
+		if h.repairs(s) {
+			return &repairSink{h: h, s: s, ctx: ctx, w: w, rc: rc, job: h.repairJob(s)}
+		}
 	}
 	return directSink{w: w, rc: rc}
+}
+
+// shiftSink returns where a screen's stream goes from a buffer (D92, D93):
+// through ffmpeg if the hub transcodes it to its output profile (D110),
+// and to the player otherwise. What went into the buffer was repaired
+// already, if it was to be.
+func (h *Hub) shiftSink(ctx context.Context, w http.ResponseWriter, s *session) sink {
+	rc := http.NewResponseController(w)
+	if job, ok := h.transcodeJob(ctx, s); ok {
+		return &repairSink{h: h, s: s, ctx: ctx, w: w, rc: rc, job: job}
+	}
+	return directSink{w: w, rc: rc}
+}
+
+// ffmpegJob is what a sink's ffmpeg does to a stream: repair it (D57) or
+// transcode it to an output profile (D110).
+type ffmpegJob struct {
+	args  []string
+	doing string // "repairing" or "transcoding", for the log
+	does  string // "repair" or "transcode", for the log
+	about []any  // more for the log
+	// take takes one of the hub's slots for it, or logs why it cannot,
+	// with about naming the stream; give gives it back.
+	take func(about []any) bool
+	give func()
+}
+
+// repairJob is the job of repairing s's stream.
+func (h *Hub) repairJob(s *session) ffmpegJob {
+	return ffmpegJob{args: repairArgs, doing: "repairing", does: "repair",
+		take: func(about []any) bool {
+			if h.repairsRunning.Add(1) > maxRepairs {
+				h.repairsRunning.Add(-1)
+				h.log.Warn("too many streams are being repaired; this one plays as it is", append(about, "most", maxRepairs)...)
+				return false
+			}
+			s.repairing.Add(1)
+			return true
+		},
+		give: func() {
+			h.repairsRunning.Add(-1)
+			s.repairing.Add(-1)
+		},
+	}
 }
 
 // directSink sends a stream to the player as it is.
@@ -163,11 +215,12 @@ type repairSink struct {
 	state   int
 	sniffed []byte // the stream's first bytes, until they tell
 
+	job      ffmpegJob
 	cmd      *exec.Cmd
 	stop     context.CancelFunc // stops ffmpeg
 	stdin    io.WriteCloser
 	messages *messageTail
-	slot     bool // holds one of the hub's repair slots
+	slot     bool // holds one of the hub's slots for its job
 
 	// Until ffmpeg sends something, what it was given is kept, unless
 	// there was too much of it.
@@ -208,7 +261,7 @@ func (r *repairSink) Write(p []byte) (int, error) {
 
 // notTS logs that the stream goes as it is, and what it starts with.
 func (r *repairSink) notTS(data []byte) {
-	r.h.log.Info("not repairing a stream that is not MPEG-TS; it plays as it is",
+	r.h.log.Info("not "+r.job.doing+" a stream that is not MPEG-TS; it plays as it is",
 		append(r.about(), "data", sniff.Describe(data))...)
 }
 
@@ -240,7 +293,7 @@ func (r *repairSink) finish() {
 		case !r.sent.Load() && r.keeping:
 			r.bypass(err)
 		case err != nil:
-			r.h.log.Warn("ffmpeg stopped repairing a stream", append(r.about(), "error", err, "ffmpeg", r.messages.String())...)
+			r.h.log.Warn("ffmpeg stopped "+r.job.doing+" a stream", append(r.about(), "error", err, "ffmpeg", r.messages.String())...)
 		}
 	}
 	_ = r.rc.Flush()
@@ -255,26 +308,23 @@ func (r *repairSink) close() {
 	}
 	if r.slot {
 		r.slot = false
-		r.h.repairsRunning.Add(-1)
-		r.s.repairing.Add(-1)
+		r.job.give()
 	}
 }
 
 // about returns the attributes that name the stream in the log.
 func (r *repairSink) about() []any {
-	return []any{"channel", r.s.channel, "source", r.h.source(r.s.sourceID).Name, "device", r.s.deviceID}
+	return append([]any{"channel", r.s.channel, "source", r.h.source(r.s.sourceID).Name, "device", r.s.deviceID}, r.job.about...)
 }
 
 // start starts ffmpeg, if a slot is free. It reports false if the stream
 // must go to the player as it is.
 func (r *repairSink) start() bool {
-	if r.h.repairsRunning.Add(1) > maxRepairs {
-		r.h.repairsRunning.Add(-1)
-		r.h.log.Warn("too many streams are being repaired; this one plays as it is", append(r.about(), "most", maxRepairs)...)
+	if !r.job.take(r.about()) {
 		return false
 	}
 	ctx, stop := context.WithCancel(r.ctx)
-	cmd := exec.CommandContext(ctx, r.h.ffmpeg, repairArgs...)
+	cmd := exec.CommandContext(ctx, r.h.ffmpeg, r.job.args...)
 	cmd.Env = []string{} // nothing from Overscan's environment
 	cmd.Dir = "/"
 	cmd.WaitDelay = repairDrain
@@ -291,15 +341,14 @@ func (r *repairSink) start() bool {
 	}
 	if err != nil {
 		stop()
-		r.h.repairsRunning.Add(-1)
-		r.h.log.Warn("cannot start ffmpeg to repair a stream; it plays as it is", append(r.about(), "error", err)...)
+		r.job.give()
+		r.h.log.Warn("cannot start ffmpeg to "+r.job.does+" a stream; it plays as it is", append(r.about(), "error", err)...)
 		return false
 	}
 	r.cmd, r.stop, r.stdin, r.slot, r.keeping = cmd, stop, stdin, true, true
-	r.s.repairing.Add(1)
 	r.output = make(chan error, 1)
 	go r.copyOut(stdout)
-	r.h.log.Info("repairing a stream with ffmpeg", r.about()...)
+	r.h.log.Info(r.job.doing+" a stream with ffmpeg", r.about()...)
 	return true
 }
 
@@ -362,7 +411,7 @@ func (r *repairSink) stopped() error {
 		return r.ctx.Err()
 	}
 	if r.sent.Load() || !r.keeping {
-		r.h.log.Warn("ffmpeg stopped repairing a stream", append(r.about(), "error", err, "ffmpeg", r.messages.String())...)
+		r.h.log.Warn("ffmpeg stopped "+r.job.doing+" a stream", append(r.about(), "error", err, "ffmpeg", r.messages.String())...)
 		return errRepairStopped
 	}
 	return r.bypass(err)
@@ -371,7 +420,7 @@ func (r *repairSink) stopped() error {
 // bypass sends the player what ffmpeg was given, which ffmpeg failed to
 // repair, and from then on the stream as it is.
 func (r *repairSink) bypass(err error) error {
-	r.h.log.Warn("ffmpeg could not repair a stream, so it plays as it is",
+	r.h.log.Warn("ffmpeg could not "+r.job.does+" a stream, so it plays as it is",
 		append(r.about(), "error", err, "ffmpeg", r.messages.String())...)
 	r.state = repairBypassing
 	kept := r.kept
