@@ -24,10 +24,14 @@ Overscan runs on a home network for the household's own devices. It trusts the a
 | Messages | Only the administrator sends them (D96). A box shows a message's text as text, never as markup, and gets only the messages sent to it; a message has at most 500 characters, and at most 50 wait at a time. |
 | Themes | Only the administrator installs them (D97). A theme is data, never code: a few named values, each checked against what it may be (colours, a font or corners from a short list, a brand of letters, digits and a few marks), in a file of at most 16 KB, from which the server writes the stylesheet itself. Colours must keep text, the focus and the accent readable. A theme's stylesheet is served without a session, as the page's own is, under a name that only the boxes are told; it holds colours, a few choices and the brand. |
 | Profiles | A profile's PIN is hashed with argon2id as the parental PIN is, and wrong ones count with the parental PIN's (D94). A box switches only among its own account's profiles, and a switch drops the parental PIN it kept. A profile's PIN is no lock: the locks stay the account's, whatever the profile. Profile names are shown as text, never as markup, on the box and in the admin. |
+| Accounts and logins | A player's password is hashed with argon2id, as the administrator's is, and is never the administrator's or a source's; wrong logins slow down as the admin's sign-in does, five from an address and 50 in all within 15 minutes, counted apart from it (D102). A right login is remembered in memory for 15 minutes, under an HMAC whose key lives only in memory, with the hash it was checked against, so that a new password stops it at once. A playlist token holds 256 random bits, kept as its SHA-256 and sealed with the key file; new addresses stop the old ones. An account's limit on its streams is checked before its sources' (D36). |
+| Outputs | Off until the administrator turns them on, and each account's too (D103, D104). They answer the server's own networks only (private, loopback, link-local, and the shared space of RFC 6598) until *Answer players anywhere* is on; the address checked is the connection's, never a header's. A player sees Overscan's own IDs and addresses, never a source's, and every stream plays through the hub within its account's limit and its source's. Playlists, guides and the API's answers are never cached. Turning a switch off, making new addresses, changing a login or ending an account stops what it let players play (D105). |
+| Rules and backups | A rule's pattern is a wildcard or a regular expression of Go's, which runs in time linear in the text, of at most 200 characters; a lineup has at most 200 rules (D107). A rule's logo is an http or https address fetched through the artwork proxy, as a source's logos are (D54). A channel's backup plays within its own source's limit (D109). |
+| Live transcodes | Off until the administrator chooses a profile that transcodes and gives *Transcoding* a number at a time (D110), with the same ffmpeg as every other transcode. |
 | Content from sources | Size caps on everything read: playlists 256 MiB, HLS playlists 2 MiB, logos 4 MiB and 25 megapixels, guides, request bodies. The parsers of M3U, XMLTV and HLS playlists, the stream analyser and the repeat filter are fuzzed. Logos are converted by Overscan and SVG is refused (D54). |
 | ffmpeg | Run with an argument list, never a shell; it reads and writes pipes only (`-protocol_whitelist pipe`), with an empty environment; at most eight at once; stopped with the stream, and with Overscan (D57). |
-| Logs | No addresses, logins, tokens, serial numbers or signatures. MAC addresses do appear, so that a device can be approved from the log; the support bundle keeps only their maker's half. |
-| Dependencies | Four direct Go modules besides the standard library, pinned in `go.sum`, checked by `govulncheck` in CI. No telemetry. |
+| Logs | No source addresses, logins, tokens, serial numbers or signatures, and no address of an output, which holds a token or a login. Players' and boxes' IP addresses appear, and MAC addresses, so that a device can be approved from the log; the support bundle takes out IP addresses and the outputs' paths, and keeps only a MAC address's maker's half. The capture log keeps no value of a parameter that can carry a login, a token or what identifies a device (D111). |
+| Dependencies | Five direct Go modules besides the standard library, pinned in `go.sum`, checked by `govulncheck` in CI. No telemetry. |
 
 ## Known limits in v0.1.0
 
@@ -36,6 +40,13 @@ Overscan runs on a home network for the household's own devices. It trusts the a
 - An M3U source can be a local file, which the admin can name; Overscan reads it as its own user, and only playlist entries come out of it.
 - The probe page's report address takes reports from anyone on the network, at most 100 of 256 KiB each.
 - Once a device is approved, its MAC address is all that a Stalker client needs, as the protocol has it. The MAG page adds its pairing secret.
+
+## Known limits of the outputs
+
+- Players that read a playlist, and those that sign in to an Xtream server, carry their token or their login in every address they ask for, as their protocols have it. Whoever sees an address can play the account's channels, so the outputs answer the server's own networks only, until told otherwise.
+- Behind a reverse proxy, every player seems to come from the proxy's address. The check of the server's own networks then lets every player through, and the proxy has to decide who reaches the outputs. Wrong logins from anyone through the proxy also make every player's logins wait, since they count by address.
+- Someone who sends 50 wrong logins in 15 minutes, from ten addresses or more, makes every player's login wait until the oldest is 15 minutes old, as the admin's sign-in does. What plays goes on, and players that use a playlist's token are not affected.
+- Overscan tells players apart by their address and their user agent, so two players behind one address with the same user agent count as one against the account's limit.
 
 ## The review before v0.1.0
 
@@ -61,3 +72,14 @@ What M5 added was checked against the plan's section 11, text and themes from th
 - **Upgrades:** the database of v0.3.0 upgrades to v0.4.0 directly, as each of M5's pre-releases did from the one before.
 
 Candidates for later: refusing the characters that change the direction of text in names and messages; a cap on how many themes may be installed.
+
+## The review in M6
+
+What M6 added was checked against the plan's section 11 and section 21.2: the outputs, which carry credentials in their addresses, above all.
+
+- **Credentials in addresses.** No log line holds an output's path, a token or a login: the outputs log the account, the player's address and what it read, and their errors name what failed, never the request. The Xtream output's capture took out the login alone; it now drops the value of every parameter that can carry a secret, as the Stalker API's does, and keeps at most 30 names and 100 bytes of each value (D111). The support bundle takes out the outputs' paths too, wherever a line holds one, as a second line of defence.
+- **Redaction in the support bundle.** Players' IPv6 addresses written without brackets went through; they are now taken out, with or without a zone, and so are IPv4 addresses that IPv6 maps.
+- **On the server's own networks by default.** Every output, the Xtream API, `get.php`, `xmltv.php` and every stream path included, goes through one check of the outputs' switch and the connection's address before it reads a login or a token. A header such as `X-Forwarded-For` cannot make a player local; `X-Forwarded-Proto` changes only the addresses that the player that sent it is given.
+- **Tokens and logins.** A playlist token is compared by its SHA-256, and making new addresses stops the old ones and what players play with them. Every path that takes a login, a stream's included, slows wrong ones down with the same count; a right one is remembered only with the hash it was checked against. A remembered login does not pass while logins wait, since that would let guesses through without the wait.
+- **Limits.** Every stream that an output serves counts against its account's limit and its source's, a backup's against its own source's, and no output gives a source's address or login to a player.
+- **Messages** reach every account's boxes, still as text, never as markup (D111).

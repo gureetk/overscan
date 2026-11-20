@@ -16,7 +16,7 @@ import (
 )
 
 // Messages (D96): the administrator sends a short message to one box, or to
-// every box of the household that runs Overscan's page. A box shows it the
+// every box that runs Overscan's page, of every account. A box shows it the
 // next time it checks, and says when it was read. Stalker clients get none:
 // the protocol notes do not say how a portal sends them one.
 
@@ -42,22 +42,22 @@ func messageStoreError(err error) error {
 }
 
 // sendMessage sends a message to the box with the MAC address, or with ""
-// to every box of the household.
+// to every box of every account.
 func (a *Admin) sendMessage(ctx context.Context, text, mac string) (store.Message, error) {
-	var deviceID int64
+	var accountID, deviceID int64
 	to := "every box"
 	if mac != "" {
 		d, err := a.store.Device(ctx, mac)
 		if err != nil {
 			return store.Message{}, deviceStoreError(err, mac)
 		}
-		if d.State != store.DeviceApproved || d.AccountID != householdAccount || !d.Paired() {
+		if d.State != store.DeviceApproved || !d.Paired() {
 			return store.Message{}, badDevice(http.StatusConflict, "not_a_box",
 				"%s does not run Overscan's page, so it cannot show a message. Stalker clients get none.", deviceName(d))
 		}
-		deviceID, to = d.ID, d.MAC
+		accountID, deviceID, to = d.AccountID, d.ID, d.MAC
 	}
-	m, err := a.store.AddMessage(ctx, householdAccount, deviceID, text, a.now())
+	m, err := a.store.AddMessage(ctx, accountID, deviceID, text, a.now())
 	if err != nil {
 		return store.Message{}, messageStoreError(err)
 	}
@@ -68,7 +68,7 @@ func (a *Admin) sendMessage(ctx context.Context, text, mac string) (store.Messag
 // deleteMessage takes a message away, from the boxes that have not shown it
 // too.
 func (a *Admin) deleteMessage(ctx context.Context, id int64) error {
-	if err := a.store.DeleteMessage(ctx, householdAccount, id); err != nil {
+	if err := a.store.DeleteMessage(ctx, 0, id); err != nil {
 		return messageStoreError(err)
 	}
 	a.log.Info("a message deleted in the admin", "message", id)
@@ -110,9 +110,9 @@ func (m messageRow) Status() string {
 	return fmt.Sprintf("Read on %d of %d boxes", m.ReadBoxes, m.Boxes)
 }
 
-// messageRows returns the household's last messages, as the page lists them.
+// messageRows returns the last messages, as the page lists them.
 func (a *Admin) messageRows(ctx context.Context) ([]messageRow, error) {
-	list, err := a.store.Messages(ctx, householdAccount, messagesListed)
+	list, err := a.store.Messages(ctx, 0, messagesListed)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +180,7 @@ func messageBody(m store.Message) apiMessage {
 }
 
 func (a *Admin) apiMessages(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
-	list, err := a.store.Messages(r.Context(), householdAccount, 100)
+	list, err := a.store.Messages(r.Context(), 0, 100)
 	if err != nil {
 		a.apiInternal(w, "cannot list the messages", err)
 		return

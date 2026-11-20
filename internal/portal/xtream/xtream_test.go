@@ -946,11 +946,11 @@ func TestSeries(t *testing.T) {
 }
 
 // What the output does not know goes to the capture log, without the
-// login.
+// login or anything else that can carry a secret.
 func TestUnknownAction(t *testing.T) {
 	h := newHarness(t)
 	var got []any
-	h.api(&got, "action", "get_something_new", "stream_id", "7")
+	h.api(&got, "action", "get_something_new", "stream_id", "7", "device_token", "tok-1234", "mac", "00:1A:79:00:00:01")
 	if len(got) != 0 {
 		t.Errorf("an unknown action: %v", got)
 	}
@@ -959,9 +959,18 @@ func TestUnknownAction(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(captures) != 1 || captures[0].Module != "xtream" || captures[0].Action != "get_something_new" ||
-		captures[0].Params != "action,password,stream_id,username" || strings.Contains(captures[0].Example, password) ||
-		strings.Contains(captures[0].Example, username) {
-		t.Errorf("captures: %+v", captures)
+		captures[0].Params != "action,device_token,mac,password,stream_id,username" {
+		t.Fatalf("captures: %+v", captures)
+	}
+	example, err := url.ParseQuery(captures[0].Example)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{"stream_id": "7", "action": "get_something_new", "username": "REDACTED",
+		"password": "REDACTED", "device_token": "REDACTED", "mac": "REDACTED"} {
+		if got := example.Get(name); got != want {
+			t.Errorf("the example's %s is %q, want %q", name, got, want)
+		}
 	}
 }
 

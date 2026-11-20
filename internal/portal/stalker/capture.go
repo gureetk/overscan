@@ -24,25 +24,6 @@ const (
 // identify a device.
 const redacted = "REDACTED"
 
-// sensitiveParams are redacted by name; sensitiveParts by part of a name.
-var (
-	sensitiveParams = []string{"sn", "mac", "login", "device_id", "device_id2", "hw_version_2", "prehash"}
-	sensitiveParts  = []string{"pass", "token", "secret", "sign", "auth", "key"}
-)
-
-func isSensitive(name string) bool {
-	n := strings.ToLower(name)
-	if slices.Contains(sensitiveParams, n) {
-		return true
-	}
-	for _, part := range sensitiveParts {
-		if strings.Contains(n, part) {
-			return true
-		}
-	}
-	return false
-}
-
 // capture records a request the API does not implement (D13): its module,
 // action and parameter names, with an example whose sensitive values are
 // redacted and whose other values are cut short.
@@ -62,7 +43,7 @@ func (a *API) capture(ctx context.Context, r *http.Request, d store.Device, modu
 	example := url.Values{}
 	for i, name := range names {
 		value := r.Form.Get(name)
-		if isSensitive(name) {
+		if store.SensitiveParam(name) {
 			value = redacted
 		}
 		names[i] = cut(name, maxCaptureNameLen)

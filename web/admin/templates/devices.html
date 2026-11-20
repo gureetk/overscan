@@ -284,7 +284,7 @@
       <select name="to" aria-label="Send it to">
         <option value="">To every box</option>
         {{- range .Data.Boxes}}
-        <option value="{{.MAC}}"{{if eq .MAC $.Data.MessageTo}} selected{{end}}>To {{if .Label}}{{.Label}}{{else}}{{.MAC}}{{end}}</option>
+        <option value="{{.MAC}}"{{if eq .MAC $.Data.MessageTo}} selected{{end}}>To {{if .Label}}{{.Label}}{{else}}{{.MAC}}{{end}}{{if gt (len $.Data.Accounts) 1}} ({{.Account}}){{end}}</option>
         {{- end}}
       </select>
       <button class="primary" type="submit">Send</button>

@@ -381,7 +381,7 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 		householdTheme = fmt.Sprintf("theme %d", household.ThemeID)
 	}
 	// Messages say only how many, never what.
-	messages, err := a.store.Messages(ctx, householdAccount, store.MaxWaitingMessages)
+	messages, err := a.store.Messages(ctx, 0, store.MaxWaitingMessages)
 	if err != nil {
 		return "", err
 	}
@@ -577,10 +577,19 @@ func (a *Admin) bundleLog(context.Context, time.Time) (string, error) {
 
 // What redact leaves out.
 var (
-	macPattern   = regexp.MustCompile(`(?i)\b((?:[0-9a-f]{2}[:-]){2}[0-9a-f]{2})([:-])[0-9a-f]{2}[:-][0-9a-f]{2}[:-][0-9a-f]{2}\b`)
-	ipv4Pattern  = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
-	ipv6Pattern  = regexp.MustCompile(`\[[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*\]`)
-	urlPattern   = regexp.MustCompile(`(?i)\b(?:https?|rtmp|rtsp|udp|ftp)://[^\s"']+`)
+	macPattern  = regexp.MustCompile(`(?i)\b((?:[0-9a-f]{2}[:-]){2}[0-9a-f]{2})([:-])[0-9a-f]{2}[:-][0-9a-f]{2}[:-][0-9a-f]{2}\b`)
+	ipv4Pattern = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
+	ipv6Pattern = regexp.MustCompile(`\[[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*\]`)
+	// bareIPv6 finds what may be an IPv6 address without brackets, such as
+	// a player's in a log line: hex groups with two colons or more, an
+	// IPv4 address at the end for one that maps one, and a zone.
+	bareIPv6   = regexp.MustCompile(`(?i)(?:[0-9a-f]{0,4}:){2,7}(?:(?:\d{1,3}\.){3}\d{1,3}|[0-9a-f]{1,4})?(?:%[0-9a-z._-]+)?`)
+	urlPattern = regexp.MustCompile(`(?i)\b(?:https?|rtmp|rtsp|udp|ftp)://[^\s"']+`)
+	// tokenPath and loginPath find the paths of the outputs' addresses,
+	// which hold an account's playlist token or its login (D103, D104), in
+	// a line that holds one without the rest of its address.
+	tokenPath    = regexp.MustCompile(`/(playlist|epg)/[A-Za-z0-9_-]{16,}`)
+	loginPath    = regexp.MustCompile(`/(live|movie|series|timeshift)/[^/\s"']+/[^/\s"']+/`)
 	lookupHost   = regexp.MustCompile(`\blookup [^\s":]+`)
 	certHosts    = regexp.MustCompile(`certificate is valid for [^"]*?, not [^\s"]+`)
 	secretParams = regexp.MustCompile(`(?i)\b(\w*(?:password|passwd|username|token|auth|signature|secret)\w*|user|key|mac|sn)=([^&\s"]+)`)
@@ -590,6 +599,8 @@ var (
 // a household: addresses, logins and most of each MAC address.
 func redact(text string) string {
 	text = urlPattern.ReplaceAllString(text, "[address]")
+	text = tokenPath.ReplaceAllString(text, "/$1/[token]")
+	text = loginPath.ReplaceAllString(text, "/$1/[login]/")
 	text = secretParams.ReplaceAllStringFunc(text, func(m string) string {
 		name, value, _ := strings.Cut(m, "=")
 		if value == "[redacted]" {
@@ -602,20 +613,33 @@ func redact(text string) string {
 	})
 	text = macPattern.ReplaceAllString(text, "${1}${2}xx${2}xx${2}xx")
 	text = ipv6Pattern.ReplaceAllString(text, "[IPv6 address]")
+	text = bareIPv6.ReplaceAllStringFunc(text, func(m string) string {
+		addr, _, _ := strings.Cut(m, "%")
+		if ip := net.ParseIP(addr); ip != nil && strings.Contains(addr, ":") {
+			return addressKind(ip)
+		}
+		return m
+	})
 	text = ipv4Pattern.ReplaceAllStringFunc(text, func(m string) string {
 		ip := net.ParseIP(m)
-		switch {
-		case ip == nil:
+		if ip == nil {
 			return m
-		case ip.IsLoopback():
-			return "[loopback]"
-		case ip.IsPrivate() || ip.IsLinkLocalUnicast():
-			return "[local address]"
 		}
-		return "[address]"
+		return addressKind(ip)
 	})
 	text = lookupHost.ReplaceAllString(text, "lookup [host]")
 	return certHosts.ReplaceAllString(text, "certificate is valid for [hosts], not [host]")
+}
+
+// addressKind says what kind of address an IP address is, in its place.
+func addressKind(ip net.IP) string {
+	switch {
+	case ip.IsLoopback():
+		return "[loopback]"
+	case ip.IsPrivate() || ip.IsLinkLocalUnicast():
+		return "[local address]"
+	}
+	return "[address]"
 }
 
 // flushed flushes tw, which writes to b, and returns what b holds.
