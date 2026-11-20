@@ -47,3 +47,17 @@ Each row of the plan's section 11 was checked against the code. What changed:
 - **Backups** are private and never overwrite a file (#62), and the support bundle is redacted (#63).
 
 Candidates for later: refusing private addresses per source; a system call filter in the systemd unit (`SystemCallFilter=@system-service`), once tested in a container.
+
+## The review in M5
+
+What M5 added was checked against the plan's section 11, text and themes from the admin that boxes show above all:
+
+- **Text from the admin on the boxes.** The page shows profile names and messages as text, never as markup, and tests send markup through both, in the admin and to the box. A profile's name has 1 to 32 characters and a message 1 to 500, without control characters but a message's line breaks.
+- **Themes are data.** A theme file is checked field by field, and anything else in it is refused. Colours must be colours and keep text readable, the font and corners come from short lists, and the brand holds only letters, digits, spaces and a few marks, so it cannot leave its string in the stylesheet: a fuzz test checks that. The server writes the stylesheet itself, and a theme's stylesheet answers without a session only under its current name.
+- **The admin's new forms and API** need the session's CSRF token, which their tests check. A theme file is read up to 16 KB, within the form's 64 KB.
+- **What a device can reach.** A box reads and marks only its own messages, and switches only among its own account's profiles, with wrong profile PINs counted with the parental PIN's. Past the household's end date, a box gets no session and a Stalker client only its profile and the end date.
+- **The shared tuner** stays off until the administrator turns it on.
+- **The support bundle** now counts themes and messages, without their names or text.
+- **Upgrades:** the database of v0.3.0 upgrades to M5's last pre-release directly, as each pre-release did from the one before.
+
+Candidates for later: refusing the characters that change the direction of text in names and messages; a cap on how many themes may be installed.

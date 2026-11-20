@@ -108,7 +108,7 @@ Short records of what was decided and why, newest at the bottom of each section.
 
 1. **Shared-tuner mode.** Include at all, and if so, off by default? It lets several local viewers share one upstream connection, which some providers' terms may not allow. Answered by D93.
 2. **A native Overscan source type in the reference client.** Later, once the portal is stable, and only if the Xtream output (M6) is not enough.
-3. **GitHub organisation.** Move the repository to an organisation before it goes public? This no longer blocks code, since the module path does not depend on it (D30).
+3. **GitHub organisation.** Move the repository to an organisation? It went public under its first owner (D80). This no longer blocks code, since the module path does not depend on it (D30).
 4. **Lineups and packages: two concepts or one.** Answered by D45.
 5. **Is v0.1 public.** Answered by D49.
 6. **HDHomeRun emulation in M6 or the backlog.**

@@ -500,6 +500,7 @@ Each phase ends with a pre-release of v0.4.0 (`v0.4.0-alpha.N`), as M4's did wit
 - Compatibility matrix for third-party Stalker clients (OTT Navigator, TiviMate) and MAG emulators (StbEmu), from tests with those apps. **So far:** [`compatibility.md`](compatibility.md) says how to connect each app and what Overscan gives it; what each does waits for tests with the apps.
 - The milestone's hardening: the security checklist on what is new (text and themes from the admin shown on boxes above all), docs, and an upgrade test from v0.3.0.
 *Done when:* two profiles on one box keep their own favourites and resume points, and the box switches between them; an account past its end date is refused on the box and in Stalker clients, which see the date; a message from the admin shows on the box; a theme installed in the admin changes the box's look for the household or for one profile; with the shared tuner on, two boxes on one channel, or a box and a recording of that channel, use one connection to the source; and a compatibility matrix says what OTT Navigator, TiviMate and StbEmu do with Overscan. A household that adds no profile, sets no end date, sends no message and installs no theme sees nothing change.
+*Status:* built, in pre-releases of v0.4.0 from 20 November 2026: the shared tuner (alpha.1), profiles (alpha.2), the end date (alpha.3), messages (alpha.4), themes (alpha.5), and the review with the docs (alpha.6). The compatibility matrix waits for tests with the apps, and v0.4.0 for tests on the box.
 
 ### M6: The household IPTV hub (L)
 The all-in-one stage: every player in the house gets a curated lineup through the protocol it speaks. Details in section 21.
@@ -638,7 +639,7 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 - Ministra-style management REST is in the backlog.
 - Copies of the old Stalker Middleware source are off-limits under the clean-room policy.
 - Optional TMDB metadata: in M4, with the administrator's own key (D88).
-- Repository: private on GitHub for now, and v0.1.0 a private release (D49).
+- Repository: public on GitHub (D80); v0.1.0 was a private release (D49).
 - Logo: option C, "Bleed" (a disc cropped by a screen frame, with the cropped part ghosted out), in ink, paper and teal. Apache-2.0.
 - Admin sign-in: one administrator, an argon2id password set on the server, sessions in the database, and the portal's address unless `admin_listen` names another (D44).
 - Lineups and packages are one concept: the lineup says what an account sees (D45).
@@ -662,9 +663,9 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 
 1. Answered: shared-tuner mode is in, off by default, the subscriber's call (D93).
 2. A native Overscan source type in the reference client later, or is the Xtream output (M6) enough?
-3. GitHub organization: move the repository before it goes public? This no longer blocks code, since the module path does not depend on it.
+3. GitHub organization: move the repository to one? This no longer blocks code, since the module path does not depend on it.
 4. Answered: lineups and packages are one concept (D45).
-5. Answered: v0.1 is a private release; the repository stays private for now (D49).
+5. Answered: v0.1 was a private release (D49), and the repository is public since (D80).
 6. HDHomeRun emulation in M6 or the backlog?
 7. Answered: the MAG UI keeps its device secret in a cookie, with a copy in a `SaveUserData` file (D38).
 

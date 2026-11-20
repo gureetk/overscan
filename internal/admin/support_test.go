@@ -6,6 +6,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -55,6 +56,13 @@ func TestSupportBundle(t *testing.T) {
 		CheckedAt: ta.clock.Add(-time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
+	th, _, err := ta.st.InstallTheme(context.Background(), "Evergreen", []byte(evergreenTheme), ta.clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ta.st.SetAccountTheme(context.Background(), householdAccount, th.ID); err != nil {
+		t.Fatal(err)
+	}
 	ta.UseSupport(Support{
 		Log: func() []string {
 			return []string{
@@ -94,7 +102,9 @@ func TestSupportBundle(t *testing.T) {
 		"sources.txt":  {"main (m3u, ID ", "Channels", "Last error", "dial tcp [address]:8080"},
 		"lineup.txt": {"Channels: 4, 4 shown", "Stream repair: every channel by default: false; HLS too: false; 0 channels set to be repaired, 0 set not to be; 0 repaired in all", "Groups: 2",
 			"Recordings: room: 0 GB (0 is off); the server records: false; to come: 0, under way: 0, made: 0, failed: 0, called off: 0",
-			"Timeshift: keeps 0 minutes of a box's channel (0 is off)"},
+			"Timeshift: keeps 0 minutes of a box's channel (0 is off)",
+			fmt.Sprintf("Themes: 1 installed; the household's: theme %d; profiles with their own: 0", th.ID),
+			"Messages: 0 in the admin's list, waiting on 0 boxes"},
 		"devices.txt": {"00:1A:79:xx:xx:xx", "Living room", "MAG322", "Playback checks, the latest first:",
 			"Living room (00:1A:79:xx:xx:xx), MAG322, firmware not said, checked 1 hour ago", "  Plays: MKV\n  Does not play: DTS\n",
 			"  base: yes; started in 640 ms, picture 640x360, 1 sound track, at 3.4 s",

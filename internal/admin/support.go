@@ -328,10 +328,32 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	withPIN := 0
+	withPIN, ownTheme := 0, 0
 	for _, p := range profiles {
 		if p.PINHash != "" {
 			withPIN++
+		}
+		if p.ThemeID != 0 {
+			ownTheme++
+		}
+	}
+	themes, err := a.store.Themes(ctx)
+	if err != nil {
+		return "", err
+	}
+	householdTheme := "Overscan's own"
+	if household.ThemeID != 0 {
+		householdTheme = fmt.Sprintf("theme %d", household.ThemeID)
+	}
+	// Messages say only how many, never what.
+	messages, err := a.store.Messages(ctx, householdAccount, store.MaxWaitingMessages)
+	if err != nil {
+		return "", err
+	}
+	waiting := 0
+	for _, m := range messages {
+		if m.Expires.After(a.now()) {
+			waiting += m.Boxes - m.ReadBoxes
 		}
 	}
 	var b strings.Builder
@@ -349,6 +371,8 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 	fmt.Fprintf(&b, "Shared tuner: %v\n", sharedTuner)
 	fmt.Fprintf(&b, "The household's end date: %s\n", ends)
 	fmt.Fprintf(&b, "Profiles: %d, %d with a PIN to switch to them\n", len(profiles), withPIN)
+	fmt.Fprintf(&b, "Themes: %d installed; the household's: %s; profiles with their own: %d\n", len(themes), householdTheme, ownTheme)
+	fmt.Fprintf(&b, "Messages: %d in the admin's list, waiting on %d boxes\n", len(messages), waiting)
 	fmt.Fprintf(&b, "Stream repair: every channel by default: %v; HLS too: %v; %d channels set to be repaired, %d set not to be; %s repaired in all\n",
 		repairDefault, repairHLS, repairOn, repairOff, count(repaired))
 	fmt.Fprintf(&b, "\nGroups: %d\n", len(groups))
