@@ -221,12 +221,17 @@ type entryRow struct {
 	RepairDefault bool
 
 	// Backups are, for the entry open in the panel, the channels whose
-	// streams play when its own cannot start (D109).
-	Backups []store.EntryBackup
+	// streams play when its own cannot start (D109), and RuleBackups those
+	// that merge rules give it (D113).
+	Backups, RuleBackups []store.EntryBackup
 }
 
 // MaxBackups is how many backups a channel can have.
 func (entryRow) MaxBackups() int { return store.MaxBackups }
+
+// AllBackups counts the channels that play when the entry's stream cannot
+// start: those picked by hand and those that merge rules give it.
+func (r entryRow) AllBackups() int { return r.E.Backups + r.E.RuleBackups }
 
 // RepairChoice is the entry's own repair switch, as the edit form names
 // it: "on", "off", or "" when it follows the default.
@@ -250,10 +255,21 @@ func (r entryRow) RuleText() string {
 	var did []string
 	switch {
 	case e.Visibility != store.AsGroup:
+		if e.MergedInto != "" {
+			did = append(did, "makes it a backup of "+e.MergedInto)
+		}
+	case e.RuleHidden && e.MergedInto != "":
+		did = append(did, "hides it, as a copy of "+e.MergedInto+", which plays it when its own stream cannot start")
 	case e.RuleHidden:
 		did = append(did, "hides it")
 	case e.RuleShown:
 		did = append(did, "shows it, whatever its group")
+	}
+	switch {
+	case e.RuleBackups == 1:
+		did = append(did, "merges a copy of it into it, as its backup")
+	case e.RuleBackups > 1:
+		did = append(did, fmt.Sprintf("merges %d copies of it into it, as its backups", e.RuleBackups))
 	}
 	if e.RuleRenamed && !e.Renamed {
 		did = append(did, "names it")
@@ -401,6 +417,9 @@ func (a *Admin) openEntry(ctx context.Context, d *lineupData) error {
 	}
 	row := d.Row(e)
 	if row.Backups, err = a.store.EntryBackups(ctx, lineup, e.ID); err != nil {
+		return err
+	}
+	if row.RuleBackups, err = a.store.EntryRuleBackups(ctx, lineup, e.ID); err != nil {
 		return err
 	}
 	d.Open = &row

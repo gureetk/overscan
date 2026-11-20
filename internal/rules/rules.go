@@ -26,10 +26,17 @@ const (
 	Logo     = "logo"      // gives them a logo from an address
 	Guide    = "guide"     // shows the guide of another channel on them (D108)
 	Shift    = "timeshift" // shows their guide's times later or earlier (D108)
+	Merge    = "merge"     // makes copies of a channel its backups, and hides them (D113)
 )
 
 // Actions lists the actions in the order that the admin offers them.
-var Actions = []string{Include, Exclude, Rename, Regroup, Renumber, Logo, Guide, Shift}
+var Actions = []string{Include, Exclude, Rename, Regroup, Renumber, Logo, Guide, Shift, Merge}
+
+// What a merge rule finds copies by (D113).
+const (
+	ByGuide = "guide" // the same guide ID
+	ByName  = "name"  // the same name, without its quality words
+)
 
 // Limits.
 const (
@@ -67,6 +74,11 @@ type Rule struct {
 	From int `json:"from,omitempty" yaml:"from,omitempty"`
 	// For logo: the logo's address, http or https.
 	Logo string `json:"logo,omitempty" yaml:"logo,omitempty"`
+	// For merge: what copies have the same, ByGuide or ByName; with
+	// ByName, Replace and With change the names first. Prefer is a
+	// quality word that the copy to show first holds, if any.
+	Copies string `json:"copies,omitempty" yaml:"copies,omitempty"`
+	Prefer string `json:"prefer,omitempty" yaml:"prefer,omitempty"`
 }
 
 // Match says which channels a rule acts on: those that meet every
@@ -206,6 +218,37 @@ func Check(r Rule) (Rule, error) {
 			return Rule{}, bad("Shift the guide by 1 to %d minutes, later or earlier.", MaxShift)
 		}
 		keep.Minutes = r.Minutes
+	case Merge:
+		switch strings.ToLower(strings.TrimSpace(r.Copies)) {
+		case ByGuide:
+			if r.Replace != "" {
+				return Rule{}, bad("Text to replace applies to copies found by their names.")
+			}
+			keep.Copies = ByGuide
+		case ByName:
+			keep.Copies = ByName
+			if r.Replace != "" {
+				if err := checkText("text to replace", r.Replace, maxPattern); err != nil {
+					return Rule{}, err
+				}
+				if err := checkText("replacement", r.With, maxText); err != nil {
+					return Rule{}, err
+				}
+				if _, err := replacer(r.Replace, r.With); err != nil {
+					return Rule{}, bad("The text to replace is not a regular expression that Overscan reads: %v.", err)
+				}
+				keep.Replace, keep.With = r.Replace, r.With
+			}
+		default:
+			return Rule{}, bad("Say what copies have the same: their guide ID or their name.")
+		}
+		if prefer := strings.TrimSpace(r.Prefer); prefer != "" {
+			tag, ok := qualityTag(prefer)
+			if !ok {
+				return Rule{}, bad("A quality to show first is one of %s.", strings.Join(QualityTags, ", "))
+			}
+			keep.Prefer = tag
+		}
 	default:
 		return Rule{}, bad("Choose what the rule does: %s.", strings.Join(Actions, ", "))
 	}
@@ -367,6 +410,47 @@ func replacer(replace, with string) (Renamer, error) {
 		}
 		return out
 	}, nil
+}
+
+// Merger is a merge rule, compiled (D113): Key says what a channel's
+// copies have the same, "" for a channel that has none; Prefers whether a
+// channel is one to show first.
+type Merger struct {
+	Key     func(Channel) string
+	Prefers func(Channel) bool
+}
+
+// CompileMerge returns a checked merge rule's merger. By guide ID, the key
+// is the guide ID, whatever its case. By name, it is the name, changed as
+// the rule says, without its quality words, case, marks or spaces between
+// words, so that "Granite One HD" and "granite one (FHD)" are copies.
+func CompileMerge(r Rule) (Merger, error) {
+	m := Merger{Prefers: func(Channel) bool { return false }}
+	if r.Prefer != "" {
+		m.Prefers = func(c Channel) bool { return hasWord(c.Name, r.Prefer) }
+	}
+	if r.Copies == ByGuide {
+		m.Key = func(c Channel) string { return strings.ToLower(strings.TrimSpace(c.Guide)) }
+		return m, nil
+	}
+	change := func(name string) string { return name }
+	if r.Replace != "" {
+		rep, err := replacer(r.Replace, r.With)
+		if err != nil {
+			return Merger{}, err
+		}
+		change = rep
+	}
+	m.Key = func(c Channel) string {
+		var words []string
+		for _, w := range strings.FieldsFunc(change(c.Name), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
+			if _, quality := qualityTag(w); !quality {
+				words = append(words, strings.ToLower(w))
+			}
+		}
+		return strings.Join(words, " ")
+	}
+	return m, nil
 }
 
 // ErrTooMany is the error for a lineup with as many rules as it may have.

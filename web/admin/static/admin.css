@@ -803,6 +803,8 @@ details.lineups-menu > .menu { left: auto; right: 0; min-width: 22rem; max-width
 .backup-text strong { display: block; font-size: 0.875rem; font-weight: 600; overflow-wrap: anywhere; }
 .backup-text .muted { display: block; font-size: 0.8125rem; }
 .channel-panel .backups .hint { margin: 0.5rem 0 0; }
+.channel-panel .backups h4 { margin: 1rem 0 0; font-size: 0.8125rem; font-weight: 600; }
+.channel-panel .backups .rule-backups { margin: 0.625rem 0 0; }
 
 /* The Live TV pages' tabs: a lineup's channels and its rules (D107). */
 .lineup-tabs { display: flex; gap: 0.125rem; padding: 0.1875rem; border-radius: 10px; background: var(--chip); }
@@ -840,6 +842,8 @@ details.lineups-menu > .menu { left: auto; right: 0; min-width: 22rem; max-width
   .rule-form:not(:has(.rule-action option[value="logo"]:checked)) .if-logo,
   .rule-form:not(:has(.rule-action option[value="guide"]:checked)) .if-guide,
   .rule-form:not(:has(.rule-action option[value="timeshift"]:checked)) .if-timeshift,
+  .rule-form:not(:has(.rule-action option[value="merge"]:checked)) .if-merge,
+  .rule-form:has(select[name="copies"] option[value="guide"]:checked) .if-merge-name,
   .rule-form:has(input[name="rename"][value="name"]:checked) .if-replace,
   .rule-form:has(input[name="rename"][value="replace"]:checked) .if-name,
   .rule-form:has(input[name="guide_from"][value="channel"]:checked) .if-guide-replace,

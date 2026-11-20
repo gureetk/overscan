@@ -54,6 +54,25 @@ func (s *Store) EntryBackups(ctx context.Context, lineupID, entryID int64) ([]En
 	return out, err
 }
 
+// EntryRuleBackups returns the backups that the lineup's merge rules give
+// one of its entries (D113), in order: the copies of its channel that they
+// hide. It returns ErrNotFound for an entry that the lineup does not have.
+func (s *Store) EntryRuleBackups(ctx context.Context, lineupID, entryID int64) ([]EntryBackup, error) {
+	var out []EntryBackup
+	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := entryInLineup(ctx, tx, lineupID, entryID); err != nil {
+			return err
+		}
+		var err error
+		out, err = listBackups(ctx, tx, "lineup_entry_rule_backups", lineupID, entryID)
+		return err
+	})
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		err = fmt.Errorf("store: rules' backups of lineup entry %d: %w", entryID, err)
+	}
+	return out, err
+}
+
 // entryInLineup returns ErrNotFound unless the lineup has the entry.
 func entryInLineup(ctx context.Context, tx *sql.Tx, lineupID, entryID int64) error {
 	var exists bool
@@ -68,9 +87,15 @@ func entryInLineup(ctx context.Context, tx *sql.Tx, lineupID, entryID int64) err
 }
 
 func entryBackups(ctx context.Context, tx *sql.Tx, lineupID, entryID int64) ([]EntryBackup, error) {
+	return listBackups(ctx, tx, "lineup_entry_backups", lineupID, entryID)
+}
+
+// listBackups lists an entry's backups from a table of them: those picked
+// by hand, or those that rules give (D113).
+func listBackups(ctx context.Context, tx *sql.Tx, table string, lineupID, entryID int64) ([]EntryBackup, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT e.id, c.id, `+entryName+`, s.name, COALESCE(e.number, 0), c.missing_since IS NOT NULL
-		FROM lineup_entry_backups b
+		FROM `+table+` b
 		JOIN channels c ON c.id = b.channel_id
 		JOIN sources s ON s.id = c.source_id
 		JOIN lineup_entries e ON e.lineup_id = ? AND e.channel_id = c.id
@@ -186,11 +211,13 @@ func (s *Store) FindEntry(ctx context.Context, lineupID int64, text string) (int
 	return 0, ErrSeveral
 }
 
-// ChannelsWithBackups counts a lineup's entries that have backups.
+// ChannelsWithBackups counts a lineup's entries that have backups, picked
+// by hand or given by its rules (D113).
 func (s *Store) ChannelsWithBackups(ctx context.Context, lineupID int64) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, `
-		SELECT count(DISTINCT b.entry_id) FROM lineup_entry_backups b
+		SELECT count(DISTINCT b.entry_id) FROM (
+			SELECT entry_id FROM lineup_entry_backups UNION ALL SELECT entry_id FROM lineup_entry_rule_backups) b
 		JOIN lineup_entries e ON e.id = b.entry_id WHERE e.lineup_id = ?`, lineupID).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("store: backups of lineup %d: %w", lineupID, err)
@@ -212,16 +239,23 @@ func copyBackups(ctx context.Context, tx *sql.Tx, from, to int64) error {
 
 // playableBackups returns the streams of a lineup entry's backups that can
 // play, in order: from enabled sources, of channels that their sources
-// still list. Each is p with its channel's stream in place of p's own.
+// still list; those picked by hand first, then those that its rules give
+// (D113), at most MaxBackups. Each is p with its channel's stream in place
+// of p's own.
 func (s *Store) playableBackups(ctx context.Context, p PlayableEntry) ([]PlayableEntry, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.id, c.source_id, c.stream_url, c.stream_secret, s.name, s.type,
 			(SELECT secret FROM source_secrets WHERE source_id = s.id), COALESCE(c.repair, `+repairDefaultSQL+`), c.radio
-		FROM lineup_entry_backups b
+		FROM (
+			SELECT channel_id, position FROM lineup_entry_backups WHERE entry_id = ?1
+			UNION ALL
+			SELECT channel_id, `+strconv.Itoa(MaxBackups)+` + position FROM lineup_entry_rule_backups
+			WHERE entry_id = ?1 AND channel_id NOT IN (SELECT channel_id FROM lineup_entry_backups WHERE entry_id = ?1)) b
 		JOIN channels c ON c.id = b.channel_id
 		JOIN sources s ON s.id = c.source_id
-		WHERE b.entry_id = ? AND s.enabled = 1 AND c.missing_since IS NULL
-		ORDER BY b.position`, p.EntryID)
+		WHERE s.enabled = 1 AND c.missing_since IS NULL AND c.id <> ?2
+		ORDER BY b.position
+		LIMIT ?3`, p.EntryID, p.ChannelID, MaxBackups)
 	if err != nil {
 		return nil, err
 	}

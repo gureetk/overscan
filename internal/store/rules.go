@@ -34,6 +34,10 @@ type LineupRule struct {
 	rules.Rule
 	// Matches counts the channels of the lineup that it matches.
 	Matches int
+	// For a merge rule (D113): CopiesMerged counts the channels that it
+	// merges into others, and ChannelsMerged the channels that it merges
+	// them into.
+	CopiesMerged, ChannelsMerged int
 }
 
 // LineupRules returns a lineup's rules, in order, each with how many
@@ -54,9 +58,21 @@ func (s *Store) LineupRules(ctx context.Context, lineupID int64) ([]LineupRule, 
 			if err != nil {
 				return err
 			}
-			for _, e := range entries {
+			var matched []int
+			for i, e := range entries {
 				if !e.missing && m.Matches(e.ch) {
 					r.Matches++
+					matched = append(matched, i)
+				}
+			}
+			if r.Action == rules.Merge {
+				merger, err := rules.CompileMerge(r.Rule)
+				if err != nil {
+					return err
+				}
+				for _, g := range copiesOf(entries, matched, merger) {
+					r.CopiesMerged += len(g) - 1
+					r.ChannelsMerged++
 				}
 			}
 			out = append(out, r)
@@ -299,6 +315,12 @@ type ruleEntry struct {
 	rulePinned bool
 	guide      sql.NullInt64 // the channel whose guide it shows (D108)
 	shift      sql.NullInt64 // seconds
+
+	// What the administrator set, and whether its source is on, for the
+	// merge rules, which show the copy that devices see first (D113).
+	handHidden sql.NullInt64
+	handGroup  sql.NullInt64
+	enabled    bool
 }
 
 // ruleEntries reads every entry of a lineup with its channel.
@@ -306,8 +328,9 @@ func ruleEntries(ctx context.Context, tx *sql.Tx, lineupID int64) ([]ruleEntry, 
 	rows, err := tx.QueryContext(ctx, `
 		SELECT e.id, c.id, COALESCE(e.number, 0), e.pinned, c.missing_since IS NOT NULL, c.source_id, c.position,
 			COALESCE(k.name, ''), c.name, c.xmltv_id,
-			e.rule_hidden, e.rule_name, e.rule_group_id, e.rule_logo, e.rule_pinned, e.rule_guide_id, e.rule_guide_shift
-		FROM lineup_entries e JOIN channels c ON c.id = e.channel_id
+			e.rule_hidden, e.rule_name, e.rule_group_id, e.rule_logo, e.rule_pinned, e.rule_guide_id, e.rule_guide_shift,
+			e.hidden, e.group_id, s.enabled
+		FROM lineup_entries e JOIN channels c ON c.id = e.channel_id JOIN sources s ON s.id = c.source_id
 			LEFT JOIN categories k ON k.id = c.category_id
 		WHERE e.lineup_id = ?`, lineupID)
 	if err != nil {
@@ -319,7 +342,8 @@ func ruleEntries(ctx context.Context, tx *sql.Tx, lineupID int64) ([]ruleEntry, 
 		var e ruleEntry
 		if err := rows.Scan(&e.id, &e.channel, &e.number, &e.pinned, &e.missing, &e.source, &e.position,
 			&e.ch.Category, &e.ch.Name, &e.ch.Guide,
-			&e.hidden, &e.name, &e.groupID, &e.logo, &e.rulePinned, &e.guide, &e.shift); err != nil {
+			&e.hidden, &e.name, &e.groupID, &e.logo, &e.rulePinned, &e.guide, &e.shift,
+			&e.handHidden, &e.handGroup, &e.enabled); err != nil {
 			return nil, err
 		}
 		e.ch.Source = e.source
@@ -346,6 +370,11 @@ func applyRules(ctx context.Context, tx *sql.Tx, lineupID int64) error {
 			lineupID); err != nil {
 			return err
 		}
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM lineup_entry_rule_backups WHERE entry_id IN (SELECT id FROM lineup_entries WHERE lineup_id = ?)`,
+			lineupID); err != nil {
+			return err
+		}
 		return removeEmptyGroups(ctx, tx, lineupID)
 	}
 	entries, err := ruleEntries(ctx, tx, lineupID)
@@ -364,6 +393,8 @@ func applyRules(ctx context.Context, tx *sql.Tx, lineupID int64) error {
 	var guides *guideNames
 	effects := make([]effect, len(entries))
 	var numberings []numbering
+	backups := make([][]int64, len(entries)) // the channels that merge rules make an entry's backups
+	var seen *groupVisibility
 	for _, r := range list {
 		if r.Off {
 			continue
@@ -373,6 +404,7 @@ func applyRules(ctx context.Context, tx *sql.Tx, lineupID int64) error {
 			return fmt.Errorf("rule %d: %w", r.ID, err)
 		}
 		var rename rules.Renamer
+		var merger rules.Merger
 		switch r.Action {
 		case rules.Rename:
 			rename, err = rules.CompileRename(r.Rule)
@@ -380,6 +412,11 @@ func applyRules(ctx context.Context, tx *sql.Tx, lineupID int64) error {
 			rename, err = rules.CompileGuide(r.Rule)
 			if guides == nil {
 				guides = newGuideNames(entries)
+			}
+		case rules.Merge:
+			merger, err = rules.CompileMerge(r.Rule)
+			if err == nil && seen == nil {
+				seen, err = loadGroupVisibility(ctx, tx, lineupID)
 			}
 		}
 		if err != nil {
@@ -416,12 +453,41 @@ func applyRules(ctx context.Context, tx *sql.Tx, lineupID int64) error {
 				}
 			case rules.Shift:
 				ef.shift = sql.NullInt64{Int64: int64(r.Minutes) * 60, Valid: true}
-			case rules.Renumber:
+			case rules.Renumber, rules.Merge:
 				matched = append(matched, i)
 			}
 		}
-		if r.Action == rules.Renumber {
+		switch r.Action {
+		case rules.Renumber:
 			numberings = append(numberings, numbering{from: r.From, entries: matched})
+		case rules.Merge:
+			for _, g := range copiesOf(entries, matched, merger) {
+				// The copy that devices see comes first, then one of the
+				// quality that the rule prefers, then the lineup's order.
+				rank := func(i int) int {
+					r := 0
+					if !seen.shows(entries[i], effects[i].hidden) {
+						r += 2
+					}
+					if !merger.Prefers(entries[i].ch) {
+						r++
+					}
+					return r
+				}
+				slices.SortStableFunc(g, func(a, b int) int {
+					x, y := entries[a], entries[b]
+					return cmp.Or(cmp.Compare(rank(a), rank(b)), compareNumbers(x.number, y.number),
+						cmp.Compare(x.source, y.source), cmp.Compare(x.position, y.position))
+				})
+				backups[g[0]] = backups[g[0]][:0]
+				for _, i := range g[1:] {
+					effects[i].hidden = sql.NullInt64{Int64: 1, Valid: true}
+					backups[i] = nil
+					if len(backups[g[0]]) < MaxBackups {
+						backups[g[0]] = append(backups[g[0]], entries[i].channel)
+					}
+				}
+			}
 		}
 	}
 
@@ -470,10 +536,159 @@ func applyRules(ctx context.Context, tx *sql.Tx, lineupID int64) error {
 			return err
 		}
 	}
+	if err := writeRuleBackups(ctx, tx, lineupID, entries, backups); err != nil {
+		return err
+	}
 	if err := numberByRules(ctx, tx, lineupID, entries, numberings); err != nil {
 		return err
 	}
 	return removeEmptyGroups(ctx, tx, lineupID)
+}
+
+// copiesOf groups the entries that a merge rule matched, as indexes into
+// entries, by what its copies have the same: the groups of two or more,
+// each in the lineup's order. Channels that their sources no longer list,
+// or whose sources are off, are no one's copies.
+func copiesOf(entries []ruleEntry, matched []int, merger rules.Merger) [][]int {
+	byKey := map[string][]int{}
+	var keys []string
+	for _, i := range matched {
+		e := entries[i]
+		if e.missing || !e.enabled {
+			continue
+		}
+		key := merger.Key(e.ch)
+		if key == "" {
+			continue
+		}
+		if _, ok := byKey[key]; !ok {
+			keys = append(keys, key)
+		}
+		byKey[key] = append(byKey[key], i)
+	}
+	var out [][]int
+	for _, key := range keys {
+		if g := byKey[key]; len(g) > 1 {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
+// compareNumbers orders numbers up, with 0, no number, last.
+func compareNumbers(a, b int) int {
+	switch {
+	case a == b:
+		return 0
+	case a == 0:
+		return 1
+	case b == 0:
+		return -1
+	}
+	return cmp.Compare(a, b)
+}
+
+// groupVisibility says which of a lineup's groups are hidden, and which
+// group each category is in, so that a merge rule can show the copy that
+// devices see.
+type groupVisibility struct {
+	hidden     map[int64]bool
+	categories map[categoryKey]int64
+}
+
+type categoryKey struct {
+	source int64
+	name   string
+}
+
+func loadGroupVisibility(ctx context.Context, tx *sql.Tx, lineupID int64) (*groupVisibility, error) {
+	g := &groupVisibility{hidden: map[int64]bool{}, categories: map[categoryKey]int64{}}
+	rows, err := tx.QueryContext(ctx, "SELECT id, hidden FROM lineup_groups WHERE lineup_id = ?", lineupID)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var id int64
+		var hidden bool
+		if err := rows.Scan(&id, &hidden); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		g.hidden[id] = hidden
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows, err = tx.QueryContext(ctx, "SELECT source_id, category, group_id FROM lineup_categories WHERE lineup_id = ?", lineupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var k categoryKey
+		var group int64
+		if err := rows.Scan(&k.source, &k.name, &group); err != nil {
+			return nil, err
+		}
+		g.categories[k] = group
+	}
+	return g, rows.Err()
+}
+
+// shows reports whether devices see an entry, as far as the administrator
+// and the rules so far have it: shown or hidden by hand, else by a rule,
+// else as its group is.
+func (g *groupVisibility) shows(e ruleEntry, ruleHidden sql.NullInt64) bool {
+	switch {
+	case e.handHidden.Valid:
+		return e.handHidden.Int64 == 0
+	case ruleHidden.Valid:
+		return ruleHidden.Int64 == 0
+	case e.handGroup.Valid:
+		return !g.hidden[e.handGroup.Int64]
+	}
+	group, ok := g.categories[categoryKey{e.source, e.ch.Category}]
+	return !ok || !g.hidden[group]
+}
+
+// writeRuleBackups stores the backups that merge rules give a lineup's
+// entries, where they changed.
+func writeRuleBackups(ctx context.Context, tx *sql.Tx, lineupID int64, entries []ruleEntry, backups [][]int64) error {
+	have := map[int64][]int64{}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT b.entry_id, b.channel_id FROM lineup_entry_rule_backups b JOIN lineup_entries e ON e.id = b.entry_id
+		WHERE e.lineup_id = ? ORDER BY b.entry_id, b.position`, lineupID)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var entry, channel int64
+		if err := rows.Scan(&entry, &channel); err != nil {
+			rows.Close()
+			return err
+		}
+		have[entry] = append(have[entry], channel)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for i, e := range entries {
+		if slices.Equal(backups[i], have[e.id]) {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM lineup_entry_rule_backups WHERE entry_id = ?", e.id); err != nil {
+			return err
+		}
+		for n, channel := range backups[i] {
+			if _, err := tx.ExecContext(ctx, "INSERT INTO lineup_entry_rule_backups (entry_id, position, channel_id) VALUES (?, ?, ?)",
+				e.id, n+1, channel); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // guideNames finds a lineup's channels by their names, for the rules that
