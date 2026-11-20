@@ -114,7 +114,11 @@ This is for an app with a Stalker portal option, which talks to the server's API
 
 `devices list` shows every device and its state. [`compatibility.md`](compatibility.md) says how to connect OTT Navigator and TiviMate, and StbEmu, which runs Overscan's page as a box does, and what each did when tried.
 
-## 5. The debug playlist
+## 5. Players: a playlist and a guide
+
+Players such as Kodi, VLC or TiviMate can read an account's playlist and guide, once *Accounts* → *Outputs for players* is on, and the account's own *Playlist and guide*. [`outputs.md`](outputs.md) says how, and what the player gets. The outputs answer players on the server's own networks only, until you say otherwise.
+
+The debug playlist, for the administrator alone, is still there:
 
     ./overscan -config overscan.yaml debug playlist
 

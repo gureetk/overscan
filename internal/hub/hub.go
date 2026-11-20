@@ -140,6 +140,13 @@ type Hub struct {
 	shiftDir string
 	tuners   sync.WaitGroup
 
+	// players are the players that the outputs serve, by account, address
+	// and user agent, and by device ID (D103).
+	playersMu  sync.Mutex
+	players    map[playerKey]*Player
+	playerByID map[int64]*Player
+	nextPlayer int64
+
 	mu          sync.Mutex
 	sessions    map[uint64]*session // by token nonce
 	unrelayable map[int64]time.Time // channels whose HLS the relay could not follow, by ID, until when (D61)
@@ -177,6 +184,8 @@ func New(st *store.Store, log *slog.Logger, version string, sources map[int64]So
 
 		unrelayable: map[int64]time.Time{},
 		shared:      map[int64]*session{},
+		players:     map[playerKey]*Player{},
+		playerByID:  map[int64]*Player{},
 	}
 	h.SetSources(sources)
 	return h
@@ -306,6 +315,9 @@ type Stream struct {
 	Kind      string // PlaysChannel, PlaysMovie, PlaysEpisode or PlaysArchive
 	DeviceID  int64
 	AccountID int64 // the account of the device or player, or of the box that asked for a recording; 0 if none (D102)
+	// Player names the player of an output that plays it (D103), "" for a
+	// device's stream.
+	Player    string
 	EntryID   int64 // the lineup entry that plays, or whose past programme plays; 0 for a film or an episode
 	ItemID    int64 // the film's title ID or the episode's ID, 0 for a channel
 	SourceID  int64
@@ -362,6 +374,12 @@ func (h *Hub) Streams() []Stream {
 			Channel: s.channel, Started: s.started, Bytes: from.bytes.Load(), HLS: from.hls, Repaired: from.repairing.Load() > 0,
 			Converted: s.converting.Load() > 0, Playing: s.active(now), Timeshift: s.shift != nil || s.canShift,
 			Shared: s.tuner != nil,
+		}
+		if IsPlayer(s.deviceID) {
+			st.Player = "A player"
+			if p, ok := h.PlayerOf(s.deviceID); ok {
+				st.Player = p.Describe()
+			}
 		}
 		switch {
 		case s.transcoding.Load() > 0:

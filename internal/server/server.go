@@ -21,6 +21,7 @@ import (
 	"overscan.gureet.ca/internal/library"
 	"overscan.gureet.ca/internal/playcheck"
 	"overscan.gureet.ca/internal/portal/device"
+	"overscan.gureet.ca/internal/portal/m3u"
 	"overscan.gureet.ca/internal/portal/stalker"
 	"overscan.gureet.ca/internal/recorder"
 	"overscan.gureet.ca/internal/store"
@@ -105,6 +106,10 @@ func New(cfg config.Config, log *slog.Logger, version string, svc Services) *Ser
 	mux.Handle("GET /live/", svc.Hub)
 	mux.Handle("GET /vod/", svc.Hub)
 	mux.Handle("GET /archive/", svc.Hub)
+	// The outputs that players use (D103), off until the administrator
+	// turns them on.
+	logins := admin.NewLogins(svc.Store)
+	m3u.New(svc.Store, svc.Hub, logins, log).Register(mux)
 	mux.HandleFunc("GET /debug/lineup.m3u", s.handleDebugLineup)
 	mux.HandleFunc("GET /debug/play/{entry}", s.handleDebugPlay)
 	s.handler = mux

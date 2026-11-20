@@ -366,3 +366,57 @@ func TestLogins(t *testing.T) {
 		t.Errorf("a wrong token: %v", err)
 	}
 }
+
+// The Accounts page turns the outputs on, and an account's playlist, which
+// makes it a token and shows its addresses (D103).
+func TestOutputsOnAccountsPage(t *testing.T) {
+	ta := newTestAdmin(t)
+	ta.setPassword("correct horse")
+	c, csrf := ta.signIn("correct horse")
+	hx := []string{"HX-Request", "true"}
+	ctx := context.Background()
+	ta.UseSupport(Support{Listen: ":8080"})
+
+	rec := ta.do("GET", "/admin/accounts", nil, c)
+	if !strings.Contains(rec.Body.String(), `id="outputs-on" name="on" value="1" aria-describedby`) {
+		t.Error("the outputs' switch is not off at first")
+	}
+	rec = ta.do("POST", "/admin/accounts/outputs/on", url.Values{"csrf": {csrf}, "on": {"1"}}, c, hx...)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "The outputs are on") {
+		t.Errorf("turn on: status %d", rec.Code)
+	}
+	if on, _ := ta.st.Outputs(ctx); !on {
+		t.Error("the outputs are off")
+	}
+	rec = ta.do("POST", "/admin/accounts/1/playlist", url.Values{"csrf": {csrf}, "on": {"1"}}, c, hx...)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "can read its playlist and guide") {
+		t.Errorf("the household's playlist: status %d", rec.Code)
+	}
+	token, err := ta.st.AccountToken(ctx, householdAccount)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rec.Body.String(), "http://example.com:8080/playlist/"+token+".m3u") ||
+		!strings.Contains(rec.Body.String(), "http://example.com:8080/epg/"+token+".xml.gz") {
+		t.Errorf("the addresses are not shown:\n%s", rec.Body)
+	}
+	// New addresses stop the old ones.
+	rec = ta.do("POST", "/admin/accounts/1/token", url.Values{"csrf": {csrf}}, c, hx...)
+	if newer, _ := ta.st.AccountToken(ctx, householdAccount); rec.Code != http.StatusOK || newer == token || strings.Contains(rec.Body.String(), token) {
+		t.Errorf("new addresses: status %d", rec.Code)
+	}
+	rec = ta.do("POST", "/admin/accounts/1/playlist", url.Values{"csrf": {csrf}}, c, hx...)
+	if a, _ := ta.st.Account(ctx, householdAccount); rec.Code != http.StatusOK || a.Outputs.M3U || strings.Contains(rec.Body.String(), "/playlist/") {
+		t.Errorf("the playlist off: status %d, %+v", rec.Code, a.Outputs)
+	}
+	rec = ta.do("POST", "/admin/accounts/outputs/anywhere", url.Values{"csrf": {csrf}, "on": {"1"}}, c, hx...)
+	if on, _ := ta.st.OutputsAnywhere(ctx); rec.Code != http.StatusOK || !on {
+		t.Errorf("anywhere: status %d, %v", rec.Code, on)
+	}
+	// And through the API.
+	h := []string{csrfHeader, csrf}
+	rec = ta.apiDo("PATCH", "settings", `{"outputs": false, "outputs_anywhere": false}`, c, h...)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"outputs": false`) || !strings.Contains(rec.Body.String(), `"outputs_anywhere": false`) {
+		t.Errorf("settings: status %d, %s", rec.Code, rec.Body)
+	}
+}

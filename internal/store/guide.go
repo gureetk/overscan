@@ -376,6 +376,39 @@ func (s *Store) EntryProgrammes(ctx context.Context, lineupID, entryID int64, fr
 	return s.Programmes(ctx, channelID, from, to)
 }
 
+// EachLineupProgramme calls fn with each programme of every channel that a
+// lineup shows that ends after from and starts before to, by entry and
+// then by start time, without holding them all in memory. It stops at fn's
+// first error, which it returns.
+func (s *Store) EachLineupProgramme(ctx context.Context, lineupID int64, from, to time.Time, fn func(entryID int64, p Programme) error) error {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT e.id, p.id, p.start, p.stop, p.title, p.subtitle, p.description, p.category`+lineupEntryJoins+`
+		JOIN programmes p ON p.channel_id = c.id
+		JOIN source_guides sg ON sg.source_id = p.source_id AND sg.generation = p.generation
+		WHERE e.lineup_id = ? AND `+shownEntry+` AND p.start >= ? AND p.start < ? AND p.stop > ?
+		ORDER BY e.id, p.start`,
+		lineupID, from.Add(-longestProgramme).Unix(), to.Unix(), from.Unix())
+	if err != nil {
+		return fmt.Errorf("store: programmes of lineup %d: %w", lineupID, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var entryID, start, stop int64
+		var p Programme
+		if err := rows.Scan(&entryID, &p.ID, &start, &stop, &p.Title, &p.SubTitle, &p.Description, &p.Category); err != nil {
+			return fmt.Errorf("store: programmes of lineup %d: %w", lineupID, err)
+		}
+		p.Start, p.Stop = time.Unix(start, 0).UTC(), time.Unix(stop, 0).UTC()
+		if err := fn(entryID, p); err != nil {
+			return err
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("store: programmes of lineup %d: %w", lineupID, err)
+	}
+	return nil
+}
+
 // LineupProgrammes returns, by lineup entry, the programmes of every channel
 // that a lineup shows, or of the entries given, that end after from and
 // start before to, by start time. Entries without any are left out.
