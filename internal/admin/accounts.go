@@ -426,6 +426,8 @@ type accountRow struct {
 	// Server is the address that its players sign in at, while it may use
 	// the Xtream API and has a login (D104); "" otherwise.
 	Server string
+	// LineupName is the name of the lineup it sees (D106).
+	LineupName string
 }
 
 // Household says that it is the household's account, which cannot be
@@ -442,6 +444,7 @@ type accountsData struct {
 	Name                string // typed into the form that adds an account
 	Open                int64  // the account whose forms are open
 	Streams             []int  // the limits the page offers
+	Lineups             []store.LineupInfo
 }
 
 // accountsData returns what the Accounts page shows; base is the portal's
@@ -469,8 +472,16 @@ func (a *Admin) accountsData(ctx context.Context, base string) (accountsData, er
 			approved[d.AccountID]++
 		}
 	}
+	lineups, err := a.store.Lineups(ctx)
+	if err != nil {
+		return accountsData{}, err
+	}
+	lineupNames := map[int64]string{}
+	for _, l := range lineups {
+		lineupNames[l.ID] = l.Name
+	}
 	now := a.now()
-	data := accountsData{Themes: themes, Streams: []int{1, 2, 3, 4, 5, 6, 8, 10}}
+	data := accountsData{Themes: themes, Streams: []int{1, 2, 3, 4, 5, 6, 8, 10}, Lineups: lineups}
 	if data.OutputsOn, err = a.store.Outputs(ctx); err != nil {
 		return accountsData{}, err
 	}
@@ -478,7 +489,8 @@ func (a *Admin) accountsData(ctx context.Context, base string) (accountsData, er
 		return accountsData{}, err
 	}
 	for _, acct := range accounts {
-		row := accountRow{Account: acct, Devices: approved[acct.ID], ThemeName: themeNames[acct.ThemeID], IsEnded: acct.Ended(now)}
+		row := accountRow{Account: acct, Devices: approved[acct.ID], ThemeName: themeNames[acct.ThemeID], IsEnded: acct.Ended(now),
+			LineupName: lineupNames[acct.LineupID]}
 		profiles, err := a.store.Profiles(ctx, acct.ID)
 		if err != nil {
 			return accountsData{}, err
@@ -615,6 +627,13 @@ func (a *Admin) accountAction(w http.ResponseWriter, r *http.Request, s store.Ad
 			if on {
 				notice = acct.Name + "'s players can read its playlist and guide at the addresses below."
 			}
+		}
+	case "lineup":
+		lineupID, _, ok := formInt(r, "lineup")
+		if !ok || lineupID <= 0 {
+			err = badDevice(http.StatusBadRequest, "bad_lineup", "Choose a lineup.")
+		} else if acct, err = a.setAccountLineup(ctx, id, lineupID); err == nil {
+			notice = acct.Name + " sees the lineup " + a.lineupName(ctx, lineupID) + " now. Its boxes show it within five minutes."
 		}
 	case "xtream":
 		on := r.PostFormValue("on") != ""
@@ -805,12 +824,13 @@ func (a *Admin) apiChangeAccount(w http.ResponseWriter, r *http.Request, _ store
 		MaxStreams *int        `json:"max_streams"`
 		Outputs    *apiOutputs `json:"outputs"`
 		ThemeID    *int64      `json:"theme_id"`
+		LineupID   *int64      `json:"lineup_id"`
 	}
 	if !readJSON(w, r, &body) {
 		return
 	}
-	if body.Name == nil && body.MaxStreams == nil && body.Outputs == nil && body.ThemeID == nil {
-		apiError(w, http.StatusBadRequest, "bad_json", "Say what to change: name, max_streams, outputs or theme_id.")
+	if body.Name == nil && body.MaxStreams == nil && body.Outputs == nil && body.ThemeID == nil && body.LineupID == nil {
+		apiError(w, http.StatusBadRequest, "bad_json", "Say what to change: name, max_streams, outputs, theme_id or lineup_id.")
 		return
 	}
 	ctx := r.Context()
@@ -826,6 +846,12 @@ func (a *Admin) apiChangeAccount(w http.ResponseWriter, r *http.Request, _ store
 	}
 	if body.ThemeID != nil {
 		if _, err = a.setAccountTheme(ctx, id, *body.ThemeID); err != nil {
+			a.accountAnswer(w, r, id, err)
+			return
+		}
+	}
+	if body.LineupID != nil {
+		if _, err = a.setAccountLineup(ctx, id, *body.LineupID); err != nil {
 			a.accountAnswer(w, r, id, err)
 			return
 		}

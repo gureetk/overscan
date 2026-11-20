@@ -391,11 +391,27 @@ func (s *Store) SetDeviceAccount(ctx context.Context, mac string, accountID int6
 	if err := s.checkAccount(ctx, accountID); err != nil {
 		return Device{}, err
 	}
-	return s.queryDevice(ctx, m, `
+	d, err := s.queryDevice(ctx, m, `
 		UPDATE devices SET account_id = ?2,
 			profile_id = CASE WHEN account_id = ?2 THEN profile_id END
 		WHERE mac = ?1 AND state = 'approved'
 		RETURNING `+deviceColumns, m, accountID)
+	if err != nil {
+		return Device{}, err
+	}
+	// What it watched moves to the same channels in its new account's
+	// lineup (D106).
+	err = s.inTx(ctx, func(tx *sql.Tx) error {
+		var lineupID int64
+		if err := tx.QueryRowContext(ctx, "SELECT lineup_id FROM accounts WHERE id = ?", accountID).Scan(&lineupID); err != nil {
+			return err
+		}
+		return moveWatched(ctx, tx, "device_id = ?2", lineupID, d.ID)
+	})
+	if err != nil {
+		return Device{}, fmt.Errorf("store: move what device %s watched: %w", m, err)
+	}
+	return d, nil
 }
 
 // StreamsOf returns the account that a device's streams count against, and

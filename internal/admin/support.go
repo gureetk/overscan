@@ -321,8 +321,15 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	logins, limited, playlists, xtreams := 0, 0, 0, 0
+	lineups, err := a.store.Lineups(ctx)
+	if err != nil {
+		return "", err
+	}
+	logins, limited, playlists, xtreams, otherLineup := 0, 0, 0, 0, 0
 	for _, acct := range accounts {
+		if acct.LineupID != lineup {
+			otherLineup++
+		}
 		if acct.Username != "" {
 			logins++
 		}
@@ -399,6 +406,8 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 	fmt.Fprintf(&b, "Shared tuner: %v\n", sharedTuner)
 	fmt.Fprintf(&b, "The household's end date: %s\n", ends)
 	fmt.Fprintf(&b, "Accounts: %d; with a login: %d; with a limit on streams: %d\n", len(accounts), logins, limited)
+	fmt.Fprintf(&b, "Lineups: %d; accounts that see another than the household's: %d (this file describes the household's)\n",
+		len(lineups), otherLineup)
 	fmt.Fprintf(&b, "Outputs for players: on: %v; anywhere: %v; playlists on: %d; Xtream logins on: %d\n",
 		outputsOn, anywhere, playlists, xtreams)
 	fmt.Fprintf(&b, "Profiles: %d, %d with a PIN to switch to them\n", len(profiles), withPIN)

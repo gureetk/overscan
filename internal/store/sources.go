@@ -382,7 +382,7 @@ func (s *Store) UpdateSource(ctx context.Context, id int64, settings source.Sett
 		}
 	}
 	if numbers != settings.Numbers {
-		if err := numberChannels(ctx, tx, DefaultLineupID, id, true); err != nil {
+		if err := numberEverywhere(ctx, tx, id); err != nil {
 			return fail(err)
 		}
 	}
@@ -501,8 +501,14 @@ func (s *Store) DeleteSource(ctx context.Context, id int64) error {
 	if err == nil {
 		err = mustAffect(res)
 	}
+	var lineups []int64
 	if err == nil {
-		err = removeEmptyGroups(ctx, tx, DefaultLineupID)
+		lineups, err = lineupIDs(ctx, tx)
+	}
+	for _, lineupID := range lineups {
+		if err == nil {
+			err = removeEmptyGroups(ctx, tx, lineupID)
+		}
 	}
 	if err == nil {
 		err = tx.Commit()
@@ -591,7 +597,7 @@ func (s *Store) ImportSources(ctx context.Context, specs []source.Settings) ([]I
 				return fail(err)
 			}
 			if numbers != spec.Numbers {
-				if err := numberChannels(ctx, tx, DefaultLineupID, imp.ID, true); err != nil {
+				if err := numberEverywhere(ctx, tx, imp.ID); err != nil {
 					return fail(err)
 				}
 			}

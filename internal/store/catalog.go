@@ -15,8 +15,8 @@ import (
 	"overscan.gureet.ca/internal/source"
 )
 
-// DefaultLineupID is the lineup that new channels join: the household's,
-// created with schema 1.
+// DefaultLineupID is the household's first lineup, created with schema 1.
+// New channels join every lineup (D106).
 const DefaultLineupID = 1
 
 // MissingGrace is how long a channel that its source stopped listing is kept,
@@ -67,9 +67,9 @@ type CatalogChanges struct {
 // channels, in order, at the given time. It all happens in one transaction:
 // listed channels are added or updated, unlisted ones are marked missing,
 // channels missing for longer than MissingGrace are removed with their lineup
-// entries, new categories join a group of the default lineup (D47), and new
-// channels join the default lineup, under the number they want when that is
-// free and after the highest number otherwise (D40).
+// entries, new categories join a group of every lineup (D47, D106), and new
+// channels join every lineup, under the number they want when that is free
+// and after the highest number otherwise (D40).
 func (s *Store) ApplyCatalog(ctx context.Context, sourceID int64, channels []CatalogChannel, at time.Time) (CatalogChanges, error) {
 	var ch CatalogChanges
 	fail := func(err error) (CatalogChanges, error) {
@@ -219,11 +219,17 @@ func (s *Store) ApplyCatalog(ctx context.Context, sourceID int64, channels []Cat
 		return fail(err)
 	}
 
-	if err := groupCategories(ctx, tx, DefaultLineupID, sourceID); err != nil {
+	lineups, err := lineupIDs(ctx, tx)
+	if err != nil {
 		return fail(err)
 	}
-	if err := numberChannels(ctx, tx, DefaultLineupID, sourceID, false); err != nil {
-		return fail(err)
+	for _, lineupID := range lineups {
+		if err := groupCategories(ctx, tx, lineupID, sourceID); err != nil {
+			return fail(err)
+		}
+		if err := numberChannels(ctx, tx, lineupID, sourceID, false); err != nil {
+			return fail(err)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fail(err)
