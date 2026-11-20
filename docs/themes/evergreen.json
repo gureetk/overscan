@@ -1,0 +1,11 @@
+{
+  "overscan_theme": 1,
+  "name": "Evergreen",
+  "background": "#0e1512",
+  "text": "#eef4f0",
+  "accent": "#5bd69c",
+  "focus": "#f4d35e",
+  "focus_text": "#1a1405",
+  "corners": "small",
+  "brand": "The Den"
+}

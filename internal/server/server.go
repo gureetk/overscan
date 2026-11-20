@@ -43,6 +43,7 @@ type Server struct {
 	adminHandler http.Handler
 	pages        pageLog
 	admin        *admin.Admin
+	themes       themeSheets // the stylesheets of installed themes (D97)
 }
 
 // Services are what the server's handlers work with.

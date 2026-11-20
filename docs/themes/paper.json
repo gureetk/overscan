@@ -1,0 +1,9 @@
+{
+  "overscan_theme": 1,
+  "name": "Paper",
+  "background": "#f4f1ea",
+  "text": "#1d1b17",
+  "accent": "#b5452f",
+  "font": "Sans",
+  "corners": "square"
+}

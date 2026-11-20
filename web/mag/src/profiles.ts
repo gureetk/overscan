@@ -12,6 +12,8 @@ export class ProfilesModel {
   current = 0;
   /** The account's profiles, the first first. */
   list: Profile[] = [];
+  /** The stylesheet of the theme the box shows, or "" for Overscan's own (D97). */
+  theme = '';
   private client: Client;
 
   constructor(client: Client) {
@@ -33,6 +35,7 @@ export class ProfilesModel {
   set(p: Profiles): void {
     this.current = p.profile;
     this.list = p.profiles || [];
+    this.theme = p.theme || '';
   }
 
   /** several says whether the account has two profiles or more, so that the page shows them. */

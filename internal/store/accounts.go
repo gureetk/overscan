@@ -19,6 +19,7 @@ type Account struct {
 	ExpiresAt time.Time // zero if the account never expires
 	CreatedAt time.Time
 	PINHash   string // the parental PIN's argon2id hash, "" if none (D55)
+	ThemeID   int64  // the theme its boxes show, 0 for Overscan's own (D97)
 }
 
 // Ended reports whether the account's end date has passed by now (D95):
@@ -40,8 +41,8 @@ func (s *Store) Account(ctx context.Context, id int64) (Account, error) {
 	var expires sql.NullString
 	var created string
 	err := s.db.QueryRowContext(ctx,
-		"SELECT id, name, lineup_id, expires_at, created_at, COALESCE(pin_hash, '') FROM accounts WHERE id = ?", id,
-	).Scan(&a.ID, &a.Name, &a.LineupID, &expires, &created, &a.PINHash)
+		"SELECT id, name, lineup_id, expires_at, created_at, COALESCE(pin_hash, ''), COALESCE(theme_id, 0) FROM accounts WHERE id = ?", id,
+	).Scan(&a.ID, &a.Name, &a.LineupID, &expires, &created, &a.PINHash, &a.ThemeID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Account{}, ErrNotFound
 	}

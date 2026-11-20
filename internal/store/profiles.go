@@ -39,6 +39,8 @@ type Profile struct {
 	First bool
 	// Devices counts the approved devices that play as it.
 	Devices int
+	// ThemeID is the theme of its own, 0 for its account's (D97).
+	ThemeID int64
 }
 
 var (
@@ -77,11 +79,12 @@ func CleanProfileName(name string) (string, error) {
 
 var profileColumns = `p.id, p.account_id, p.name, p.pin_hash,
 	p.id = (SELECT min(f.id) FROM profiles f WHERE f.account_id = p.account_id),
-	(SELECT count(*) FROM devices d WHERE d.account_id = p.account_id AND d.state = 'approved' AND ` + deviceProfile("d") + ` = p.id)`
+	(SELECT count(*) FROM devices d WHERE d.account_id = p.account_id AND d.state = 'approved' AND ` + deviceProfile("d") + ` = p.id),
+	COALESCE(p.theme_id, 0)`
 
 func scanProfile(row rowScanner) (Profile, error) {
 	var p Profile
-	err := row.Scan(&p.ID, &p.AccountID, &p.Name, &p.PINHash, &p.First, &p.Devices)
+	err := row.Scan(&p.ID, &p.AccountID, &p.Name, &p.PINHash, &p.First, &p.Devices, &p.ThemeID)
 	return p, err
 }
 

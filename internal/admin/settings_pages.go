@@ -53,6 +53,9 @@ type settingsData struct {
 	SharedTuner      bool              // one connection to a source serves every screen that plays a channel (D93)
 	EndsAt           time.Time         // when the household's account ends; zero if never (D95)
 	Ended            bool              // it has ended
+	Themes           []themeRow        // the installed themes, by name (D97)
+	HouseholdTheme   int64             // the household's theme, 0 for Overscan's own
+	Profiles         []store.Profile   // the household's profiles, for their own themes
 	RecordingsDir    string            // the folder they are written in
 	RecordingsUsed   int64             // the room they take, in bytes
 	Upcoming         []store.Recording // recordings to come and under way, the soonest first
@@ -115,6 +118,13 @@ func (a *Admin) settings(r *http.Request) (settingsData, error) {
 		return d, err
 	}
 	d.EndsAt, d.Ended = acct.ExpiresAt, acct.Ended(a.now())
+	d.HouseholdTheme = acct.ThemeID
+	if d.Profiles, err = a.store.Profiles(ctx, householdAccount); err != nil {
+		return d, err
+	}
+	if d.Themes, err = a.themeRows(ctx, acct.ThemeID, d.Profiles); err != nil {
+		return d, err
+	}
 	if d.Locks, err = a.lockCount(ctx); err != nil {
 		return d, err
 	}

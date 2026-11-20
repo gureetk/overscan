@@ -205,10 +205,11 @@ type apiProfile struct {
 	First   bool   `json:"first"`
 	PIN     bool   `json:"pin"`
 	Devices int    `json:"devices"`
+	ThemeID int64  `json:"theme_id"` // its own theme, 0 for the household's (D97)
 }
 
 func profileBody(p store.Profile) apiProfile {
-	return apiProfile{ID: p.ID, Name: p.Name, First: p.First, PIN: p.PINHash != "", Devices: p.Devices}
+	return apiProfile{ID: p.ID, Name: p.Name, First: p.First, PIN: p.PINHash != "", Devices: p.Devices, ThemeID: p.ThemeID}
 }
 
 // profileAnswer answers with one of the household's profiles, as it is now,
@@ -278,14 +279,15 @@ func (a *Admin) apiChangeProfile(w http.ResponseWriter, r *http.Request, _ store
 		return
 	}
 	var body struct {
-		Name *string `json:"name"`
-		PIN  *string `json:"pin"`
+		Name    *string `json:"name"`
+		PIN     *string `json:"pin"`
+		ThemeID *int64  `json:"theme_id"`
 	}
 	if !readJSON(w, r, &body) {
 		return
 	}
-	if body.Name == nil && body.PIN == nil {
-		apiError(w, http.StatusBadRequest, "bad_json", "Say what to change: name, pin or both.")
+	if body.Name == nil && body.PIN == nil && body.ThemeID == nil {
+		apiError(w, http.StatusBadRequest, "bad_json", "Say what to change: name, pin or theme_id.")
 		return
 	}
 	ctx := r.Context()
@@ -294,6 +296,16 @@ func (a *Admin) apiChangeProfile(w http.ResponseWriter, r *http.Request, _ store
 	}
 	if body.PIN != nil && *body.PIN != "" {
 		if err := checkPIN(*body.PIN); err != nil {
+			a.profileAnswer(w, r, id, err)
+			return
+		}
+	}
+	if body.ThemeID != nil {
+		if *body.ThemeID < 0 {
+			a.profileAnswer(w, r, id, badEdit(http.StatusBadRequest, "no_such_theme", "Choose a theme, or 0 for the household's."))
+			return
+		}
+		if err := a.setProfileTheme(ctx, id, *body.ThemeID); err != nil {
 			a.profileAnswer(w, r, id, err)
 			return
 		}

@@ -312,8 +312,8 @@ The first M1 task was a probe page on the real box, because its answers would de
 
 ### Themes (decided, D41)
 
-- The one layout wears a theme: colours, fonts, background, logo and the look of the focus. Overscan ships its own theme, and the administrator can install others.
-- A theme is a small file of named values, and the server turns it into a stylesheet that loads after the page's own. The box's browser matches Safari 7 and 8, which predate CSS custom properties, so the browser cannot do the substitution itself; the probe can confirm. An advanced theme can add a stylesheet of its own, with no promise that it keeps working when the page changes.
+- The one layout wears a theme: colours, fonts, background, logo and the look of the focus. Overscan ships its own theme, and the administrator can install others. **In place (D97):** a theme names the background and text colours, an accent, the colours of the focus, the font, the corners and a name shown beside the mark; pictures and a theme's own stylesheet are left out for now.
+- A theme is a small file of named values, and the server turns it into a stylesheet that loads after the page's own. The box's browser matches Safari 7 and 8, which predate CSS custom properties, so the browser cannot do the substitution itself; the server rewrites the page's whole stylesheet instead (D97). An advanced theme could add a stylesheet of its own, with no promise that it keeps working when the page changes; the first format leaves that out.
 - Themes change the look, not the layout or the behaviour, so there is still one layout to build and test.
 - No theme that imitates another product's portal ships with Overscan or enters the repository (clean-room policy).
 
@@ -496,7 +496,7 @@ Each phase ends with a pre-release of v0.4.0 (`v0.4.0-alpha.N`), as M4's did wit
 - Several profiles per account, switchable on the box, each with its own favourites and resume points. A household that adds no profile sees no change. **In place:** the admin's *Devices* page adds, renames and removes profiles, gives one a PIN, and chooses the profile each device plays as; once there are two, a box shows the one watching on Home and switches with the yellow key or from *Settings*, asking for the profile's PIN if it has one. The account's first profile took its favourites and resume points; recent channels, the box's own settings and the parental PIN stay as they were (D94).
 - Expiry: the administrator sets the account's end date; past it, boxes and Stalker clients play nothing. **In place:** the *Settings* page's *Household* card sets the last day the household's account plays; past it, the box says that the account has ended, with the date, and plays nothing, Stalker clients are refused as blocked devices are but still read the date, and the account's recordings stop (D95).
 - Messages and events: the administrator sends a message to one box or to every box, which shows it once. **In place:** the admin's *Devices* page sends a message to one box or to every box that runs Overscan's page; a box shows it within five minutes, over whatever is on screen, until the viewer closes it, and the admin sees which boxes read it. Stalker clients get none, and no other events are sent, until an allowed source says how a portal sends them (D96).
-- Installable themes (D41): the administrator adds a theme in the admin, for the household or for a profile.
+- Installable themes (D41): the administrator adds a theme in the admin, for the household or for a profile. **In place:** the *Settings* page's *Themes* panel installs a theme file, which Overscan checks for what it holds and for colours that stay readable, and chooses the household's theme and each profile's; a box shows its profile's theme, else the household's, within five minutes. A theme changes the page's colours, its corners and font, and the name beside the mark (D97).
 - Compatibility matrix for third-party Stalker clients (OTT Navigator, TiviMate) and MAG emulators (StbEmu), from tests with those apps.
 - The milestone's hardening: the security checklist on what is new (text and themes from the admin shown on boxes above all), docs, and an upgrade test from v0.3.0.
 *Done when:* two profiles on one box keep their own favourites and resume points, and the box switches between them; an account past its end date is refused on the box and in Stalker clients, which see the date; a message from the admin shows on the box; a theme installed in the admin changes the box's look for the household or for one profile; with the shared tuner on, two boxes on one channel, or a box and a recording of that channel, use one connection to the source; and a compatibility matrix says what OTT Navigator, TiviMate and StbEmu do with Overscan. A household that adds no profile, sets no end date, sends no message and installs no theme sees nothing change.
@@ -656,6 +656,7 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 - Profiles keep favourites and resume points; the first takes what the account kept, and a box switches between them, with a profile's PIN if it has one (D94).
 - An account's end date is set in the admin; past it, its boxes, Stalker clients and recordings play nothing (D95).
 - Messages from the administrator reach the boxes that run Overscan's page, with the lineup's version; Stalker clients get none yet (D96).
+- Themes are files of named values that Overscan checks, for the household or a profile, from which the server rewrites the page's stylesheet (D97).
 
 **Open**
 

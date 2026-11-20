@@ -3,6 +3,7 @@
 package server
 
 import (
+	"errors"
 	"io/fs"
 	"net"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"overscan.gureet.ca/internal/store"
+	"overscan.gureet.ca/internal/theme"
 	"overscan.gureet.ca/web"
 )
 
@@ -44,6 +47,10 @@ func (s *Server) magFiles(prefix string) http.Handler {
 	server := http.StripPrefix(prefix, http.FileServerFS(files))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimPrefix(r.URL.Path, prefix)
+		if id, ok := theme.ParsePath(name); ok {
+			s.themeStylesheet(w, r, id, name)
+			return
+		}
 		switch {
 		case name == "" || name == "index.html":
 			w.Header().Set("Cache-Control", "no-store")
@@ -59,6 +66,66 @@ func (s *Server) magFiles(prefix string) http.Handler {
 		}
 		server.ServeHTTP(w, r)
 	})
+}
+
+// themeStylesheet serves the stylesheet of an installed theme (D97), beside
+// the page, so that the fonts it names load from where the page's do. Its
+// name holds a hash of the theme and of the page's own stylesheet, so a
+// name that is not the theme's now answers 404, and one that is may be
+// cached for a year. It holds colours and a few choices, and nothing
+// secret, so it needs no session.
+func (s *Server) themeStylesheet(w http.ResponseWriter, r *http.Request, id int64, name string) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	th, err := s.services.Store.Theme(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) || err == nil && theme.Path(th.ID, th.Data) != name {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		s.log.Error("cannot read a theme", "theme", id, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	css, err := s.themes.get(name, th.Data)
+	if err != nil {
+		// What the store keeps was checked before: this is a theme of a
+		// later format, after a downgrade.
+		s.log.Warn("a theme cannot be shown", "theme", th.Name, "error", err)
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write([]byte(css))
+}
+
+// themeSheets keeps the stylesheets that themes made, by name, so that each
+// is made once. It keeps a few: a household has few themes.
+type themeSheets struct {
+	mu    sync.Mutex
+	sheet map[string]string
+}
+
+func (t *themeSheets) get(name string, data []byte) (string, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if css, ok := t.sheet[name]; ok {
+		return css, nil
+	}
+	css, err := theme.Stylesheet(data)
+	if err != nil {
+		return "", err
+	}
+	if t.sheet == nil || len(t.sheet) >= 16 {
+		t.sheet = map[string]string{}
+	}
+	t.sheet[name] = css
+	return css, nil
 }
 
 // noteMAGPage logs a request for the page, so the administrator sees a box
