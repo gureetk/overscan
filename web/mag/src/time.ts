@@ -92,6 +92,12 @@ export function day(sec: number): string {
   return days[d.getDay()] + ' ' + d.getDate();
 }
 
+/** onDay says which day a time is on, after a clock time: today, tomorrow, or on Fri 4. */
+export function onDay(sec: number): string {
+  const d = day(sec);
+  return d === 'Today' || d === 'Tomorrow' || d === 'Yesterday' ? d.toLowerCase() : 'on ' + d;
+}
+
 /** duration writes a length of time: 1 h 19 min, 45 min, or 2 h. */
 export function duration(sec: number): string {
   const min = Math.max(1, Math.round(sec / 60));

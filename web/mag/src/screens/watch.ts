@@ -12,6 +12,7 @@ import { star } from '../icons';
 import type { Press } from '../keys';
 import type { PickItem } from '../overlays';
 import { clock, duration, hms, now, progress, span } from '../time';
+import { record, recordable, recordText } from './record';
 import { Clock, type Ctx, escape, Footer, type Screen, type VideoArea } from './screen';
 
 /** How long the banner shows by itself. */
@@ -74,7 +75,13 @@ export class WatchScreen implements Screen {
   }
 
   enter(): void {
+    const self = this;
     this.showBanner();
+    this.ctx.recordings.load(function () {
+      if (self.overVideo()) {
+        self.draw();
+      }
+    });
   }
 
   leave(): void {
@@ -153,23 +160,30 @@ export class WatchScreen implements Screen {
     }
     setHTML(this.next, next ? '<span class="at">Next ' + clock(next.start) + '</span>' + escape(next.title) : '');
     this.drawBadges();
+    // What is on live is what records, however far behind the box is.
+    const live = this.ctx.guide.at(c.id, now());
+    const recording = live && recordable(this.ctx, live) ? recordText(this.ctx, c, live) : '';
     const colours = [{ key: 'red', text: favourite ? 'Remove from Favourites' : 'Add to Favourites' }];
+    const keys = shifted
+      ? [
+          { key: 'lr', text: 'Back and on' },
+          { key: 'STOP', text: 'Live' },
+        ]
+      : [
+          { key: 'CH +/−', text: 'Change channel' },
+          { key: 'OK', text: 'Channel list' },
+        ];
     if (player.shiftable()) {
+      // Green pauses: the remote's REC key records.
       colours.push({ key: 'green', text: player.paused() ? 'Play' : 'Pause' });
+      if (recording) {
+        keys.push({ key: 'REC', text: recording });
+      }
+    } else if (recording) {
+      colours.push({ key: 'green', text: recording });
     }
     colours.push({ key: 'yellow', text: 'Audio' }, { key: 'blue', text: 'Guide' });
-    this.footer.set(
-      colours,
-      shifted
-        ? [
-            { key: 'lr', text: 'Back and on' },
-            { key: 'STOP', text: 'Live' },
-          ]
-        : [
-            { key: 'CH +/−', text: 'Change channel' },
-            { key: 'OK', text: 'Channel list' },
-          ],
-    );
+    this.footer.set(colours, keys);
   }
 
   private drawBadges(): void {
@@ -231,6 +245,10 @@ export class WatchScreen implements Screen {
         }
         return true;
       }
+      case 'green':
+      case 'record':
+        this.recordNow();
+        return true;
       case 'yellow':
       case 'audio':
         this.chooseAudio();
@@ -288,6 +306,20 @@ export class WatchScreen implements Screen {
         return false;
     }
     return false;
+  }
+
+  /**
+   * recordNow records what is on now on the channel that plays, or calls
+   * its recording off. Green comes here only when it does not pause.
+   */
+  private recordNow(): void {
+    const self = this;
+    const c = this.ctx.player.channel;
+    if (c) {
+      record(this.ctx, c, this.ctx.guide.at(c.id, now()), function () {
+        self.showBanner();
+      });
+    }
   }
 
   private chooseAudio(): void {
