@@ -102,8 +102,18 @@ jobs:
             echo
             echo 'Take the archive for your machine (`linux_amd64` for 64-bit x86, `linux_arm64` for 64-bit ARM) and check it with `sha256sum -c SHA256SUMS --ignore-missing`.'
             echo
+            # A pre-release lists what changed since the release before it;
+            # a full release, since the full release before it, so that its
+            # notes cover its pre-releases too.
+            since=()
+            if [ "${#prerelease[@]}" -eq 0 ]; then
+              last=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true)
+              if [[ "$last" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                since=(-f previous_tag_name="$last")
+              fi
+            fi
             gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
-              -f tag_name="$VERSION" -f target_commitish="$GITHUB_SHA" --jq .body
+              -f tag_name="$VERSION" -f target_commitish="$GITHUB_SHA" "${since[@]}" --jq .body
           } >notes.md
 
           gh release create "$VERSION" "${files[@]}" --repo "$GITHUB_REPOSITORY" "${tag[@]}" \
