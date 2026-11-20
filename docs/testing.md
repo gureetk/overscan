@@ -67,7 +67,7 @@ Memory peaks in the first seconds, when the four boxes load the whole lineup at 
 
 ## Upgrades
 
-From v0.1.0 on, each release is tried as an upgrade of the one before. The previous release reads a source and gets an approved device. The new release then starts on the same data directory, and a Stalker client must see the same channels, with the same numbers, and play one. For v0.1.0 this was done from v0.0.9 and from v0.0.17, directly and one after the other, with a fictional playlist of 3,000 channels.
+From v0.1.0 on, each release is tried as an upgrade of the one before. The previous release reads a source and gets an approved device. The new release then starts on the same data directory, and a Stalker client must see the same channels, with the same numbers, and play one. For v0.1.0 this was done from v0.0.9 and from v0.0.17, directly and one after the other, with a fictional playlist of 3,000 channels. For v0.4.0's pre-releases, each was tried from the one before, and the last from v0.3.0 directly.
 
 ## On the box
 
@@ -98,6 +98,14 @@ A checklist for the MAG322w1, to go through with each release that changes the p
 - A change in the admin's lineup reaches the box within five minutes, without *Restart Portal*.
 - After the server restarts, the page carries on at its next call.
 - After *Restart Portal*, and after a full restart of the box, the page comes back without another approval.
+
+For a household (M5):
+
+- With two profiles, Home names the profile watching, the yellow key switches to another, asking for its PIN if it has one, and each profile keeps its own favourites and resume points.
+- Past the household's end date, the box says that the account has ended, with the date, and plays nothing; with the date removed, it comes back by itself.
+- A message from the admin shows over whatever is on screen until OK, and does not come back.
+- A theme chosen for the household, and another for a profile, change the box's look within five minutes, with every screen still readable; *Overscan* brings back the page's own look.
+- With the shared tuner on, a box and a recording of the channel it plays use one connection to the source.
 
 ## The admin with the box
 
