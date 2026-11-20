@@ -36,6 +36,65 @@ func (a *Admin) UseRecorder(r Recorder) { a.recorder = r }
 // recordingCaps are the rooms, in gigabytes, that the Settings page offers.
 var recordingCaps = []int{0, 10, 25, 50, 100, 250, 500}
 
+// recordingHours are the most hours, for a recording that runs until it is
+// stopped, that the Settings page offers (D98).
+var recordingHours = []int{1, 2, 3, 4, 6, 8, 12, 24}
+
+// setRecordUntil sets what a recording that a box starts on a channel runs
+// until while the guide shows a programme: its end, or until it is
+// stopped (D98).
+func (a *Admin) setRecordUntil(ctx context.Context, until string) error {
+	if until != store.RecordUntilProgramme && until != store.RecordUntilStopped {
+		return badEdit(http.StatusBadRequest, "bad_recordings_until", "A recording runs until the end of its programme, or until it is stopped.")
+	}
+	if err := a.store.SetRecordUntil(ctx, until); err != nil {
+		return err
+	}
+	a.log.Info("what recordings run until set in the admin", "until", until)
+	return nil
+}
+
+// setRecordingHours sets the most hours that a recording which runs until
+// it is stopped may run (D98).
+func (a *Admin) setRecordingHours(ctx context.Context, hours int) error {
+	if hours < 1 || hours > store.MaxRecordingHours {
+		return badEdit(http.StatusBadRequest, "bad_recordings_max_hours", "A recording that runs until it is stopped may run from 1 to %d hours.", store.MaxRecordingHours)
+	}
+	if err := a.store.SetRecordingHours(ctx, hours); err != nil {
+		return err
+	}
+	a.log.Info("the longest recording set in the admin", "hours", hours)
+	return nil
+}
+
+// recordingEndForm sets from the Settings page what a recording that a box
+// starts on a channel runs until, and how long one that runs until it is
+// stopped may run.
+func (a *Admin) recordingEndForm(w http.ResponseWriter, r *http.Request, s store.AdminSession) {
+	ctx := r.Context()
+	hours, err := strconv.Atoi(r.PostFormValue("hours"))
+	if err != nil {
+		hours = 0
+	}
+	err = a.setRecordUntil(ctx, r.PostFormValue("until"))
+	if err == nil {
+		err = a.setRecordingHours(ctx, hours)
+	}
+	done := fmt.Sprintf("A recording that a box starts on a channel stops at the end of its programme, or, without one in the guide, after at most %s.", hoursText(hours))
+	if r.PostFormValue("until") == store.RecordUntilStopped {
+		done = fmt.Sprintf("A recording that a box starts on a channel runs until it is stopped, or for at most %s.", hoursText(hours))
+	}
+	a.settingsDone(w, r, s, err, done)
+}
+
+// hoursText says a number of hours: "1 hour", "4 hours".
+func hoursText(n int) string {
+	if n == 1 {
+		return "1 hour"
+	}
+	return strconv.Itoa(n) + " hours"
+}
+
 // recordingSourceName is the name of the folder source that recordings
 // play from.
 const recordingSourceName = "recordings"
@@ -140,7 +199,7 @@ func (a *Admin) recordingsForm(w http.ResponseWriter, r *http.Request, s store.A
 	}
 	done := "Recording is off. The recordings made stay in their folder."
 	if gb > 0 {
-		done = fmt.Sprintf("Boxes can record programmes from the TV Guide, in up to %d GB.", gb)
+		done = fmt.Sprintf("Boxes can record, in up to %d GB.", gb)
 	}
 	a.settingsDone(w, r, s, a.setRecordingsCap(r.Context(), gb), done)
 }
@@ -152,7 +211,11 @@ func (a *Admin) recordingAction(w http.ResponseWriter, r *http.Request, s store.
 	switch r.PathValue("action") {
 	case "cancel":
 		rec, err := a.cancelRecording(ctx, r.PathValue("id"))
-		a.settingsDone(w, r, s, err, "Called off "+rec.Title+".")
+		done := "Called off " + rec.Title + "."
+		if rec.State == store.RecordingRecording {
+			done = "Stopped " + rec.Title + ". What it recorded is kept."
+		}
+		a.settingsDone(w, r, s, err, done)
 	case "delete":
 		rec, err := a.deleteRecording(ctx, r.PathValue("id"))
 		a.settingsDone(w, r, s, err, "Deleted "+rec.Title+".")
@@ -186,15 +249,16 @@ func (a *Admin) cancelRecording(ctx context.Context, id string) (store.Recording
 	switch rec.State {
 	case store.RecordingScheduled:
 		err = a.store.SetRecordingState(ctx, rec.ID, store.RecordingCancelled, "", "", 0, "")
+		if err == nil {
+			a.log.Info("a recording called off in the admin", "title", rec.Title, "channel", rec.Channel)
+		}
 	case store.RecordingRecording:
 		if a.recorder != nil {
 			a.recorder.Cancel(rec.ID)
 		}
+		a.log.Info("a recording stopped in the admin, which keeps what it recorded", "title", rec.Title, "channel", rec.Channel)
 	default:
 		return rec, badEdit(http.StatusConflict, "not_to_come", "It is no longer to come.")
-	}
-	if err == nil {
-		a.log.Info("a recording called off in the admin", "title", rec.Title, "channel", rec.Channel)
 	}
 	return rec, err
 }
@@ -248,15 +312,19 @@ type apiRecording struct {
 	Title    string    `json:"title"`
 	Start    time.Time `json:"start"`
 	Stop     time.Time `json:"stop"`
-	State    string    `json:"state"`
-	File     string    `json:"file,omitempty"`
-	Bytes    int64     `json:"bytes"`
-	Error    string    `json:"error,omitempty"`
+	// UntilStopped says that it runs until it is stopped, at the latest
+	// until Stop (D98).
+	UntilStopped bool   `json:"until_stopped,omitempty"`
+	State        string `json:"state"`
+	File         string `json:"file,omitempty"`
+	Bytes        int64  `json:"bytes"`
+	Error        string `json:"error,omitempty"`
 }
 
 func apiRecordingOf(r store.Recording) apiRecording {
 	return apiRecording{ID: r.ID, DeviceID: r.DeviceID, EntryID: r.EntryID, Channel: r.Channel, Title: r.Title,
-		Start: r.Start.UTC(), Stop: r.Stop.UTC(), State: r.State, File: r.File, Bytes: r.Size, Error: r.Error}
+		Start: r.Start.UTC(), Stop: r.Stop.UTC(), UntilStopped: r.UntilStopped, State: r.State, File: r.File, Bytes: r.Size,
+		Error: r.Error}
 }
 
 // apiRecordings lists the recordings to come and under way, and the last

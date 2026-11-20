@@ -68,7 +68,8 @@ type Recorder struct {
 	mu      sync.Mutex
 	running map[int64]context.CancelFunc
 	wg      sync.WaitGroup
-	changed func() // called when a recording's file is made or deleted
+	changed func()        // called when a recording's file is made or deleted
+	wake    chan struct{} // starts the recordings that are due without waiting for the tick
 }
 
 // OnChange sets what to call when a recording's file is made, or deleted
@@ -94,7 +95,8 @@ func partName(name string) string { return "." + name }
 
 // New returns a recorder that writes recordings into dir.
 func New(st *store.Store, hub Hub, log *slog.Logger, dir string) *Recorder {
-	return &Recorder{store: st, hub: hub, log: log, dir: filepath.Clean(dir), now: time.Now, running: map[int64]context.CancelFunc{}}
+	return &Recorder{store: st, hub: hub, log: log, dir: filepath.Clean(dir), now: time.Now, running: map[int64]context.CancelFunc{},
+		wake: make(chan struct{}, 1)}
 }
 
 // Dir returns the recordings folder.
@@ -129,7 +131,17 @@ func (r *Recorder) Run(ctx context.Context) {
 			r.wg.Wait()
 			return
 		case <-t.C:
+		case <-r.wake:
 		}
+	}
+}
+
+// Wake starts the recordings that are due now, such as one that a box has
+// just started, without waiting for the next look (D98).
+func (r *Recorder) Wake() {
+	select {
+	case r.wake <- struct{}{}:
+	default:
 	}
 }
 
@@ -254,7 +266,7 @@ func (r *Recorder) start(ctx context.Context, rec store.Recording, limit int64) 
 // keeping what it wrote.
 func (r *Recorder) resume(ctx context.Context, rec store.Recording, limit int64) {
 	const stopped = "the server stopped while it recorded"
-	if rec.File == "" || limit == 0 || !r.now().Before(rec.Stop.Add(tail)) {
+	if rec.File == "" || limit == 0 || !r.now().Before(end(rec)) {
 		r.finish(ctx, rec, rec.File, stopped)
 		return
 	}
@@ -325,10 +337,20 @@ func (r *Recorder) ready(ctx context.Context, rec store.Recording, limit int64) 
 // not made (D95).
 const errAccountEnded = "its account has ended"
 
-// until returns when a recording stops: two minutes after its programme,
-// or when its account ends, if that is sooner (D95).
+// end returns when a recording ends: two minutes after its programme, or,
+// for one that runs until it is stopped, at its stop, the latest it may
+// run (D98).
+func end(rec store.Recording) time.Time {
+	if rec.UntilStopped {
+		return rec.Stop
+	}
+	return rec.Stop.Add(tail)
+}
+
+// until returns when a recording stops: at its end, or when its account
+// ends, if that is sooner (D95).
 func (r *Recorder) until(ctx context.Context, rec store.Recording) time.Time {
-	stop := rec.Stop.Add(tail)
+	stop := end(rec)
 	if acct, err := r.store.Account(ctx, rec.AccountID); err == nil && !acct.ExpiresAt.IsZero() && acct.ExpiresAt.Before(stop) {
 		return acct.ExpiresAt
 	}
@@ -377,7 +399,7 @@ func (r *Recorder) run(ctx context.Context, rec store.Recording, entry store.Pla
 		if resumed && why == errNothing {
 			why = "the server stopped while it recorded"
 		}
-		if why == "" && stop.Before(rec.Stop.Add(tail)) && !r.now().Before(stop) {
+		if why == "" && stop.Before(end(rec)) && !r.now().Before(stop) {
 			why = "its account ended while it recorded"
 		}
 		r.finish(context.WithoutCancel(ctx), rec, rec.File, why)

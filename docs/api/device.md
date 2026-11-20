@@ -2,7 +2,7 @@
 
 Overscan's own MAG page talks to the server through the device API, a JSON API under `/api/device/v1/` built for the box ([plan](../plan.md), section 9). The page and the server ship together, so the API changes with them. It is not meant for other clients: third-party players have the Stalker API.
 
-Version 0, in M1, covers what the first page needs: a session, the channel list, and playing a channel. M2 adds what the page's new interface needs ([D52](../decisions.md)): the guide, favourites, what the box watched, search, and the box's own settings. M3 adds films and series ([D63](../decisions.md) to [D65](../decisions.md)), plays through ffmpeg those whose sound the box cannot play ([D68](../decisions.md)), checks what each box plays ([D70](../decisions.md)), and has Jellyfin transcode the video it cannot play ([D71](../decisions.md)). M4 adds past programmes from their sources' archives ([D81](../decisions.md), [D84](../decisions.md)), locks on films and series ([D85](../decisions.md)), radio stations ([D87](../decisions.md)), and recordings ([D89](../decisions.md)). M5 adds profiles ([D94](../decisions.md)), an account's end date ([D95](../decisions.md)), messages from the administrator ([D96](../decisions.md)) and themes ([D97](../decisions.md)).
+Version 0, in M1, covers what the first page needs: a session, the channel list, and playing a channel. M2 adds what the page's new interface needs ([D52](../decisions.md)): the guide, favourites, what the box watched, search, and the box's own settings. M3 adds films and series ([D63](../decisions.md) to [D65](../decisions.md)), plays through ffmpeg those whose sound the box cannot play ([D68](../decisions.md)), checks what each box plays ([D70](../decisions.md)), and has Jellyfin transcode the video it cannot play ([D71](../decisions.md)). M4 adds past programmes from their sources' archives ([D81](../decisions.md), [D84](../decisions.md)), locks on films and series ([D85](../decisions.md)), radio stations ([D87](../decisions.md)), and recordings ([D89](../decisions.md)). M5 adds profiles ([D94](../decisions.md)), an account's end date ([D95](../decisions.md)), messages from the administrator ([D96](../decisions.md)), themes ([D97](../decisions.md)), and recording a channel from now on ([D98](../decisions.md)).
 
 ## Conventions
 
@@ -22,7 +22,7 @@ Version 0, in M1, covers what the first page needs: a session, the channel list,
 | `recording_off` | 409 | The server does not record: the administrator has not turned recording on ([D89](../decisions.md)). |
 | `programme_ended` | 409 | The programme has ended, so it cannot be recorded. |
 | `too_many` | 409 | The household has 100 recordings to come or under way, the most it may. |
-| `recorded` | 409 | The programme has been recorded already: its recording was called off while it recorded, which kept what it had written. |
+| `recorded` | 409 | A programme to come has been recorded already. |
 | `pin_required` | 403 | The channel, film or series is locked: send the parental PIN ([D55](../decisions.md), [D85](../decisions.md)). |
 | `pin_wrong` | 403 | The PIN is not the account's, or not the profile's. |
 | `pin_locked` | 429 | Five wrong PINs in 15 minutes: `Retry-After` says how many seconds the box must wait before it tries again. |
@@ -173,15 +173,17 @@ Answers whether the server records, and the account's recordings that are to com
 ]}
 ```
 
-`channel` is the lineup entry's `id`, as in the channel list, and `start` and `stop` are the programme's, in Unix seconds, as the guide gives them. `state` is `scheduled` until the recording begins, a minute before `start`, and `recording` until it ends, two minutes after `stop`. Recordings that are done are films of the folder source that reads the recordings folder, on the box's Movies.
+`channel` is the lineup entry's `id`, as in the channel list, and `start` and `stop` are the programme's, in Unix seconds, as the guide gives them. `state` is `scheduled` until the recording begins, a minute before `start`, and `recording` until it ends, two minutes after `stop`. A channel recorded from now on has, as `start`, when it began, and as `stop`, the end of the programme it records; with `"until_stopped": true`, it runs until it is stopped, at the latest until `stop`, and ends there ([D98](../decisions.md)). Recordings that are done are films of the folder source that reads the recordings folder, on the box's Movies.
 
 ### `POST /api/device/v1/recordings`
 
-Schedules a programme of a channel in the box's lineup, named by when it begins, as the guide gives it, with the parental PIN for a locked channel, as for `play`: `{"channel": 17, "start": 1796414400, "pin": "1234"}`. The programme must not have ended (`programme_ended`), the server must record (`recording_off`), and the household may have at most 100 recordings to come (`too_many`). The answer is the recording, as in the list. Scheduling a programme again answers the recording already scheduled; one that failed or was called off before it began is scheduled again, and one that has been recorded is refused (`recorded`). The server records it from a minute before its start to two minutes after its end, through the stream hub as a device of its own: it holds one of its source's connections all that time, and fails if the source has none free when it begins. It never ends a box's stream.
+Schedules a programme of a channel in the box's lineup, named by when it begins, as the guide gives it, with the parental PIN for a locked channel, as for `play`: `{"channel": 17, "start": 1796414400, "pin": "1234"}`. The programme must not have ended (`programme_ended`), the server must record (`recording_off`), and the household may have at most 100 recordings to come (`too_many`). The answer is the recording, as in the list. Scheduling a programme again answers the recording already scheduled, and a programme on now that the channel records already answers that recording; one that failed or was called off before it began is scheduled again, and one on now that was stopped while it recorded records what is left of it, from now. The server records it from a minute before its start to two minutes after its end, through the stream hub as a device of its own: it holds one of its source's connections all that time, and fails if the source has none free when it begins. It never ends a box's stream.
+
+`{"channel": 17, "now": true, "pin": "1234"}` records the channel from now on, whether the guide shows a programme on it or not ([D98](../decisions.md)). While the guide shows one, the recording takes its title and stops at its end, two minutes after, unless the household records until stopped (`recordings_until` in the admin's settings); then, or without a programme, it runs until it is stopped, for at most the household's `recordings_max_hours`, and has `"until_stopped": true`. A channel that records already answers its recording. The server begins it at once.
 
 ### `DELETE /api/device/v1/recordings/{id}`
 
-Calls off one of the account's recordings: one to come is `cancelled`; one under way ends now, and what it has written is kept. The answer is the recording.
+Calls off one of the account's recordings to come, which is `cancelled`, or stops one under way, which ends now and keeps what it has written, as a recording that is done. The answer is the recording.
 
 ### `PUT /api/device/v1/channels/{id}/favourite`, `DELETE` likewise
 

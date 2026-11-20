@@ -50,6 +50,69 @@ func (s *Store) SetRecordingsCap(ctx context.Context, gb int) error {
 	return s.setSetting(ctx, settingRecordingsCap, strconv.Itoa(gb))
 }
 
+// settingRecordUntil says how long a recording that a box starts on a
+// channel runs while the guide shows a programme on it (D98).
+const settingRecordUntil = "recordings_until"
+
+// What a recording that a box starts on a channel runs until, while the
+// guide shows a programme on it: the programme's end, as at first, or
+// until it is stopped. Without a programme, it runs until it is stopped.
+const (
+	RecordUntilProgramme = "programme"
+	RecordUntilStopped   = "stopped"
+)
+
+// RecordUntil returns how long a recording that a box starts on a channel
+// runs while the guide shows a programme: RecordUntilProgramme or
+// RecordUntilStopped.
+func (s *Store) RecordUntil(ctx context.Context) (string, error) {
+	v, _, err := s.setting(ctx, settingRecordUntil)
+	if v != RecordUntilStopped {
+		v = RecordUntilProgramme
+	}
+	return v, err
+}
+
+// SetRecordUntil sets how long a recording that a box starts on a channel
+// runs while the guide shows a programme.
+func (s *Store) SetRecordUntil(ctx context.Context, v string) error {
+	if v != RecordUntilProgramme && v != RecordUntilStopped {
+		return fmt.Errorf("store: recordings run until %q: not %q or %q", v, RecordUntilProgramme, RecordUntilStopped)
+	}
+	return s.setSetting(ctx, settingRecordUntil, v)
+}
+
+// settingRecordingHours is the most hours that a recording which runs
+// until it is stopped may run (D98).
+const settingRecordingHours = "recordings_max_hours"
+
+// The hours that a recording which runs until it is stopped may run: 4 at
+// first, from 1 to MaxRecordingHours.
+const (
+	DefaultRecordingHours = 4
+	MaxRecordingHours     = 24
+)
+
+// RecordingHours returns the most hours that a recording which runs until
+// it is stopped may run.
+func (s *Store) RecordingHours(ctx context.Context) (int, error) {
+	v, ok, err := s.setting(ctx, settingRecordingHours)
+	n, perr := strconv.Atoi(v)
+	if !ok || perr != nil || n < 1 || n > MaxRecordingHours {
+		n = DefaultRecordingHours
+	}
+	return n, err
+}
+
+// SetRecordingHours sets the most hours that a recording which runs until
+// it is stopped may run.
+func (s *Store) SetRecordingHours(ctx context.Context, hours int) error {
+	if hours < 1 || hours > MaxRecordingHours {
+		return fmt.Errorf("store: recordings' hours: %d is not between 1 and %d", hours, MaxRecordingHours)
+	}
+	return s.setSetting(ctx, settingRecordingHours, strconv.Itoa(hours))
+}
+
 // Recording is a programme to record, or recorded.
 type Recording struct {
 	ID        int64
@@ -68,15 +131,19 @@ type Recording struct {
 	Size      int64
 	Error     string
 	CreatedAt time.Time
+	// UntilStopped is set for a recording that runs until it is stopped,
+	// at the latest until Stop, rather than to the end of a programme
+	// (D98, schema 34).
+	UntilStopped bool
 }
 
-const recordingColumns = `id, account_id, device_id, entry_id, channel, title, start, stop, state, file, size, error, created_at, dir`
+const recordingColumns = `id, account_id, device_id, entry_id, channel, title, start, stop, state, file, size, error, created_at, dir, until_stopped`
 
 func scanRecording(row rowScanner) (Recording, error) {
 	var r Recording
 	var start, stop, created int64
 	err := row.Scan(&r.ID, &r.AccountID, &r.DeviceID, &r.EntryID, &r.Channel, &r.Title, &start, &stop, &r.State,
-		&r.File, &r.Size, &r.Error, &created, &r.Dir)
+		&r.File, &r.Size, &r.Error, &created, &r.Dir, &r.UntilStopped)
 	r.Start, r.Stop, r.CreatedAt = time.Unix(start, 0), time.Unix(stop, 0), time.Unix(created, 0)
 	return r, err
 }
@@ -86,15 +153,15 @@ func scanRecording(row rowScanner) (Recording, error) {
 // cancelled is scheduled again.
 func (s *Store) ScheduleRecording(ctx context.Context, r Recording) (Recording, error) {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO recordings (account_id, device_id, entry_id, channel, title, start, stop, state, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO recordings (account_id, device_id, entry_id, channel, title, start, stop, state, created_at, until_stopped)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (entry_id, start) DO UPDATE SET
 			account_id = excluded.account_id, device_id = excluded.device_id, channel = excluded.channel,
 			title = excluded.title, stop = excluded.stop, state = excluded.state, error = '', size = 0, file = '', dir = '',
-			created_at = excluded.created_at
+			created_at = excluded.created_at, until_stopped = excluded.until_stopped
 		WHERE recordings.state IN (?, ?)`,
 		r.AccountID, r.DeviceID, r.EntryID, r.Channel, r.Title, r.Start.Unix(), r.Stop.Unix(), RecordingScheduled,
-		r.CreatedAt.Unix(), RecordingFailed, RecordingCancelled)
+		r.CreatedAt.Unix(), r.UntilStopped, RecordingFailed, RecordingCancelled)
 	if err != nil {
 		return Recording{}, fmt.Errorf("store: schedule a recording: %w", err)
 	}
@@ -104,6 +171,22 @@ func (s *Store) ScheduleRecording(ctx context.Context, r Recording) (Recording, 
 		return Recording{}, fmt.Errorf("store: schedule a recording: %w", err)
 	}
 	return out, nil
+}
+
+// ActiveRecording returns the recording of a lineup entry that is under
+// way, or due to run at a time, or ErrNotFound.
+func (s *Store) ActiveRecording(ctx context.Context, entryID int64, at time.Time) (Recording, error) {
+	r, err := scanRecording(s.db.QueryRowContext(ctx, `SELECT `+recordingColumns+` FROM recordings
+		WHERE entry_id = ? AND (state = ? OR state = ? AND start <= ? AND stop > ?)
+		ORDER BY start DESC, id DESC LIMIT 1`,
+		entryID, RecordingRecording, RecordingScheduled, at.Unix(), at.Unix()))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Recording{}, ErrNotFound
+	}
+	if err != nil {
+		return Recording{}, fmt.Errorf("store: lineup entry %d's recording: %w", entryID, err)
+	}
+	return r, nil
 }
 
 // RecordingByID returns a recording, or ErrNotFound.

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// The household's recordings to come and under way (D89), which the guide
-// marks, and which the green key schedules and calls off. The server
-// records them; those made play from Movies.
+// The household's recordings to come and under way (D89, D98), which the
+// guide, Live TV and full screen mark, and which the green key or REC
+// starts, stops or calls off. The server records them; those made play
+// from Movies.
 
 import type { Callback, Client } from './api';
 
@@ -11,11 +12,21 @@ export interface Recording {
   /** The lineup entry's ID, as the channel list gives it. */
   channel: number;
   title: string;
-  /** The programme's start and end, in Unix seconds. */
+  /**
+   * The programme's start and end, in Unix seconds; for a channel recorded
+   * from now on, when it began, and when it ends at the latest.
+   */
   start: number;
   stop: number;
+  /** Set for a recording that runs until it is stopped (D98). */
+  until_stopped?: boolean;
   state: 'scheduled' | 'recording' | 'done' | 'failed' | 'cancelled';
   error?: string;
+}
+
+/** active says whether a recording is to come or under way. */
+function active(r: Recording): boolean {
+  return r.state === 'scheduled' || r.state === 'recording';
 }
 
 /**
@@ -67,11 +78,33 @@ export class Recordings {
     });
   }
 
-  /** find returns the recording of the programme on channel id that starts at start, if any. */
-  find(id: number, start: number): Recording | null {
+  /**
+   * forProgramme returns the recording of a programme on channel id, from
+   * start to stop: one of the programme from the guide, else one of the
+   * channel that runs over it.
+   */
+  forProgramme(id: number, start: number, stop: number): Recording | null {
+    let over: Recording | null = null;
     for (let i = 0; i < this.list.length; i++) {
       const r = this.list[i]!;
-      if (r.channel === id && r.start === start && (r.state === 'scheduled' || r.state === 'recording')) {
+      if (r.channel !== id || !active(r)) {
+        continue;
+      }
+      if (r.start === start) {
+        return r;
+      }
+      if (!over && r.start < stop && r.stop > start) {
+        over = r;
+      }
+    }
+    return over;
+  }
+
+  /** onChannel returns the recording of channel id that is under way at t, if any. */
+  onChannel(id: number, t: number): Recording | null {
+    for (let i = 0; i < this.list.length; i++) {
+      const r = this.list[i]!;
+      if (r.channel === id && active(r) && recordingNow(r, t) && t < r.stop + (r.until_stopped ? 0 : 120)) {
         return r;
       }
     }
@@ -95,7 +128,24 @@ export class Recordings {
     });
   }
 
-  /** cancel calls a recording off. */
+  /** recordNow records channel id from now on (D98). */
+  recordNow(id: number, pin: string, done: Callback<Recording>): void {
+    const self = this;
+    const body: { channel: number; now: boolean; pin?: string } = { channel: id, now: true };
+    if (pin) {
+      body.pin = pin;
+    }
+    this.client.call<Recording>('POST', 'recordings', body, function (err, r) {
+      if (r) {
+        self.put(r);
+      } else if (err && err.code === 'recording_off') {
+        self.on = false;
+      }
+      done(err, r);
+    });
+  }
+
+  /** cancel calls a recording to come off, or stops one under way, which keeps what it recorded. */
   cancel(r: Recording, done: Callback<Recording>): void {
     const self = this;
     this.client.call<Recording>('DELETE', 'recordings/' + r.id, null, function (err, got) {

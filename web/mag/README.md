@@ -24,7 +24,7 @@ Locked channels ask for the parental PIN ([D55](../../docs/decisions.md)). How f
 | Channel +/−, Page up/down | Change channel while watching; page through a list. Playing a film: on or back 5 minutes | Tab and Shift+Tab, Page Up and Page Down |
 | 0–9 | Go to a channel by its number | Digits |
 | Red | Add the channel to the favourites, or remove it | F1 |
-| Green | Guide: record a programme, or call the recording off. Live TV, and watching: record what is on now, or call it off. Watching, while the server keeps live TV: pause, and play on instead | F2 |
+| Green | Guide: record a programme, or stop or call off its recording. Live TV, and watching: record the channel from now on, or stop its recording. Watching, while the server keeps live TV: pause, and play on instead | F2 |
 | Yellow | Live TV: sort by name or number. Movies and Series: sort a shelf by name or by date added. Watching, or playing a film: the sound track. Guide: the group | F3 |
 | Blue | Search; while watching, the guide | F4 |
 | Info | Show or hide the banner while watching, or the panel while a film plays | Alt+Y |
@@ -32,7 +32,7 @@ Locked channels ask for the parental PIN ([D55](../../docs/decisions.md)). How f
 | Volume, Mute | Volume, mute | + and − on the number pad, Alt+` |
 | Stop | Stop playing; a film stops and the page goes back to where it was chosen. Watching a channel paused or behind live: back to live | Alt+S |
 | Play/Pause, Rewind, Fast-forward | Watching, while the server keeps live TV: pause and play on; back and on a minute | Pause or Alt+R; Alt+B, Alt+F |
-| REC | Guide: as Green. Live TV, and watching: record what is on now, or call it off | Alt+W |
+| REC | Guide: as Green. Live TV, and watching: record the channel from now on, or stop its recording | Alt+W |
 
 ## Building
 

@@ -3,6 +3,7 @@
 package device
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -12,13 +13,15 @@ import (
 	"overscan.gureet.ca/internal/store"
 )
 
-// Recordings (D89): a box schedules a programme from the guide, sees the
-// household's recordings to come, and calls one off.
+// Recordings (D89, D98): a box schedules a programme from the guide, or
+// records a channel now, sees the household's recordings to come and under
+// way, and calls one off or stops it.
 
-// Recorder is what the device API needs of the recorder: ending a
-// recording under way.
+// Recorder is what the device API needs of the recorder: starting the
+// recordings that are due at once, and ending one under way.
 type Recorder interface {
 	Cancel(id int64) bool
+	Wake()
 }
 
 // UseRecorder lets the API schedule recordings, and end those under way;
@@ -27,19 +30,22 @@ func (a *API) UseRecorder(r Recorder) { a.recorder = r }
 
 // recording is a recording as the API shows it. Channel is the lineup
 // entry's ID; Start and Stop are Unix seconds.
+// UntilStopped says that it runs until it is stopped, at the latest until
+// Stop (D98).
 type recording struct {
-	ID      int64  `json:"id"`
-	Channel int64  `json:"channel"`
-	Title   string `json:"title"`
-	Start   int64  `json:"start"`
-	Stop    int64  `json:"stop"`
-	State   string `json:"state"`
-	Error   string `json:"error,omitempty"`
+	ID           int64  `json:"id"`
+	Channel      int64  `json:"channel"`
+	Title        string `json:"title"`
+	Start        int64  `json:"start"`
+	Stop         int64  `json:"stop"`
+	UntilStopped bool   `json:"until_stopped,omitempty"`
+	State        string `json:"state"`
+	Error        string `json:"error,omitempty"`
 }
 
 func recordingOf(r store.Recording) recording {
 	return recording{ID: r.ID, Channel: r.EntryID, Title: r.Title, Start: r.Start.Unix(), Stop: r.Stop.Unix(),
-		State: r.State, Error: r.Error}
+		UntilStopped: r.UntilStopped, State: r.State, Error: r.Error}
 }
 
 // recordings answers GET recordings: whether the server records, and the
@@ -73,20 +79,24 @@ func (a *API) recordings(w http.ResponseWriter, r *http.Request, d store.Device)
 const maxUpcoming = 100
 
 // recordRequest is the body of POST recordings: the channel, and when the
-// programme begins, as the guide gives it, with the parental PIN for a
-// locked channel (D55).
+// programme begins, as the guide gives it, or now, to record the channel
+// from now on (D98), with the parental PIN for a locked channel (D55).
 type recordRequest struct {
 	Channel int64  `json:"channel"`
 	Start   int64  `json:"start"`
+	Now     bool   `json:"now"`
 	PIN     string `json:"pin"`
 }
 
 // record answers POST recordings: it schedules a programme that has not
 // ended, which the server records from a minute before its start to two
-// minutes after its end.
+// minutes after its end; or it records a channel from now on, until the
+// end of the programme that the guide shows on it or until it is stopped
+// (D98).
 func (a *API) record(w http.ResponseWriter, r *http.Request, d store.Device) {
 	var req recordRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Channel <= 0 || req.Start <= 0 || req.Start > 1<<40 {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Channel <= 0 ||
+		!req.Now && (req.Start <= 0 || req.Start > 1<<40) {
 		writeError(w, http.StatusBadRequest, errBadRequest)
 		return
 	}
@@ -114,6 +124,10 @@ func (a *API) record(w http.ResponseWriter, r *http.Request, d store.Device) {
 		a.internalError(w, "look up a channel", err)
 		return
 	}
+	if req.Now {
+		a.recordNow(w, r, d, acct, entry, req)
+		return
+	}
 	p, err := a.store.ProgrammeAt(ctx, acct.LineupID, req.Channel, time.Unix(req.Start, 0))
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, errNotFound)
@@ -130,28 +144,117 @@ func (a *API) record(w http.ResponseWriter, r *http.Request, d store.Device) {
 	if entry.Locked && acct.PINHash != "" && !a.pinOK(w, r, d, acct, req.PIN) {
 		return
 	}
-	upcoming, err := a.store.UpcomingRecordings(ctx, acct.ID)
-	if err != nil {
-		a.internalError(w, "count recordings", err)
-		return
+	now := a.now()
+	if !p.Start.After(now) {
+		// A programme on now that the channel already records.
+		if rec, err := a.store.ActiveRecording(ctx, req.Channel, now); err == nil {
+			writeJSON(w, http.StatusOK, recordingOf(rec))
+			return
+		} else if !errors.Is(err, store.ErrNotFound) {
+			a.internalError(w, "look up a recording", err)
+			return
+		}
 	}
-	if upcoming >= maxUpcoming {
-		writeError(w, http.StatusConflict, errTooMany)
+	if !a.roomForOneMore(w, ctx, acct.ID) {
 		return
 	}
 	rec, err := a.store.ScheduleRecording(ctx, store.Recording{AccountID: acct.ID, DeviceID: d.ID, EntryID: req.Channel,
-		Channel: entry.Name, Title: p.Title, Start: p.Start, Stop: p.Stop, CreatedAt: a.now()})
+		Channel: entry.Name, Title: p.Title, Start: p.Start, Stop: p.Stop, CreatedAt: now})
 	if err != nil {
 		a.internalError(w, "schedule a recording", err)
 		return
 	}
 	if rec.State == store.RecordingDone {
-		// Called off while it recorded, which kept what it had written.
-		writeError(w, http.StatusConflict, errRecorded)
-		return
+		// Stopped while it recorded, which kept what it had written: the
+		// rest of a programme on now is a recording of its own, from now.
+		if p.Start.After(now) {
+			writeError(w, http.StatusConflict, errRecorded)
+			return
+		}
+		rec, err = a.store.ScheduleRecording(ctx, store.Recording{AccountID: acct.ID, DeviceID: d.ID, EntryID: req.Channel,
+			Channel: entry.Name, Title: p.Title, Start: now, Stop: p.Stop, CreatedAt: now})
+		if err != nil {
+			a.internalError(w, "schedule a recording", err)
+			return
+		}
+	}
+	if a.recorder != nil && !rec.Start.After(now) {
+		a.recorder.Wake()
 	}
 	a.log.Info("a box scheduled a recording", "title", rec.Title, "channel", rec.Channel,
 		"start", rec.Start.UTC().Format(time.DateTime), "device", d.ID)
+	writeJSON(w, http.StatusOK, recordingOf(rec))
+}
+
+// roomForOneMore checks that a household may have one more recording to
+// come or under way, and otherwise answers so.
+func (a *API) roomForOneMore(w http.ResponseWriter, ctx context.Context, accountID int64) bool {
+	upcoming, err := a.store.UpcomingRecordings(ctx, accountID)
+	if err != nil {
+		a.internalError(w, "count recordings", err)
+		return false
+	}
+	if upcoming >= maxUpcoming {
+		writeError(w, http.StatusConflict, errTooMany)
+		return false
+	}
+	return true
+}
+
+// recordNow records a channel from now on (D98): until the end of the
+// programme that the guide shows on it, unless the household records until
+// stopped; with no programme, until it is stopped. One that runs until
+// stopped ends after the household's most hours. A channel that records
+// already gives the recording it has.
+func (a *API) recordNow(w http.ResponseWriter, r *http.Request, d store.Device, acct store.Account, entry store.PlayableEntry, req recordRequest) {
+	ctx := r.Context()
+	if entry.Locked && acct.PINHash != "" && !a.pinOK(w, r, d, acct, req.PIN) {
+		return
+	}
+	now := a.now()
+	if rec, err := a.store.ActiveRecording(ctx, req.Channel, now); err == nil {
+		writeJSON(w, http.StatusOK, recordingOf(rec))
+		return
+	} else if !errors.Is(err, store.ErrNotFound) {
+		a.internalError(w, "look up a recording", err)
+		return
+	}
+	if !a.roomForOneMore(w, ctx, acct.ID) {
+		return
+	}
+	until, err := a.store.RecordUntil(ctx)
+	if err != nil {
+		a.internalError(w, "read how long recordings run", err)
+		return
+	}
+	hours, err := a.store.RecordingHours(ctx)
+	if err != nil {
+		a.internalError(w, "read how long recordings run", err)
+		return
+	}
+	rec := store.Recording{AccountID: acct.ID, DeviceID: d.ID, EntryID: req.Channel, Channel: entry.Name, Title: entry.Name,
+		Start: now, Stop: now.Add(time.Duration(hours) * time.Hour), UntilStopped: true, CreatedAt: now}
+	ps, err := a.store.EntryProgrammes(ctx, acct.LineupID, req.Channel, now, now.Add(time.Second))
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		a.internalError(w, "look up a programme", err)
+		return
+	}
+	if len(ps) > 0 && ps[0].Stop.After(now) {
+		rec.Title = ps[0].Title
+		if until == store.RecordUntilProgramme {
+			rec.Stop, rec.UntilStopped = ps[0].Stop, false
+		}
+	}
+	rec, err = a.store.ScheduleRecording(ctx, rec)
+	if err != nil {
+		a.internalError(w, "start a recording", err)
+		return
+	}
+	if a.recorder != nil {
+		a.recorder.Wake()
+	}
+	a.log.Info("a box started a recording", "title", rec.Title, "channel", rec.Channel,
+		"until", rec.Stop.UTC().Format(time.DateTime), "until_stopped", rec.UntilStopped, "device", d.ID)
 	writeJSON(w, http.StatusOK, recordingOf(rec))
 }
 
@@ -181,11 +284,13 @@ func (a *API) unrecord(w http.ResponseWriter, r *http.Request, d store.Device) {
 			return
 		}
 		rec.State = store.RecordingCancelled
+		a.log.Info("a box called off a recording", "title", rec.Title, "channel", rec.Channel, "device", d.ID)
 	case store.RecordingRecording:
 		if a.recorder != nil {
 			a.recorder.Cancel(id)
 		}
+		a.log.Info("a box stopped a recording, which keeps what it recorded", "title", rec.Title, "channel", rec.Channel,
+			"device", d.ID)
 	}
-	a.log.Info("a box called off a recording", "title", rec.Title, "channel", rec.Channel, "device", d.ID)
 	writeJSON(w, http.StatusOK, recordingOf(rec))
 }
