@@ -22,14 +22,19 @@ import (
 
 // lineupView is the part of the lineup that the page shows.
 type lineupView struct {
-	Group *int64 // nil for every channel
-	Query string // a part of the names shown
-	Page  int    // from 1
-	Add   string // a part of the names of channels in other groups, to add to Group
+	// Lineup is the lineup shown, 0 for the household account's (D106).
+	Lineup int64
+	Group  *int64 // nil for every channel
+	Query  string // a part of the names shown
+	Page   int    // from 1
+	Add    string // a part of the names of channels in other groups, to add to Group
 }
 
 func parseLineupView(v url.Values) lineupView {
 	lv := lineupView{Query: strings.TrimSpace(v.Get("q")), Page: 1}
+	if id, err := strconv.ParseInt(v.Get("lineup"), 10, 64); err == nil && id > 0 {
+		lv.Lineup = id
+	}
 	if id, err := strconv.ParseInt(v.Get("group"), 10, 64); err == nil && id >= 0 {
 		lv.Group = &id
 		if id > 0 {
@@ -45,6 +50,9 @@ func parseLineupView(v url.Values) lineupView {
 // values encodes the view, with another page if page is not 0.
 func (lv lineupView) values(page int) url.Values {
 	v := url.Values{}
+	if lv.Lineup != 0 {
+		v.Set("lineup", strconv.FormatInt(lv.Lineup, 10))
+	}
 	if lv.Group != nil {
 		v.Set("group", strconv.FormatInt(*lv.Group, 10))
 	}
@@ -77,11 +85,15 @@ func (lv lineupView) URL(page int) template.URL {
 
 // GroupURL returns the address of a group's channels; -1 for all.
 func (lv lineupView) GroupURL(id int64) template.URL {
-	if id < 0 {
-		return "/admin/lineup"
+	to := lineupView{Lineup: lv.Lineup, Page: 1}
+	if id >= 0 {
+		to.Group = &id
 	}
-	return template.URL("/admin/lineup?group=" + strconv.FormatInt(id, 10))
+	return to.URL(0)
 }
+
+// In returns a view of the start of the lineup, in the lineup it shows.
+func (lv lineupView) In() lineupView { return lineupView{Lineup: lv.Lineup, Page: 1} }
 
 // PanelURL returns the address of an entry's panel, for htmx to put beside
 // the channels.
@@ -124,7 +136,15 @@ type lineupData struct {
 	// group shown: the first maxCandidates of Found.
 	Candidates []store.LineupEntry
 	Found      int
+
+	// Lineups are every lineup, and Current the one shown (D106).
+	Lineups []store.LineupInfo
+	Current store.LineupInfo
 }
+
+// SeenBy names the accounts that see the lineup shown, such as "Household
+// and Sam".
+func (d lineupData) SeenBy() string { return andList(d.Current.Accounts) }
 
 // maxCandidates is how many channels the search for channels to add lists.
 const maxCandidates = 50
@@ -221,6 +241,14 @@ func (a *Admin) lineupData(ctx context.Context, lv lineupView, csrf string, rows
 	d := lineupData{View: lv, Groups: groups, CSRF: csrf, homeGroup: map[string]string{}, CanRepair: a.canRepair()}
 	if d.RepairDefault, err = a.store.RepairDefault(ctx); err != nil {
 		return lineupData{}, err
+	}
+	if d.Lineups, err = a.store.Lineups(ctx); err != nil {
+		return lineupData{}, err
+	}
+	for _, l := range d.Lineups {
+		if l.ID == lineup {
+			d.Current = l
+		}
 	}
 	for i, g := range groups {
 		if lv.IsGroup(g.ID) {
@@ -570,7 +598,7 @@ func (a *Admin) groupAction(w http.ResponseWriter, r *http.Request, s store.Admi
 		}
 		if err = a.mergeGroup(ctx, id, into); err == nil {
 			done = "Merged the group."
-			lv = lineupView{Group: &into, Page: 1}
+			lv = lineupView{Lineup: lv.Lineup, Group: &into, Page: 1}
 		}
 	case "number":
 		from, _, ok := formInt(r, "from")
@@ -585,7 +613,7 @@ func (a *Admin) groupAction(w http.ResponseWriter, r *http.Request, s store.Admi
 	case "delete":
 		if err = a.deleteGroup(ctx, id); err == nil {
 			done = "Deleted the group."
-			lv = lineupView{Page: 1}
+			lv = lv.In()
 		}
 	default:
 		a.notFound(w, r)
@@ -599,7 +627,7 @@ func (a *Admin) createGroupForm(w http.ResponseWriter, r *http.Request, s store.
 	lv := parseLineupView(backValues(r))
 	id, err := a.createGroup(r.Context(), r.PostFormValue("name"))
 	if err == nil {
-		lv = lineupView{Group: &id, Page: 1}
+		lv = lineupView{Lineup: lv.Lineup, Group: &id, Page: 1}
 	}
 	a.lineupDoneAt(w, r, s, lv, err, "Made the group. Find channels under Add channels to put them in it, or move a category here from its group.", 0)
 }

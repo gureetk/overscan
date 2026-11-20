@@ -8,6 +8,45 @@
   <p class="hint"><strong>{{count .Data.Shown}}</strong> of {{count .Data.All}} {{plural .Data.All "channel"}} shown</p>
 </div>
 <div id="lineup-main">
+<div class="lineup-bar">
+  {{- if gt (len .Data.Lineups) 1}}
+  <form method="get" action="/admin/lineup" class="lineup-pick">
+    <label for="lineup-pick">Lineup</label>
+    <select id="lineup-pick" name="lineup" data-autosubmit>
+      {{- range .Data.Lineups}}<option value="{{.ID}}"{{if eq .ID $.Data.Current.ID}} selected{{end}}>{{.Name}}</option>{{end}}
+    </select>
+    <button type="submit" class="small js-hide">Show</button>
+  </form>
+  <p class="hint">{{if .Data.Current.Accounts}}Seen by {{.Data.SeenBy}}.{{else}}No account sees it yet: choose it for one on the <a href="/admin/accounts">Accounts</a> page.{{end}}</p>
+  {{- end}}
+  <details class="popover lineups-menu">
+    <summary class="button small quiet">Lineups</summary>
+    <div class="menu form-menu">
+      <form method="post" action="/admin/lineups/copy" hx-post="/admin/lineups/copy" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" class="row-form">
+        <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+        <input type="hidden" name="back" value="{{.Data.View.Back}}">
+        <input name="name" maxlength="50" placeholder="Name of the copy" aria-label="Name of a copy of {{.Data.Current.Name}}" required>
+        <button type="submit">Copy this lineup</button>
+      </form>
+      {{- if gt (len .Data.Lineups) 1}}
+      <form method="post" action="/admin/lineups/rename" hx-post="/admin/lineups/rename" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" class="row-form">
+        <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+        <input type="hidden" name="back" value="{{.Data.View.Back}}">
+        <input name="name" maxlength="50" value="{{.Data.Current.Name}}" aria-label="New name of {{.Data.Current.Name}}" required>
+        <button type="submit">Rename</button>
+      </form>
+      {{- if not .Data.Current.Accounts}}
+      <form method="post" action="/admin/lineups/remove" hx-post="/admin/lineups/remove" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" hx-confirm="Remove the lineup {{.Data.Current.Name}}, with its edits?">
+        <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+        <input type="hidden" name="back" value="{{.Data.View.Back}}">
+        <button type="submit" class="danger">Remove this lineup</button>
+      </form>
+      {{- end}}
+      {{- end}}
+      <p class="hint">A lineup is what an account's devices and players see of live TV. A copy starts with this lineup's channels, groups, numbers and edits, and then has its own; a source's new channels join every lineup. Each account chooses its lineup on the Accounts page.</p>
+    </div>
+  </details>
+</div>
 {{template "alerts" .}}
 {{- if and .Data.Locks (not .Data.PINSet)}}
 <p class="alert error locks-notice">The lineup's {{if eq .Data.Locks 1}}lock does{{else}}{{.Data.Locks}} locks do{{end}} nothing until there is a parental PIN. <a href="/admin/settings">Set one in Settings</a>.</p>
@@ -43,6 +82,7 @@
 
   <section class="card channels-panel" id="lineup-channels" aria-labelledby="channels-title">
     <form method="get" action="/admin/lineup" class="group-pick">
+      {{- with .Data.View.Lineup}}<input type="hidden" name="lineup" value="{{.}}">{{end}}
       <label for="group-pick" class="sr">Group</label>
       <select id="group-pick" name="group" data-autosubmit>
         <option value=""{{if not .Data.View.Group}} selected{{end}}>All channels</option>
@@ -60,6 +100,7 @@
 
     {{- if or .Data.Total .Data.View.Query}}
     <form method="get" action="/admin/lineup" class="search" hx-get="/admin/lineup" hx-trigger="input changed delay:400ms, submit" hx-sync="this:replace" hx-target="#lineup-results" hx-select="#lineup-results" hx-swap="outerHTML" hx-push-url="true">
+      {{- with .Data.View.Lineup}}<input type="hidden" name="lineup" value="{{.}}">{{end}}
       {{- with .Data.View.Group}}<input type="hidden" name="group" value="{{.}}">{{end}}
       {{- with .Data.View.Add}}<input type="hidden" name="add" value="{{.}}">{{end}}
       {{template "i-search"}}
@@ -227,6 +268,7 @@
   <section class="menu form-menu wide" aria-labelledby="add-channels-title">
   <h3 id="add-channels-title" class="sr">Add channels</h3>
   <form method="get" action="/admin/lineup" class="row-form" hx-get="/admin/lineup" hx-trigger="input changed delay:400ms, submit" hx-sync="this:replace" hx-target="#add-results" hx-select="#add-results" hx-swap="outerHTML" hx-push-url="true">
+    {{- with .D.View.Lineup}}<input type="hidden" name="lineup" value="{{.}}">{{end}}
     <input type="hidden" name="group" value="{{.G.ID}}">
     {{- with .D.View.Query}}<input type="hidden" name="q" value="{{.}}">{{end}}
     <input type="search" name="add" value="{{.D.View.Add}}" placeholder="Find channels in other groups by name" aria-label="Find channels in other groups by name">

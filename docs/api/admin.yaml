@@ -47,8 +47,10 @@ tags:
     description: The server itself.
   - name: lineup
     description: >-
-      The household's lineup (D45, D47): its groups and channels, as devices
-      see them, and the administrator's edits, which refreshes leave alone.
+      A lineup (D45, D47): its groups and channels, as devices see them, and
+      the administrator's edits, which refreshes leave alone. Every path
+      below `lineup` reads or changes the household account's lineup, or
+      the one that its `lineup` parameter names (D106).
       Each category of a source goes to a group; a group can be renamed,
       hidden, merged into another or numbered from a starting number. A
       channel can be renamed, moved to another group, hidden or shown on its
@@ -58,6 +60,11 @@ tags:
       before it plays them, and Stalker clients do not see them (D55). A
       channel's stream can be set to go through ffmpeg, which rebuilds its
       timestamps (D57).
+  - name: lineups
+    description: >-
+      The lineups (D106). Each account sees one. A new one starts as a copy
+      of another, with its groups, numbers and edits, and then has its own;
+      a source's new channels join every lineup.
   - name: library
     description: >-
       The films and series that devices see (D79): their shelves, which the
@@ -799,12 +806,14 @@ paths:
     patch:
       tags: [accounts]
       operationId: changeAccount
-      summary: Rename an account, or change its limit, outputs or theme
+      summary: Rename an account, or change its limit, outputs, theme or lineup
       description: >-
         `max_streams` is the most streams that its devices and players play at once, 1 to 100, or 0 for any number;
         a device that starts another stream at the limit replaces its own oldest, and another device's is refused
         (`account_limit` in the device API, `limit` in the Stalker API). `outputs` says which outputs it may use, all
-        off at first; `theme_id` is the theme of its boxes, 0 for Overscan's own (D97).
+        off at first; `theme_id` is the theme of its boxes, 0 for Overscan's own (D97). `lineup_id` is the lineup it
+        sees (D106): the favourites of its profiles and the lists of what its devices watched move to the same
+        channels in it, and those that it lacks are forgotten.
       security:
         - session: []
           csrf: []
@@ -829,6 +838,9 @@ paths:
                 theme_id:
                   type: integer
                   minimum: 0
+                lineup_id:
+                  type: integer
+                  minimum: 1
       responses:
         "200":
           $ref: "#/components/responses/OverscanAccount"
@@ -1250,7 +1262,136 @@ paths:
         "409":
           $ref: "#/components/responses/ProfileConflict"
 
+  /lineups:
+    get:
+      tags: [lineups]
+      operationId: listLineups
+      summary: List the lineups
+      description: The first made first, each with the accounts that see it and how many channels it shows.
+      responses:
+        "200":
+          description: The lineups.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [lineups]
+                properties:
+                  lineups:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/LineupSummary"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    post:
+      tags: [lineups]
+      operationId: copyLineup
+      summary: Make a lineup as a copy of another
+      description: >-
+        The copy has the groups, the categories they hold, and the channels of the lineup that `copy_of` names, or
+        else the one that the `lineup` parameter names, or else the household account's, with their numbers, pins,
+        names, groups, visibility and locks; from then on it has edits of its own. No account sees it until one
+        is given it. A server has at most 20 lineups (`too_many_lineups`, 409).
+      parameters:
+        - $ref: "#/components/parameters/Lineup"
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  maxLength: 50
+                copy_of:
+                  type: integer
+                  minimum: 1
+      responses:
+        "201":
+          description: The new lineup.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LineupSummary"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NoSuchLineup"
+        "409":
+          $ref: "#/components/responses/LineupConflict"
+  /lineups/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    patch:
+      tags: [lineups]
+      operationId: renameLineup
+      summary: Rename a lineup
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  maxLength: 50
+      responses:
+        "200":
+          description: The lineup.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LineupSummary"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NoSuchLineup"
+        "409":
+          $ref: "#/components/responses/LineupConflict"
+    delete:
+      tags: [lineups]
+      operationId: removeLineup
+      summary: Remove a lineup
+      description: >-
+        Only a lineup that no account sees (`lineup_in_use`, 409). Its groups and edits go with it, and so do the
+        favourites and the lists of what devices watched that pointed at its channels.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "204":
+          description: Removed.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NoSuchLineup"
+        "409":
+          $ref: "#/components/responses/LineupConflict"
   /lineup/groups:
+    parameters:
+      - $ref: "#/components/parameters/Lineup"
     get:
       tags: [lineup]
       operationId: listGroups
@@ -1310,6 +1451,7 @@ paths:
   /lineup/groups/{id}:
     parameters:
       - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/Lineup"
     patch:
       tags: [lineup]
       operationId: changeGroup
@@ -1374,6 +1516,7 @@ paths:
   /lineup/groups/{id}/merge:
     parameters:
       - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/Lineup"
     post:
       tags: [lineup]
       operationId: mergeGroup
@@ -1411,6 +1554,7 @@ paths:
   /lineup/groups/{id}/number:
     parameters:
       - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/Lineup"
     post:
       tags: [lineup]
       operationId: numberGroup
@@ -1461,6 +1605,7 @@ paths:
   /lineup/categories/{id}:
     parameters:
       - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/Lineup"
     put:
       tags: [lineup]
       operationId: moveCategory
@@ -1493,6 +1638,8 @@ paths:
           $ref: "#/components/responses/NotJSON"
 
   /lineup/channels:
+    parameters:
+      - $ref: "#/components/parameters/Lineup"
     get:
       tags: [lineup]
       operationId: listChannels
@@ -1605,6 +1752,7 @@ paths:
   /lineup/channels/{id}:
     parameters:
       - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/Lineup"
     patch:
       tags: [lineup]
       operationId: changeChannel
@@ -2506,6 +2654,16 @@ components:
       required: true
       schema:
         type: integer
+    Lineup:
+      name: lineup
+      in: query
+      required: false
+      description: >-
+        The lineup to read or change, by its ID (D106). Without it, the
+        household account's. A lineup that does not exist answers 404.
+      schema:
+        type: integer
+        minimum: 1
     Kind:
       name: kind
       in: path
@@ -2554,6 +2712,25 @@ components:
         Every request that changes something sends it.
 
   schemas:
+    LineupSummary:
+      type: object
+      required: [id, name, created_at, accounts, shown]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        accounts:
+          type: array
+          description: The names of the accounts that see it.
+          items:
+            type: string
+        shown:
+          type: integer
+          description: How many channels it shows.
     Credentials:
       type: object
       additionalProperties: false
@@ -3442,6 +3619,20 @@ components:
           description: A sentence for people.
 
   responses:
+    NoSuchLineup:
+      description: There is no such lineup (`not_found`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    LineupConflict:
+      description: >-
+        Another lineup has that name (`name_taken`), an account sees the lineup (`lineup_in_use`), or the server
+        has as many lineups as it may (`too_many_lineups`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     Device:
       description: The device.
       content:

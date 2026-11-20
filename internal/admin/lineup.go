@@ -18,7 +18,8 @@ import (
 
 // The lineup (D47): its groups, which the administrator renames, hides,
 // merges and numbers, and its channels, which they rename, regroup, hide or
-// show, and number. The admin edits the household account's lineup.
+// show, and number. The admin edits the household account's lineup, or
+// another that a request names (D106).
 
 // Limits on what the administrator types.
 const (
@@ -40,15 +41,6 @@ func (e *editError) Error() string { return e.text }
 
 func badEdit(status int, code, format string, args ...any) error {
 	return &editError{status, code, fmt.Sprintf(format, args...)}
-}
-
-// lineupID returns the household account's lineup.
-func (a *Admin) lineupID(ctx context.Context) (int64, error) {
-	acct, err := a.store.Account(ctx, householdAccount)
-	if err != nil {
-		return 0, err
-	}
-	return acct.LineupID, nil
 }
 
 // checkName returns the name, trimmed, or why it cannot be one.

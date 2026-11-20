@@ -229,9 +229,14 @@ func debugChannel(ctx context.Context, cfg config.Config, args []string, stdout,
 	return 0
 }
 
-// lineupEntry returns the household lineup's channel with the given number.
+// lineupEntry returns the channel with the given number in the lineup that
+// the household account sees.
 func lineupEntry(ctx context.Context, st *store.Store, number int) (store.PlayableEntry, error) {
-	channels, err := st.LineupChannels(ctx, store.DefaultLineupID)
+	acct, err := st.Account(ctx, store.HouseholdAccount)
+	if err != nil {
+		return store.PlayableEntry{}, err
+	}
+	channels, err := st.LineupChannels(ctx, acct.LineupID)
 	if err != nil {
 		return store.PlayableEntry{}, err
 	}

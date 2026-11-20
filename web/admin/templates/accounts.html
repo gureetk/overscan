@@ -40,7 +40,7 @@
         <span class="tile-icon{{if .IsEnded}} bad{{end}}">{{template "i-user"}}</span>
         <div class="profile-text">
           <strong>{{.Name}}</strong>
-          <span class="muted">{{.Devices}} {{plural .Devices "device"}} · {{.Profiles}} {{plural .Profiles "profile"}} · {{if .MaxStreams}}up to {{.MaxStreams}} {{plural .MaxStreams "stream"}} at once{{else}}any number of streams at once{{end}}</span>
+          <span class="muted">{{.Devices}} {{plural .Devices "device"}} · {{.Profiles}} {{plural .Profiles "profile"}} · {{if .MaxStreams}}up to {{.MaxStreams}} {{plural .MaxStreams "stream"}} at once{{else}}any number of streams at once{{end}}{{if gt (len $.Data.Lineups) 1}} · sees {{.LineupName}}{{end}}</span>
         </div>
         <div class="chips">
           {{- if .Username}}<span class="badge" title="Players sign in as {{.Username}}">Login</span>{{end}}
@@ -56,6 +56,19 @@
             <input name="name" maxlength="50" value="{{.Name}}" aria-label="New name of {{.Name}}" required>
             <button type="submit">Rename</button>
           </form>
+
+          {{- if gt (len $.Data.Lineups) 1}}
+          <h3>Lineup</h3>
+          <form method="post" action="/admin/accounts/{{.ID}}/lineup" hx-post="/admin/accounts/{{.ID}}/lineup" hx-trigger="change" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="row-form">
+            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+            {{- $lineup := .LineupID}}
+            <select name="lineup" aria-label="Lineup that {{.Name}} sees">
+              {{- range $.Data.Lineups}}<option value="{{.ID}}"{{if eq .ID $lineup}} selected{{end}}>{{.Name}}</option>{{end}}
+            </select>
+            <noscript><button type="submit">Save</button></noscript>
+          </form>
+          <p class="hint">What its devices and players see of live TV. Its favourites stay, for the channels that the lineup has. Lineups are made and edited on the Live TV page.</p>
+          {{- end}}
 
           <h3>Streams at once</h3>
           <form method="post" action="/admin/accounts/{{.ID}}/streams" hx-post="/admin/accounts/{{.ID}}/streams" hx-trigger="change" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="row-form">

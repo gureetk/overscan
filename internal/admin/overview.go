@@ -134,8 +134,10 @@ func (a *Admin) streamRowsOf(ctx context.Context, devices []store.Device, lineup
 		return nil, err
 	}
 	accountNames := map[int64]string{}
-	if len(accounts) > 1 {
-		for _, acct := range accounts {
+	lineupOf := map[int64]int64{}
+	for _, acct := range accounts {
+		lineupOf[acct.ID] = acct.LineupID
+		if len(accounts) > 1 {
 			accountNames[acct.ID] = acct.Name
 		}
 	}
@@ -165,7 +167,13 @@ func (a *Admin) streamRowsOf(ctx context.Context, devices []store.Device, lineup
 		if s.Kind == hub.PlaysMovie || s.Kind == hub.PlaysEpisode {
 			continue // which has no number
 		}
-		e, err := a.store.LineupEntry(ctx, lineup, s.EntryID)
+		// The channel's number in the lineup that the stream's account
+		// sees (D106), or the household's.
+		in := lineup
+		if id, ok := lineupOf[s.AccountID]; ok {
+			in = id
+		}
+		e, err := a.store.LineupEntry(ctx, in, s.EntryID)
 		switch {
 		case err == nil:
 			rows[i].Number = e.Number
