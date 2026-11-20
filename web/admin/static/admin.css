@@ -789,6 +789,18 @@ h2.with-dot .count { margin-left: 0; }
 .lineups-menu { margin-left: auto; }
 details.lineups-menu > .menu { left: auto; right: 0; min-width: 22rem; max-width: min(28rem, calc(100vw - 2rem)); }
 
+/* A channel's backups (D109), in its panel. */
+.channel-panel .backups { padding: 1rem 1.25rem 1.25rem; border-top: 1px solid var(--line); }
+.channel-panel .backups h3 { margin: 0 0 0.5rem; font-size: 0.8125rem; font-weight: 600; }
+.backup-list { margin: 0 0 0.625rem; padding: 0; list-style: none; }
+.backup-list li { display: flex; align-items: center; gap: 0.25rem; padding: 0.375rem 0; border-top: 1px solid var(--line); }
+.backup-list li:last-child { border-bottom: 1px solid var(--line); }
+.backup-list form { margin: 0; }
+.backup-text { flex: 1 1 auto; min-width: 0; }
+.backup-text strong { display: block; font-size: 0.875rem; font-weight: 600; overflow-wrap: anywhere; }
+.backup-text .muted { display: block; font-size: 0.8125rem; }
+.channel-panel .backups .hint { margin: 0.5rem 0 0; }
+
 /* The Live TV pages' tabs: a lineup's channels and its rules (D107). */
 .lineup-tabs { display: flex; gap: 0.125rem; padding: 0.1875rem; border-radius: 10px; background: var(--chip); }
 .lineup-tabs a { display: inline-flex; align-items: center; gap: 0.375rem; height: 2rem; padding: 0 0.875rem; border-radius: 8px; color: var(--text2); font-size: 0.875rem; font-weight: 500; text-decoration: none; }

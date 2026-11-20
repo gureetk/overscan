@@ -310,6 +310,7 @@
     {{- else if not .E.Number}}<span class="badge">No number</span>{{end}}
     {{- if and (eq .Visibility "shown") (not .E.Missing)}}<span class="badge" title="Shown even if its group is hidden">{{template "i-eye"}}Always shown</span>{{end}}
     {{- with .RuleText}}<span class="badge accent" title="{{.}}">{{template "i-rule"}}Rule</span>{{end}}
+    {{- with .E.Backups}}<span class="badge" title="When its stream cannot start, {{if eq . 1}}its backup plays{{else}}one of its {{.}} backups plays{{end}}">{{.}} {{plural . "backup"}}</span>{{end}}
     {{- if .E.Locked}}<span class="badge locked" title="It needs the parental PIN to play">{{template "i-lock"}}Locked</span>
     {{- else if and .E.GroupLocked (not .InGroup)}}<span class="badge locked" title="Its group is locked: it needs the parental PIN to play">{{template "i-lock"}}Locked</span>{{end}}
     {{- if .E.Adult}}<span class="badge{{if .E.AdultLocked}} locked{{end}}" title="Its source marks it for adults{{if .E.AdultLocked}}, which Settings locks{{else if .E.AdultHidden}}, which Settings hides from devices{{else}}; Settings can lock or hide such channels{{end}}">{{if .E.AdultLocked}}{{template "i-lock"}}{{else if .E.AdultHidden}}{{template "i-eye-off"}}{{end}}For adults</span>{{end}}
@@ -388,5 +389,49 @@
       <a class="button" href="{{.View.URL 0}}" hx-get="{{.View.URL 0}}" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" hx-push-url="true">Cancel</a>
     </div>
   </form>
+  <section class="backups" aria-labelledby="backups-title">
+    <h3 id="backups-title">Backups</h3>
+    {{- if .Backups}}
+    <ol class="backup-list">
+      {{- $last := sub (len .Backups) 1}}
+      {{- range $i, $b := .Backups}}
+      <li>
+        <div class="backup-text">
+          <strong>{{if .Number}}{{.Number}} · {{end}}{{.Name}}</strong>
+          <span class="muted">{{.Source}}{{if .Missing}} · its source no longer lists it{{end}}</span>
+        </div>
+        {{- if gt $i 0}}{{template "backup-button" (dict "R" $ "B" . "Op" "up" "Label" "Move up")}}{{end}}
+        {{- if lt $i $last}}{{template "backup-button" (dict "R" $ "B" . "Op" "down" "Label" "Move down")}}{{end}}
+        {{- template "backup-button" (dict "R" $ "B" . "Op" "remove" "Label" "Remove")}}
+      </li>
+      {{- end}}
+    </ol>
+    {{- end}}
+    {{- if lt (len .Backups) .MaxBackups}}
+    <form method="post" action="/admin/lineup/channels/{{.E.ID}}/backups" hx-post="/admin/lineup/channels/{{.E.ID}}/backups" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" class="row-form">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <input type="hidden" name="back" value="{{.View.Back}}">
+      <input type="hidden" name="op" value="add">
+      <input name="backup" maxlength="200" placeholder="A channel's number or name" aria-label="A backup for {{.E.Name}}: a channel's number or name" required>
+      <button type="submit">Add</button>
+    </form>
+    {{- end}}
+    <p class="hint">When this channel's stream cannot start, because its source is at its limit or does not send it, its backups play in their place, the first that can. A backup can be a channel of another source, hidden or not.</p>
+  </section>
 </aside>
+{{end}}
+
+{{/* A button that changes one of a channel's backups: .R is the channel's row, .B the backup. */}}
+{{define "backup-button"}}
+<form method="post" action="/admin/lineup/channels/{{.R.E.ID}}/backups" hx-post="/admin/lineup/channels/{{.R.E.ID}}/backups" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML">
+  <input type="hidden" name="csrf" value="{{.R.CSRF}}">
+  <input type="hidden" name="back" value="{{.R.View.Back}}">
+  <input type="hidden" name="op" value="{{.Op}}">
+  <input type="hidden" name="backup" value="{{.B.EntryID}}">
+  {{- if eq .Op "remove"}}
+  <button type="submit" class="quiet small danger">{{.Label}}</button>
+  {{- else}}
+  <button type="submit" class="quiet icon" aria-label="{{.Label}}: {{.B.Name}}" title="{{.Label}}">{{if eq .Op "up"}}{{template "i-chevron-up"}}{{else}}{{template "i-chevron-down"}}{{end}}</button>
+  {{- end}}
+</form>
 {{end}}

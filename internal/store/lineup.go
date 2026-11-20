@@ -366,6 +366,9 @@ type LineupEntry struct {
 	// none, and RuleShift is how far a rule moves its guide's times (D108).
 	RuleGuide string
 	RuleShift time.Duration
+	// Backups counts the channels whose streams the hub tries when its own
+	// cannot start (D109).
+	Backups int
 }
 
 // EntryQuery picks a lineup's entries.
@@ -446,7 +449,7 @@ const entrySelect = `
 			c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultLock + `', c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultHide + `', c.radio,
 			e.rule_name IS NOT NULL, e.rule_group_id IS NOT NULL, e.rule_hidden IS 0, e.rule_hidden IS 1,
 			e.rule_logo IS NOT NULL, e.rule_pinned, COALESCE((SELECT name FROM channels WHERE id = e.rule_guide_id), ''),
-			COALESCE(e.rule_guide_shift, 0)`
+			COALESCE(e.rule_guide_shift, 0), (SELECT count(*) FROM lineup_entry_backups WHERE entry_id = e.id)`
 
 func scanEntry(row rowScanner) (LineupEntry, error) {
 	var e LineupEntry
@@ -455,7 +458,8 @@ func scanEntry(row rowScanner) (LineupEntry, error) {
 	err := row.Scan(&e.ID, &e.ChannelID, &e.SourceID, &e.Source, &e.Number, &e.Pinned, &e.Name, &e.ChannelName,
 		&e.Renamed, &e.GroupID, &e.Group, &e.Moved, &e.Category, &e.Visibility, &e.Hidden, &e.Missing, &e.Logo,
 		&e.Locked, &e.GroupLocked, &e.Repair, &own, &e.Adult, &e.AdultLocked, &e.AdultHidden, &e.Radio,
-		&e.RuleRenamed, &e.RuleMoved, &e.RuleShown, &e.RuleHidden, &e.RuleLogo, &e.RuleNumbered, &e.RuleGuide, &shift)
+		&e.RuleRenamed, &e.RuleMoved, &e.RuleShown, &e.RuleHidden, &e.RuleLogo, &e.RuleNumbered, &e.RuleGuide, &shift,
+		&e.Backups)
 	if own.Valid {
 		e.RepairOwn = &own.Bool
 	}
