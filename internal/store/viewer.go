@@ -143,11 +143,13 @@ type EntryProgramme struct {
 func (s *Store) SearchProgrammes(ctx context.Context, lineupID int64, query string, from, to time.Time, limit int) ([]EntryProgramme, error) {
 	pattern := "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(query) + "%"
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT e.id, p.id, p.start, p.stop, p.title, p.subtitle, p.description, p.category`+lineupEntryJoins+`
-		JOIN programmes p ON p.channel_id = c.id
+		SELECT e.id, p.id, p.start + `+guideShiftSQL+` AS shown_start, p.stop + `+guideShiftSQL+`, p.title, p.subtitle,
+			p.description, p.category`+lineupEntryJoins+`
+		JOIN programmes p ON p.channel_id = `+guideChannelSQL+`
 		JOIN source_guides sg ON sg.source_id = p.source_id AND sg.generation = p.generation
-		WHERE e.lineup_id = ? AND `+shownEntry+` AND p.stop > ? AND p.start < ? AND p.title LIKE ? ESCAPE '\'
-		ORDER BY p.start, e.number
+		WHERE e.lineup_id = ? AND `+shownEntry+` AND p.stop > ? - `+guideShiftSQL+` AND p.start < ? - `+guideShiftSQL+`
+			AND p.title LIKE ? ESCAPE '\'
+		ORDER BY shown_start, e.number
 		LIMIT ?`,
 		lineupID, from.Unix(), to.Unix(), pattern, limit)
 	if err != nil {

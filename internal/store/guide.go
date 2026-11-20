@@ -360,20 +360,34 @@ func (s *Store) Programmes(ctx context.Context, channelID int64, from, to time.T
 // it can start, so that queries can use the index on start.
 const longestProgramme = 48 * time.Hour
 
+// The channel whose programmes a lineup entry shows, and the seconds that
+// their times move by: its own channel's, unmoved, unless a rule says
+// otherwise (D108). Queries compare the programmes' own times with a window
+// moved back by the shift, so that they keep the index on start.
+const (
+	guideChannelSQL = "COALESCE(e.rule_guide_id, c.id)"
+	guideShiftSQL   = "COALESCE(e.rule_guide_shift, 0)"
+)
+
 // EntryProgrammes returns the programmes of a lineup entry's channel that end
 // after from and start before to, by start time. It returns ErrNotFound for
 // an entry that devices of the lineup do not see.
 func (s *Store) EntryProgrammes(ctx context.Context, lineupID, entryID int64, from, to time.Time) ([]Programme, error) {
-	var channelID int64
-	err := s.db.QueryRowContext(ctx, `SELECT c.id`+lineupEntryJoins+`
-		WHERE e.id = ? AND e.lineup_id = ? AND `+shownEntry, entryID, lineupID).Scan(&channelID)
+	var channelID, shift int64
+	err := s.db.QueryRowContext(ctx, `SELECT `+guideChannelSQL+`, `+guideShiftSQL+lineupEntryJoins+`
+		WHERE e.id = ? AND e.lineup_id = ? AND `+shownEntry, entryID, lineupID).Scan(&channelID, &shift)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("store: lineup entry %d: %w", entryID, err)
 	}
-	return s.Programmes(ctx, channelID, from, to)
+	moved := time.Duration(shift) * time.Second
+	ps, err := s.Programmes(ctx, channelID, from.Add(-moved), to.Add(-moved))
+	for i := range ps {
+		ps[i].Start, ps[i].Stop = ps[i].Start.Add(moved), ps[i].Stop.Add(moved)
+	}
+	return ps, err
 }
 
 // EachLineupProgramme calls fn with each programme of every channel that a
@@ -382,10 +396,12 @@ func (s *Store) EntryProgrammes(ctx context.Context, lineupID, entryID int64, fr
 // first error, which it returns.
 func (s *Store) EachLineupProgramme(ctx context.Context, lineupID int64, from, to time.Time, fn func(entryID int64, p Programme) error) error {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT e.id, p.id, p.start, p.stop, p.title, p.subtitle, p.description, p.category`+lineupEntryJoins+`
-		JOIN programmes p ON p.channel_id = c.id
+		SELECT e.id, p.id, p.start + `+guideShiftSQL+`, p.stop + `+guideShiftSQL+`, p.title, p.subtitle, p.description,
+			p.category`+lineupEntryJoins+`
+		JOIN programmes p ON p.channel_id = `+guideChannelSQL+`
 		JOIN source_guides sg ON sg.source_id = p.source_id AND sg.generation = p.generation
-		WHERE e.lineup_id = ? AND `+shownEntry+` AND p.start >= ? AND p.start < ? AND p.stop > ?
+		WHERE e.lineup_id = ? AND `+shownEntry+` AND p.start >= ? - `+guideShiftSQL+` AND p.start < ? - `+guideShiftSQL+`
+			AND p.stop > ? - `+guideShiftSQL+`
 		ORDER BY e.id, p.start`,
 		lineupID, from.Add(-longestProgramme).Unix(), to.Unix(), from.Unix())
 	if err != nil {
@@ -422,10 +438,12 @@ func (s *Store) LineupProgrammes(ctx context.Context, lineupID int64, from, to t
 		}
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT e.id, p.id, p.start, p.stop, p.title, p.subtitle, p.description, p.category`+lineupEntryJoins+`
-		JOIN programmes p ON p.channel_id = c.id
+		SELECT e.id, p.id, p.start + `+guideShiftSQL+`, p.stop + `+guideShiftSQL+`, p.title, p.subtitle, p.description,
+			p.category`+lineupEntryJoins+`
+		JOIN programmes p ON p.channel_id = `+guideChannelSQL+`
 		JOIN source_guides sg ON sg.source_id = p.source_id AND sg.generation = p.generation
-		WHERE e.lineup_id = ? AND `+shownEntry+` AND p.start >= ? AND p.start < ? AND p.stop > ?`+only+`
+		WHERE e.lineup_id = ? AND `+shownEntry+` AND p.start >= ? - `+guideShiftSQL+` AND p.start < ? - `+guideShiftSQL+`
+			AND p.stop > ? - `+guideShiftSQL+only+`
 		ORDER BY e.id, p.start`,
 		args...)
 	if err != nil {

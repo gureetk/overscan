@@ -266,3 +266,99 @@ func TestRuleGroupWhateverItsCase(t *testing.T) {
 		}
 	}
 }
+
+// A rule gives a channel another channel's guide and another moves its
+// times, and every way of reading the guide shows them so (D108).
+func TestGuideRules(t *testing.T) {
+	s, src, at := lineupSetup(t)
+	ctx := context.Background()
+	apply(t, s, src, at, grouped("Alpha/News", "Alpha +1/News", "Bravo/Sport"))
+	alpha, plus := entryOf(t, s, "Alpha"), entryOf(t, s, "Alpha +1")
+	day := archiveDay
+	writeGuide(t, s, src, day, 0, []int64{alpha.ChannelID}, day, day.Add(time.Hour))
+	window := func(id int64) []string {
+		t.Helper()
+		ps, err := s.EntryProgrammes(ctx, DefaultLineupID, id, day, day.Add(3*time.Hour))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return starts(ps)
+	}
+	if got := window(plus.ID); len(got) != 0 {
+		t.Fatalf("Alpha +1 before any rule: %v", got)
+	}
+
+	plusOnes := rules.Match{Name: "* +1"}
+	addRule(t, s, rules.Rule{Action: rules.Guide, Replace: "+1", Match: plusOnes})
+	shift := addRule(t, s, rules.Rule{Action: rules.Shift, Minutes: 60, Match: plusOnes})
+	if e := entryOf(t, s, "Alpha +1"); e.RuleGuide != "Alpha" || e.RuleShift != time.Hour {
+		t.Errorf("Alpha +1's entry: %+v", e)
+	}
+	if e := entryOf(t, s, "Alpha"); e.RuleGuide != "" || e.RuleShift != 0 {
+		t.Errorf("Alpha's entry: %+v", e)
+	}
+	want := map[int64][]string{alpha.ID: {"18:00 On at 18:00", "19:00 On at 19:00"}, plus.ID: {"19:00 On at 18:00", "20:00 On at 19:00"}}
+	for id, w := range want {
+		if got := window(id); !reflect.DeepEqual(got, w) {
+			t.Errorf("EntryProgrammes(%d) = %v, want %v", id, got, w)
+		}
+	}
+	all, err := s.LineupProgrammes(ctx, DefaultLineupID, day, day.Add(3*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, w := range want {
+		if got := starts(all[id]); !reflect.DeepEqual(got, w) {
+			t.Errorf("LineupProgrammes[%d] = %v, want %v", id, got, w)
+		}
+	}
+	// A window that the shift alone brings a programme into.
+	late, err := s.LineupProgrammes(ctx, DefaultLineupID, day.Add(150*time.Minute), day.Add(4*time.Hour))
+	if err != nil || len(late[alpha.ID]) != 0 || !reflect.DeepEqual(starts(late[plus.ID]), []string{"20:00 On at 19:00"}) {
+		t.Errorf("from 20:30: %v, %v", late, err)
+	}
+	each := map[int64][]string{}
+	err = s.EachLineupProgramme(ctx, DefaultLineupID, day, day.Add(3*time.Hour), func(id int64, p Programme) error {
+		each[id] = append(each[id], p.Start.Format("15:04")+" "+p.Title)
+		return nil
+	})
+	if err != nil || !reflect.DeepEqual(each, want) {
+		t.Errorf("EachLineupProgramme: %v, %v", each, err)
+	}
+	if p, err := s.ProgrammeAt(ctx, DefaultLineupID, plus.ID, day.Add(time.Hour)); err != nil || p.Title != "On at 18:00" ||
+		!p.Stop.Equal(day.Add(2*time.Hour)) {
+		t.Errorf("ProgrammeAt: %+v, %v", p, err)
+	}
+	found, err := s.SearchProgrammes(ctx, DefaultLineupID, "on at 18", day, day.Add(3*time.Hour), 10)
+	if err != nil || len(found) != 2 || found[0].EntryID != alpha.ID || found[1].EntryID != plus.ID ||
+		!found[1].Start.Equal(day.Add(time.Hour)) {
+		t.Errorf("SearchProgrammes: %+v, %v", found, err)
+	}
+
+	// Off, the shift goes; the guide stays its own channel's.
+	r, err := s.LineupRules(ctx, DefaultLineupID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r[1].Off = true
+	if err := s.SetLineupRule(ctx, DefaultLineupID, shift, r[1].Rule); err != nil {
+		t.Fatal(err)
+	}
+	if got := window(plus.ID); !reflect.DeepEqual(got, want[alpha.ID]) {
+		t.Errorf("Alpha +1 without the shift: %v", got)
+	}
+	// A rule that names no channel of the lineup does nothing.
+	addRule(t, s, rules.Rule{Action: rules.Guide, Channel: "Nobody", Match: rules.Match{Name: "Bravo"}})
+	if e := entryOf(t, s, "Bravo"); e.RuleGuide != "" {
+		t.Errorf("Bravo: %+v", e)
+	}
+}
+
+// starts returns programmes as "15:04 title".
+func starts(ps []Programme) []string {
+	out := []string{}
+	for _, p := range ps {
+		out = append(out, p.Start.Format("15:04")+" "+p.Title)
+	}
+	return out
+}

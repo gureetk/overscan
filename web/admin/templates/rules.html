@@ -123,11 +123,12 @@
           {{- range .D.Actions}}<option value="{{.}}"{{if eq . $r.Action}} selected{{end}}>{{$.D.ActionName .}}</option>{{end}}
         </select>
       </div>
+      {{- $rename := eq $r.Action "rename"}}{{$guide := eq $r.Action "guide"}}
       <fieldset class="field if-rename">
         <legend>Rename</legend>
         <div class="segmented">
-          <label><input type="radio" name="rename" value="name"{{if not $r.Replace}} checked{{end}}><span>A new name</span></label>
-          <label><input type="radio" name="rename" value="replace"{{if $r.Replace}} checked{{end}}><span>Replace text</span></label>
+          <label><input type="radio" name="rename" value="name"{{if not (and $rename $r.Replace)}} checked{{end}}><span>A new name</span></label>
+          <label><input type="radio" name="rename" value="replace"{{if and $rename $r.Replace}} checked{{end}}><span>Replace text</span></label>
         </div>
       </fieldset>
       <div class="field if-rename if-name">
@@ -136,11 +137,40 @@
       </div>
       <div class="field if-rename if-replace">
         <label for="{{$p}}-replace">Text to replace</label>
-        <input id="{{$p}}-replace" name="replace" maxlength="200" value="{{$r.Replace}}" placeholder="Such as HD, or /\s*\(.*\)$/">
+        <input id="{{$p}}-replace" name="replace" maxlength="200" value="{{if $rename}}{{$r.Replace}}{{end}}" placeholder="Such as HD, or /\s*\(.*\)$/">
       </div>
       <div class="field if-rename if-replace">
         <label for="{{$p}}-with">Replace it with</label>
-        <input id="{{$p}}-with" name="with" maxlength="200" value="{{$r.With}}" placeholder="Nothing">
+        <input id="{{$p}}-with" name="with" maxlength="200" value="{{if $rename}}{{$r.With}}{{end}}" placeholder="Nothing">
+      </div>
+      <fieldset class="field if-guide">
+        <legend>The guide of</legend>
+        <div class="segmented">
+          <label><input type="radio" name="guide_from" value="channel"{{if not (and $guide $r.Replace)}} checked{{end}}><span>A channel named</span></label>
+          <label><input type="radio" name="guide_from" value="replace"{{if and $guide $r.Replace}} checked{{end}}><span>Its name, changed</span></label>
+        </div>
+      </fieldset>
+      <div class="field if-guide if-guide-channel">
+        <label for="{{$p}}-guide-channel">Channel's name</label>
+        <input id="{{$p}}-guide-channel" name="guide_channel" maxlength="200" value="{{$r.Channel}}" placeholder="As its source names it">
+      </div>
+      <div class="field if-guide if-guide-replace">
+        <label for="{{$p}}-guide-replace">Text to replace in its name</label>
+        <input id="{{$p}}-guide-replace" name="guide_replace" maxlength="200" value="{{if $guide}}{{$r.Replace}}{{end}}" placeholder="Such as +1">
+      </div>
+      <div class="field if-guide if-guide-replace">
+        <label for="{{$p}}-guide-with">Replace it with</label>
+        <input id="{{$p}}-guide-with" name="guide_with" maxlength="200" value="{{if $guide}}{{$r.With}}{{end}}" placeholder="Nothing">
+      </div>
+      <div class="field if-timeshift">
+        <label for="{{$p}}-minutes">Minutes</label>
+        <div class="row-form">
+          <input id="{{$p}}-minutes" name="minutes" class="num-input" type="number" min="1" max="1440" value="{{with $r.Minutes}}{{abs .}}{{end}}">
+          <select name="when" aria-label="Later or earlier">
+            <option value="later">later</option>
+            <option value="earlier"{{if lt $r.Minutes 0}} selected{{end}}>earlier</option>
+          </select>
+        </div>
       </div>
       <div class="field if-regroup">
         <label for="{{$p}}-to-group">Group</label>
@@ -160,6 +190,8 @@
     <p class="hint if-regroup">A group of that name, made if the lineup has none.</p>
     <p class="hint if-renumber">The channels it matches are numbered in a row from this number, in their order, and keep their numbers as others come. Numbers you pinned yourself are skipped, and channels that held the others get new numbers after the highest.</p>
     <p class="hint if-logo">Devices load the logo from this address, so it must be one that they can reach.</p>
+    <p class="hint if-guide">The channel is one of the lineup's, by the name that its source gives it, from the same source if it can be. A channel that shows another's programmes an hour late, such as <em>Harbour News +1</em>, takes the guide of <em>Harbour News</em> with <em>Its name, changed</em>: replace <code>+1</code> with nothing. Another rule then moves its times.</p>
+    <p class="hint if-timeshift">The programmes that the channels show in the guide move by this much: 60 minutes later for a channel that shows them an hour late.</p>
   </fieldset>
   <div class="form-buttons">
     <button type="submit" class="primary">{{if .ID}}Save the rule{{else}}Add the rule{{end}}</button>

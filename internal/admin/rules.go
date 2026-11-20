@@ -17,7 +17,8 @@ import (
 
 // A lineup's rules (D107), on the Live TV page's Rules view and in the API:
 // ordered rules that match channels and show, hide, rename, regroup, number
-// or give a logo to them, after every refresh. The administrator's own
+// or give a logo to them, or show another channel's guide on them or move
+// their guide's times (D108), after every refresh. The administrator's own
 // edits of a channel win over them.
 
 // ruleError turns the store's errors about rules into mistakes that the
@@ -95,8 +96,28 @@ func describeRule(r rules.Rule, sources map[int64]string) string {
 		return "Numbers " + what + " from " + strconv.Itoa(r.From) + "."
 	case rules.Logo:
 		return "Gives " + what + " the logo at " + r.Logo + "."
+	case rules.Guide:
+		switch {
+		case r.Channel != "":
+			return "Gives " + what + " the guide of the channel named " + quote(r.Channel) + "."
+		case r.With == "":
+			return "Gives " + what + " the guide of the channel with the same name without " + quote(r.Replace) + "."
+		}
+		return "Gives " + what + " the guide of the channel with the same name, " + quote(r.Replace) + " replaced by " +
+			quote(r.With) + "."
+	case rules.Shift:
+		return "Shows the guide of " + what + " " + shiftText(r.Minutes) + "."
 	}
 	return "Does nothing to " + what + "."
+}
+
+// shiftText says how far a guide moves, such as "60 minutes later".
+func shiftText(minutes int) string {
+	when := "later"
+	if minutes < 0 {
+		minutes, when = -minutes, "earlier"
+	}
+	return fmt.Sprintf("%d %s %s", minutes, plural(minutes, "minute"), when)
 }
 
 // quote puts text in quotation marks, as a sentence about a rule shows it.
@@ -155,6 +176,8 @@ func (rulesData) ActionName(action string) string {
 		rules.Regroup:  "Move them to a group",
 		rules.Renumber: "Number them",
 		rules.Logo:     "Give them a logo",
+		rules.Guide:    "Use another channel's guide",
+		rules.Shift:    "Move their guide's times",
 	}[action]
 }
 
@@ -227,10 +250,24 @@ func ruleForm(r *http.Request) rules.Rule {
 		From:   from,
 		Logo:   r.PostFormValue("logo"),
 	}
-	if r.PostFormValue("rename") == "replace" {
-		rule.Replace, rule.With = r.PostFormValue("replace"), r.PostFormValue("with")
-	} else {
-		rule.Name = r.PostFormValue("new_name")
+	switch rule.Action {
+	case rules.Guide:
+		if r.PostFormValue("guide_from") == "replace" {
+			rule.Replace, rule.With = r.PostFormValue("guide_replace"), r.PostFormValue("guide_with")
+		} else {
+			rule.Channel = r.PostFormValue("guide_channel")
+		}
+	case rules.Shift:
+		rule.Minutes, _ = strconv.Atoi(strings.TrimSpace(r.PostFormValue("minutes")))
+		if r.PostFormValue("when") == "earlier" {
+			rule.Minutes = -rule.Minutes
+		}
+	default:
+		if r.PostFormValue("rename") == "replace" {
+			rule.Replace, rule.With = r.PostFormValue("replace"), r.PostFormValue("with")
+		} else {
+			rule.Name = r.PostFormValue("new_name")
+		}
 	}
 	return rule
 }
@@ -369,6 +406,8 @@ type apiRuleBody struct {
 	Group   string   `json:"group,omitempty"`
 	From    int      `json:"from,omitempty"`
 	Logo    string   `json:"logo,omitempty"`
+	Channel string   `json:"channel,omitempty"`
+	Minutes int      `json:"minutes,omitempty"`
 }
 
 type apiMatch struct {
@@ -383,13 +422,14 @@ func ruleBody(r store.LineupRule) apiRule {
 	return apiRule{ID: r.ID, Position: r.Position, Matches: r.Matches, apiRuleBody: apiRuleBody{
 		Match: apiMatch{SourceID: r.Match.Source, Group: r.Match.Group, Name: r.Match.Name, Guide: r.Match.Guide,
 			Quality: r.Match.Quality},
-		Action: r.Action, Off: r.Off, Name: r.Name, Replace: r.Replace, With: r.With, Group: r.Group, From: r.From, Logo: r.Logo}}
+		Action: r.Action, Off: r.Off, Name: r.Name, Replace: r.Replace, With: r.With, Group: r.Group, From: r.From, Logo: r.Logo,
+		Channel: r.Channel, Minutes: r.Minutes}}
 }
 
 func (b apiRuleBody) rule() rules.Rule {
 	return rules.Rule{Match: rules.Match{Source: b.Match.SourceID, Group: b.Match.Group, Name: b.Match.Name,
 		Guide: b.Match.Guide, Quality: b.Match.Quality}, Action: b.Action, Off: b.Off, Name: b.Name, Replace: b.Replace,
-		With: b.With, Group: b.Group, From: b.From, Logo: b.Logo}
+		With: b.With, Group: b.Group, From: b.From, Logo: b.Logo, Channel: b.Channel, Minutes: b.Minutes}
 }
 
 func (a *Admin) apiRules(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {

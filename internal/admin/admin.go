@@ -195,7 +195,7 @@ var pageParts = map[string][]string{"lineup": {"lineup-nav"}, "rules": {"lineup-
 
 func (a *Admin) parsePages() map[string]*template.Template {
 	funcs := template.FuncMap{"asset": a.assetPath, "csrfHeaders": csrfHeaders, "ago": ago, "dict": dict, "count": count, "plural": plural, "initial": initial, "size": sizeText,
-		"sub": func(a, b int) int { return a - b }}
+		"sub": func(a, b int) int { return a - b }, "abs": func(n int) int { return max(n, -n) }}
 	pages := map[string]*template.Template{}
 	for _, name := range pageNames {
 		files := []string{"admin/templates/layout.html", "admin/templates/" + name + ".html"}

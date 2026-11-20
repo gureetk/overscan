@@ -148,10 +148,12 @@ func (s *Store) ProgrammeStarting(ctx context.Context, lineupID, entryID int64, 
 	var p Programme
 	var start, stop int64
 	err := s.db.QueryRowContext(ctx, `
-		SELECT p.id, p.start, p.stop, p.title, p.subtitle, p.description, p.category`+lineupEntryJoins+`
-		JOIN programmes p ON p.channel_id = c.id
+		SELECT p.id, p.start + `+guideShiftSQL+`, p.stop + `+guideShiftSQL+`, p.title, p.subtitle, p.description,
+			p.category`+lineupEntryJoins+`
+		JOIN programmes p ON p.channel_id = `+guideChannelSQL+`
 		JOIN source_guides sg ON sg.source_id = p.source_id AND sg.generation = p.generation
-		WHERE e.id = ? AND e.lineup_id = ? AND `+shownEntry+` AND p.start >= ? AND p.start < ?
+		WHERE e.id = ? AND e.lineup_id = ? AND `+shownEntry+` AND p.start >= ? - `+guideShiftSQL+`
+			AND p.start < ? - `+guideShiftSQL+`
 		ORDER BY p.start, p.id LIMIT 1`,
 		entryID, lineupID, from.Unix(), to.Unix()).Scan(&p.ID, &start, &stop, &p.Title, &p.SubTitle, &p.Description, &p.Category)
 	if errors.Is(err, sql.ErrNoRows) {

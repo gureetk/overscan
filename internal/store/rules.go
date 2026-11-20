@@ -10,13 +10,15 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"overscan.gureet.ca/internal/rules"
 )
 
 // A lineup's rules (D107): ordered rules that match channels by their
 // source, group, name, guide ID or quality, and show, hide, rename,
-// regroup, number or give a logo to those they match. They run in order
+// regroup, number or give a logo to those they match, or show another
+// channel's guide on them or move their guide's times (D108). They run in order
 // after every refresh of a source, and whenever a rule changes; a later
 // rule that does the same as an earlier one wins. What they do is kept
 // apart from the administrator's own edits (D47), which win over it.
@@ -282,6 +284,7 @@ func orderRules(ctx context.Context, tx *sql.Tx, lineupID, move int64, to int) e
 // did to it when they last ran.
 type ruleEntry struct {
 	id       int64
+	channel  int64
 	number   int // 0 if none
 	pinned   bool
 	missing  bool
@@ -294,14 +297,16 @@ type ruleEntry struct {
 	groupID    sql.NullInt64
 	logo       sql.NullString
 	rulePinned bool
+	guide      sql.NullInt64 // the channel whose guide it shows (D108)
+	shift      sql.NullInt64 // seconds
 }
 
 // ruleEntries reads every entry of a lineup with its channel.
 func ruleEntries(ctx context.Context, tx *sql.Tx, lineupID int64) ([]ruleEntry, error) {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT e.id, COALESCE(e.number, 0), e.pinned, c.missing_since IS NOT NULL, c.source_id, c.position,
+		SELECT e.id, c.id, COALESCE(e.number, 0), e.pinned, c.missing_since IS NOT NULL, c.source_id, c.position,
 			COALESCE(k.name, ''), c.name, c.xmltv_id,
-			e.rule_hidden, e.rule_name, e.rule_group_id, e.rule_logo, e.rule_pinned
+			e.rule_hidden, e.rule_name, e.rule_group_id, e.rule_logo, e.rule_pinned, e.rule_guide_id, e.rule_guide_shift
 		FROM lineup_entries e JOIN channels c ON c.id = e.channel_id
 			LEFT JOIN categories k ON k.id = c.category_id
 		WHERE e.lineup_id = ?`, lineupID)
@@ -312,9 +317,9 @@ func ruleEntries(ctx context.Context, tx *sql.Tx, lineupID int64) ([]ruleEntry, 
 	var out []ruleEntry
 	for rows.Next() {
 		var e ruleEntry
-		if err := rows.Scan(&e.id, &e.number, &e.pinned, &e.missing, &e.source, &e.position,
+		if err := rows.Scan(&e.id, &e.channel, &e.number, &e.pinned, &e.missing, &e.source, &e.position,
 			&e.ch.Category, &e.ch.Name, &e.ch.Guide,
-			&e.hidden, &e.name, &e.groupID, &e.logo, &e.rulePinned); err != nil {
+			&e.hidden, &e.name, &e.groupID, &e.logo, &e.rulePinned, &e.guide, &e.shift); err != nil {
 			return nil, err
 		}
 		e.ch.Source = e.source
@@ -335,9 +340,10 @@ func applyRules(ctx context.Context, tx *sql.Tx, lineupID int64) error {
 		// Without rules, nothing of theirs is left.
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE lineup_entries SET rule_hidden = NULL, rule_name = NULL, rule_group_id = NULL, rule_logo = NULL,
-				rule_pinned = 0
+				rule_pinned = 0, rule_guide_id = NULL, rule_guide_shift = NULL
 			WHERE lineup_id = ? AND (rule_hidden IS NOT NULL OR rule_name IS NOT NULL OR rule_group_id IS NOT NULL
-				OR rule_logo IS NOT NULL OR rule_pinned = 1)`, lineupID); err != nil {
+				OR rule_logo IS NOT NULL OR rule_pinned = 1 OR rule_guide_id IS NOT NULL OR rule_guide_shift IS NOT NULL)`,
+			lineupID); err != nil {
 			return err
 		}
 		return removeEmptyGroups(ctx, tx, lineupID)
@@ -352,7 +358,10 @@ func applyRules(ctx context.Context, tx *sql.Tx, lineupID int64) error {
 		name   sql.NullString
 		group  string // the name of the group a rule moves it to, "" if none
 		logo   sql.NullString
+		guide  sql.NullInt64
+		shift  sql.NullInt64
 	}
+	var guides *guideNames
 	effects := make([]effect, len(entries))
 	var numberings []numbering
 	for _, r := range list {
@@ -364,10 +373,17 @@ func applyRules(ctx context.Context, tx *sql.Tx, lineupID int64) error {
 			return fmt.Errorf("rule %d: %w", r.ID, err)
 		}
 		var rename rules.Renamer
-		if r.Action == rules.Rename {
-			if rename, err = rules.CompileRename(r.Rule); err != nil {
-				return fmt.Errorf("rule %d: %w", r.ID, err)
+		switch r.Action {
+		case rules.Rename:
+			rename, err = rules.CompileRename(r.Rule)
+		case rules.Guide:
+			rename, err = rules.CompileGuide(r.Rule)
+			if guides == nil {
+				guides = newGuideNames(entries)
 			}
+		}
+		if err != nil {
+			return fmt.Errorf("rule %d: %w", r.ID, err)
 		}
 		var matched []int
 		for i, e := range entries {
@@ -394,6 +410,12 @@ func applyRules(ctx context.Context, tx *sql.Tx, lineupID int64) error {
 				ef.group = r.Group
 			case rules.Logo:
 				ef.logo = sql.NullString{String: r.Logo, Valid: true}
+			case rules.Guide:
+				if ch, ok := guides.find(rename(e.ch.Name), e); ok {
+					ef.guide = sql.NullInt64{Int64: ch, Valid: true}
+				}
+			case rules.Shift:
+				ef.shift = sql.NullInt64{Int64: int64(r.Minutes) * 60, Valid: true}
 			case rules.Renumber:
 				matched = append(matched, i)
 			}
@@ -427,8 +449,9 @@ func applyRules(ctx context.Context, tx *sql.Tx, lineupID int64) error {
 		groups[ef.group] = id
 	}
 
-	update, err := tx.PrepareContext(ctx,
-		"UPDATE lineup_entries SET rule_hidden = ?, rule_name = ?, rule_group_id = ?, rule_logo = ? WHERE id = ?")
+	update, err := tx.PrepareContext(ctx, `UPDATE lineup_entries
+		SET rule_hidden = ?, rule_name = ?, rule_group_id = ?, rule_logo = ?, rule_guide_id = ?, rule_guide_shift = ?
+		WHERE id = ?`)
 	if err != nil {
 		return err
 	}
@@ -439,10 +462,11 @@ func applyRules(ctx context.Context, tx *sql.Tx, lineupID int64) error {
 		if ef.group != "" {
 			group = sql.NullInt64{Int64: groups[ef.group], Valid: true}
 		}
-		if ef.hidden == e.hidden && ef.name == e.name && group == e.groupID && ef.logo == e.logo {
+		if ef.hidden == e.hidden && ef.name == e.name && group == e.groupID && ef.logo == e.logo &&
+			ef.guide == e.guide && ef.shift == e.shift {
 			continue
 		}
-		if _, err := update.ExecContext(ctx, ef.hidden, ef.name, group, ef.logo, e.id); err != nil {
+		if _, err := update.ExecContext(ctx, ef.hidden, ef.name, group, ef.logo, ef.guide, ef.shift, e.id); err != nil {
 			return err
 		}
 	}
@@ -450,6 +474,52 @@ func applyRules(ctx context.Context, tx *sql.Tx, lineupID int64) error {
 		return err
 	}
 	return removeEmptyGroups(ctx, tx, lineupID)
+}
+
+// guideNames finds a lineup's channels by their names, for the rules that
+// show another channel's guide (D108).
+type guideNames struct {
+	byName  map[string][]int // a name in lower case: indexes into entries
+	entries []ruleEntry
+}
+
+func newGuideNames(entries []ruleEntry) *guideNames {
+	g := &guideNames{byName: map[string][]int{}, entries: entries}
+	for i, e := range entries {
+		key := strings.ToLower(e.ch.Name)
+		g.byName[key] = append(g.byName[key], i)
+	}
+	return g
+}
+
+// find returns the channel named name, whatever its case, whose guide the
+// entry e shows: one of e's own source first, then of any; one that its
+// source still lists first; the first listed of those. It is never e's own
+// channel.
+func (g *guideNames) find(name string, e ruleEntry) (int64, bool) {
+	best := -1
+	better := func(i int) bool {
+		if best < 0 {
+			return true
+		}
+		x, y := g.entries[i], g.entries[best]
+		if (x.source == e.source) != (y.source == e.source) {
+			return x.source == e.source
+		}
+		if x.missing != y.missing {
+			return !x.missing
+		}
+		return cmp.Or(cmp.Compare(x.source, y.source), cmp.Compare(x.position, y.position)) < 0
+	}
+	for _, i := range g.byName[strings.ToLower(name)] {
+		if g.entries[i].channel != e.channel && better(i) {
+			best = i
+		}
+	}
+	if best < 0 {
+		return 0, false
+	}
+	return g.entries[best].channel, true
 }
 
 // numbering is what a renumbering rule matched: the entries it numbers,

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ncruces/go-sqlite3"
 )
@@ -361,6 +362,10 @@ type LineupEntry struct {
 	// group, showed it (RuleShown), hid it (RuleHidden), gave it a logo or
 	// numbered it.
 	RuleRenamed, RuleMoved, RuleShown, RuleHidden, RuleLogo, RuleNumbered bool
+	// RuleGuide names the channel whose guide a rule shows on it, "" if
+	// none, and RuleShift is how far a rule moves its guide's times (D108).
+	RuleGuide string
+	RuleShift time.Duration
 }
 
 // EntryQuery picks a lineup's entries.
@@ -440,18 +445,21 @@ const entrySelect = `
 			COALESCE(c.repair, ` + repairDefaultSQL + `), c.repair, c.adult,
 			c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultLock + `', c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultHide + `', c.radio,
 			e.rule_name IS NOT NULL, e.rule_group_id IS NOT NULL, e.rule_hidden IS 0, e.rule_hidden IS 1,
-			e.rule_logo IS NOT NULL, e.rule_pinned`
+			e.rule_logo IS NOT NULL, e.rule_pinned, COALESCE((SELECT name FROM channels WHERE id = e.rule_guide_id), ''),
+			COALESCE(e.rule_guide_shift, 0)`
 
 func scanEntry(row rowScanner) (LineupEntry, error) {
 	var e LineupEntry
 	var own sql.NullBool
+	var shift int64
 	err := row.Scan(&e.ID, &e.ChannelID, &e.SourceID, &e.Source, &e.Number, &e.Pinned, &e.Name, &e.ChannelName,
 		&e.Renamed, &e.GroupID, &e.Group, &e.Moved, &e.Category, &e.Visibility, &e.Hidden, &e.Missing, &e.Logo,
 		&e.Locked, &e.GroupLocked, &e.Repair, &own, &e.Adult, &e.AdultLocked, &e.AdultHidden, &e.Radio,
-		&e.RuleRenamed, &e.RuleMoved, &e.RuleShown, &e.RuleHidden, &e.RuleLogo, &e.RuleNumbered)
+		&e.RuleRenamed, &e.RuleMoved, &e.RuleShown, &e.RuleHidden, &e.RuleLogo, &e.RuleNumbered, &e.RuleGuide, &shift)
 	if own.Valid {
 		e.RepairOwn = &own.Bool
 	}
+	e.RuleShift = time.Duration(shift) * time.Second
 	return e, err
 }
 

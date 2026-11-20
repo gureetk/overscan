@@ -342,7 +342,7 @@ func entryBody(e store.LineupEntry) apiEntry {
 		yes    bool
 		action string
 	}{{e.RuleShown, rules.Include}, {e.RuleHidden, rules.Exclude}, {e.RuleRenamed, rules.Rename}, {e.RuleMoved, rules.Regroup},
-		{e.RuleNumbered, rules.Renumber}, {e.RuleLogo, rules.Logo}} {
+		{e.RuleNumbered, rules.Renumber}, {e.RuleLogo, rules.Logo}, {e.RuleGuide != "", rules.Guide}, {e.RuleShift != 0, rules.Shift}} {
 		if did.yes {
 			out.Rules = append(out.Rules, did.action)
 		}

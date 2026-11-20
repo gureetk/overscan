@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"overscan.gureet.ca/internal/store"
 )
@@ -258,6 +259,12 @@ func (r entryRow) RuleText() string {
 	}
 	if e.RuleLogo {
 		did = append(did, "gives it its logo")
+	}
+	if e.RuleGuide != "" {
+		did = append(did, "gives it the guide of "+e.RuleGuide)
+	}
+	if e.RuleShift != 0 {
+		did = append(did, "shows its guide "+shiftText(int(e.RuleShift/time.Minute)))
 	}
 	if len(did) == 0 {
 		return ""

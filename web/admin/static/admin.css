@@ -796,7 +796,7 @@ details.lineups-menu > .menu { left: auto; right: 0; min-width: 22rem; max-width
 .lineup-tabs a[aria-current="page"] { background: var(--seg); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); }
 .lineup-tabs .count { min-width: 1.25rem; height: 1.25rem; font-size: 0.71875rem; }
 
-/* A lineup's rules (D107). */
+/* A lineup's rules (D107, D108). */
 .rules { margin: 0.75rem 0 1rem; padding: 0; list-style: none; }
 .rules > li { padding: 0.75rem 0; border-top: 1px solid var(--line); }
 .rules > li:last-child { border-bottom: 1px solid var(--line); }
@@ -823,8 +823,12 @@ details.lineups-menu > .menu { left: auto; right: 0; min-width: 22rem; max-width
   .rule-form:not(:has(.rule-action option[value="regroup"]:checked)) .if-regroup,
   .rule-form:not(:has(.rule-action option[value="renumber"]:checked)) .if-renumber,
   .rule-form:not(:has(.rule-action option[value="logo"]:checked)) .if-logo,
+  .rule-form:not(:has(.rule-action option[value="guide"]:checked)) .if-guide,
+  .rule-form:not(:has(.rule-action option[value="timeshift"]:checked)) .if-timeshift,
   .rule-form:has(input[name="rename"][value="name"]:checked) .if-replace,
-  .rule-form:has(input[name="rename"][value="replace"]:checked) .if-name { display: none; }
+  .rule-form:has(input[name="rename"][value="replace"]:checked) .if-name,
+  .rule-form:has(input[name="guide_from"][value="channel"]:checked) .if-guide-replace,
+  .rule-form:has(input[name="guide_from"][value="replace"]:checked) .if-guide-channel { display: none; }
 }
 @media (max-width: 47.5rem) {
   .rule-edit { margin-left: 0; }

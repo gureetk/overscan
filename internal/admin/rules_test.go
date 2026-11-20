@@ -258,9 +258,56 @@ func TestDescribeRule(t *testing.T) {
 		{rules.Rule{Action: rules.Regroup, Group: "Sport"}, "Moves every channel to the group “Sport”."},
 		{rules.Rule{Action: rules.Renumber, From: 100}, "Numbers every channel from 100."},
 		{rules.Rule{Action: rules.Logo, Logo: "https://logos.example/a.png"}, "Gives every channel the logo at https://logos.example/a.png."},
+		{rules.Rule{Action: rules.Guide, Channel: "Alpha"}, "Gives every channel the guide of the channel named “Alpha”."},
+		{rules.Rule{Match: rules.Match{Name: "* +1"}, Action: rules.Guide, Replace: "+1"},
+			"Gives channels named like “* +1” the guide of the channel with the same name without “+1”."},
+		{rules.Rule{Action: rules.Guide, Replace: "East", With: "West"},
+			"Gives every channel the guide of the channel with the same name, “East” replaced by “West”."},
+		{rules.Rule{Action: rules.Shift, Minutes: 60}, "Shows the guide of every channel 60 minutes later."},
+		{rules.Rule{Action: rules.Shift, Minutes: -1}, "Shows the guide of every channel 1 minute earlier."},
 	} {
 		if got := describeRule(tc.rule, sources); got != tc.want {
 			t.Errorf("%+v:\n got %s\nwant %s", tc.rule, got, tc.want)
+		}
+	}
+}
+
+// The Rules page's form gives a channel another's guide and moves its times
+// (D108), and the channels page says so.
+func TestGuideRulesPage(t *testing.T) {
+	ta := newTestAdmin(t)
+	c, h := ta.withLineup()
+	csrf := h[1]
+	hx := []string{"HX-Request", "true"}
+	rec := ta.do("POST", "/admin/lineup/rules", lineupForm(csrf, "", "action", "guide", "name", "Bravo", "guide_from", "channel",
+		"guide_channel", "alpha", "guide_replace", "ignored"), c, hx...)
+	mustContain(t, "a guide rule", rec.Body.String(), "Gives channels named like “Bravo” the guide of the channel named “alpha”.",
+		"It matches 1 channel.")
+	rec = ta.do("POST", "/admin/lineup/rules", lineupForm(csrf, "", "action", "timeshift", "name", "Bravo", "minutes", "90",
+		"when", "earlier"), c, hx...)
+	mustContain(t, "a time shift", rec.Body.String(), "Shows the guide of channels named like “Bravo” 90 minutes earlier.",
+		`value="90"`, `<option value="earlier" selected>earlier</option>`)
+	list := ta.rulesOf(c, "")
+	if len(list) != 2 || list[0].Channel != "alpha" || list[0].Replace != "" || list[1].Minutes != -90 {
+		t.Fatalf("the rules: %+v", list)
+	}
+	chs, _ := ta.channels(c, "")
+	if fmt.Sprint(chs["Bravo"].Rules) != "[guide timeshift]" || len(chs["Alpha"].Rules) != 0 {
+		t.Errorf("Bravo: %+v", chs["Bravo"])
+	}
+	page := ta.do("GET", "/admin/lineup", nil, c).Body.String()
+	mustContain(t, "the channels page", page, `title="A rule gives it the guide of Alpha and shows its guide 90 minutes earlier.">`)
+	// A guide with its name changed, through the API.
+	rec = ta.apiDo("POST", "lineup/rules", `{"match": {"name": "Charlie"}, "action": "guide", "replace": "/^C.*/", "with": "Delta"}`, c, h...)
+	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"with": "Delta"`) {
+		t.Errorf("the API: status %d, %s", rec.Code, rec.Body)
+	}
+	if chs, _ := ta.channels(c, ""); fmt.Sprint(chs["Charlie"].Rules) != "[guide]" {
+		t.Errorf("Charlie: %+v", chs["Charlie"])
+	}
+	for _, body := range []string{`{"action": "guide"}`, `{"action": "timeshift", "minutes": 0}`, `{"action": "timeshift", "minutes": 2000}`} {
+		if rec := ta.apiDo("POST", "lineup/rules", body, c, h...); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status %d", body, rec.Code)
 		}
 	}
 }
