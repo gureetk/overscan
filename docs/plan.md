@@ -278,7 +278,7 @@ The contract is [`protocol/stalker-protocol-notes.md`](protocol/stalker-protocol
 - **Films and series:** films in `vod` and series in a `series` module of their own, a series' seasons read from its source when a client opens it (D74), and every film and episode played as it is, with range requests (D75). The inline shape on `vod`'s lists is not served: it would have Overscan read every listed series from its source as a client scrolls (D22). The upstream adapter reads all three shapes (6.3).
 - **Messages:** the watchdog `get_events` call is the channel for messages to a box. Our own MAG UI gets them through the device API.
 - **Capture log:** unknown actions and parameters are stored, redacted, for later analysis.
-- **Compatibility matrix:** tracked per client and version in `docs/compat.md`.
+- **Compatibility matrix:** tracked per client and version in [`compatibility.md`](compatibility.md).
 
 The protocol notes come from a client that has only been tested against fakes, so treat them as a strong hypothesis, and fix them where a real client or box disagrees.
 
@@ -411,7 +411,7 @@ Until the admin exists (M2), sources are declared in the config file and devices
 overscan/
 ├─ README.md  LICENSE  CONTRIBUTING.md  CODE_OF_CONDUCT.md  SECURITY.md
 ├─ docs/
-│  ├─ plan.md  protocol/  api/  devices/  decisions.md  clean-room.md  testing.md  compat.md
+│  ├─ plan.md  protocol/  api/  devices/  decisions.md  clean-room.md  testing.md  compatibility.md
 │  └─ images/  logo/
 ├─ cmd/overscan/
 ├─ internal/
@@ -497,7 +497,7 @@ Each phase ends with a pre-release of v0.4.0 (`v0.4.0-alpha.N`), as M4's did wit
 - Expiry: the administrator sets the account's end date; past it, boxes and Stalker clients play nothing. **In place:** the *Settings* page's *Household* card sets the last day the household's account plays; past it, the box says that the account has ended, with the date, and plays nothing, Stalker clients are refused as blocked devices are but still read the date, and the account's recordings stop (D95).
 - Messages and events: the administrator sends a message to one box or to every box, which shows it once. **In place:** the admin's *Devices* page sends a message to one box or to every box that runs Overscan's page; a box shows it within five minutes, over whatever is on screen, until the viewer closes it, and the admin sees which boxes read it. Stalker clients get none, and no other events are sent, until an allowed source says how a portal sends them (D96).
 - Installable themes (D41): the administrator adds a theme in the admin, for the household or for a profile. **In place:** the *Settings* page's *Themes* panel installs a theme file, which Overscan checks for what it holds and for colours that stay readable, and chooses the household's theme and each profile's; a box shows its profile's theme, else the household's, within five minutes. A theme changes the page's colours, its corners and font, and the name beside the mark (D97).
-- Compatibility matrix for third-party Stalker clients (OTT Navigator, TiviMate) and MAG emulators (StbEmu), from tests with those apps.
+- Compatibility matrix for third-party Stalker clients (OTT Navigator, TiviMate) and MAG emulators (StbEmu), from tests with those apps. **So far:** [`compatibility.md`](compatibility.md) says how to connect each app and what Overscan gives it; what each does waits for tests with the apps.
 - The milestone's hardening: the security checklist on what is new (text and themes from the admin shown on boxes above all), docs, and an upgrade test from v0.3.0.
 *Done when:* two profiles on one box keep their own favourites and resume points, and the box switches between them; an account past its end date is refused on the box and in Stalker clients, which see the date; a message from the admin shows on the box; a theme installed in the admin changes the box's look for the household or for one profile; with the shared tuner on, two boxes on one channel, or a box and a recording of that channel, use one connection to the source; and a compatibility matrix says what OTT Navigator, TiviMate and StbEmu do with Overscan. A household that adds no profile, sets no end date, sends no message and installs no theme sees nothing change.
 

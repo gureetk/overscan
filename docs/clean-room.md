@@ -48,6 +48,8 @@ The notes in [protocol/playlist-notes.md](protocol/playlist-notes.md) are **Docu
 
 The notes in [protocol/tmdb-notes.md](protocol/tmdb-notes.md) are **Documented** from The Movie Database's own developer documentation, the documentation of an open-source client (MIT), whose code was not read, and answers on TMDB's forum.
 
+The matrix in [compatibility.md](compatibility.md) says how to connect each app from its public documentation, and what each did from tests with the app, which are **Observed**. No app's code is read.
+
 ## Contributor rules
 
 - Do not paste proprietary code, or text from it, into issues, pull requests, comments or commit messages, even to ask a question.

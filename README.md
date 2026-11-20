@@ -83,8 +83,8 @@ shipped with the project.
 ## Compatibility
 
 The primary target is the **Infomir MAG322w1**. Other MAG models and Stalker
-clients are expected to work and will be tracked in a compatibility matrix as
-they are tested against a conformance suite, not assumed.
+clients are expected to work and are tracked in a compatibility matrix,
+[docs/compatibility.md](docs/compatibility.md), as they are tried, not assumed.
 
 ## Documentation
 
@@ -100,6 +100,8 @@ they are tested against a conformance suite, not assumed.
 | [docs/protocol/tmdb-notes.md](docs/protocol/tmdb-notes.md) | What Overscan asks of TMDB for the titles in folders, and what TMDB asks in return |
 | [docs/library-folders.md](docs/library-folders.md) | How Overscan reads a folder of films and series: names, .nfo files and pictures |
 | [docs/api/device.md](docs/api/device.md) | The device API that Overscan's MAG page uses |
+| [docs/themes.md](docs/themes.md) | Themes for the boxes: what a theme file holds, and installing one |
+| [docs/compatibility.md](docs/compatibility.md) | What StbEmu, OTT Navigator and TiviMate get from Overscan, and what they did when tried |
 | [docs/api/admin.yaml](docs/api/admin.yaml) | The admin's JSON API, as an OpenAPI 3.1 description |
 | [web/admin/README.md](web/admin/README.md) | The admin's pages and the files they are built from |
 | [conformance/README.md](conformance/README.md) | Black-box tests of what Stalker clients see |
