@@ -43,7 +43,7 @@ The copy holds the database only. Keep a copy of the key file apart from it, onc
 
 ## Upgrading
 
-- **A Proxmox container or another Debian system:** unpack the new release's archive and run its `install.sh` as root ([install-lxc.md](install-lxc.md)). It replaces the binary and the systemd unit, keeps the configuration and the data, and restarts the server.
+- **A Proxmox container or another Debian system:** unpack the new release's archive and run its `install.sh` as root ([install-lxc.md](install-lxc.md)). It replaces the binary and the systemd unit, keeps the configuration and the data, and restarts the server. With the Debian package, install the new one: `apt install ./overscan_<version>_<arch>.deb` does the same.
 - **Docker:** unpack the new archive anywhere and run `docker compose up -d --build` in it ([install-docker.md](install-docker.md)). The new container takes over the same volume.
 
 Then check the log for the version and the database:

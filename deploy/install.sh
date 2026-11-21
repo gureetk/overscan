@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # Usage: sudo ./install.sh [--no-ffmpeg]
+#        sudo ./install.sh --uninstall
 #
 # Installs Overscan from the unpacked release archive this script came in, or
 # upgrades an installation, on a Linux system with systemd, such as a Debian
@@ -17,14 +18,24 @@
 # - the systemd unit, enabled and (re)started.
 #
 # The data lives in /var/lib/overscan, which systemd creates for the service.
+#
+# --uninstall stops the service and removes it and the binary. It keeps the
+# configuration, the data and the user, which it names.
 set -euo pipefail
 
 with_ffmpeg=yes
+uninstall=no
 for arg in "$@"; do
 	case "$arg" in
 	--no-ffmpeg) with_ffmpeg=no ;;
+	--uninstall) uninstall=yes ;;
+	-h | --help)
+		echo "Usage: sudo ./install.sh [--no-ffmpeg]   install or upgrade Overscan as a service"
+		echo "       sudo ./install.sh --uninstall     remove the service and the binary, keeping the data"
+		exit 0
+		;;
 	*)
-		echo "install.sh: unknown option $arg; the only one is --no-ffmpeg" >&2
+		echo "install.sh: unknown option $arg; the options are --no-ffmpeg and --uninstall" >&2
 		exit 2
 		;;
 	esac
@@ -34,6 +45,27 @@ if [ "$(id -u)" -ne 0 ]; then
 	echo "install.sh: run this as root, for example with sudo" >&2
 	exit 1
 fi
+if ! command -v systemctl >/dev/null; then
+	echo "install.sh: systemd is needed" >&2
+	exit 1
+fi
+# A Debian package's Overscan is upgraded and removed with its package.
+if command -v dpkg-query >/dev/null &&
+	[ "$(dpkg-query -W -f '${db:Status-Status}' overscan 2>/dev/null)" = installed ]; then
+	echo "install.sh: Overscan is installed from its Debian package here; upgrade it with the" >&2
+	echo "new package (apt install ./overscan_<version>_<arch>.deb), or remove it with apt remove overscan" >&2
+	exit 1
+fi
+
+if [ "$uninstall" = yes ]; then
+	systemctl disable --now --quiet overscan 2>/dev/null || true
+	rm -f /etc/systemd/system/overscan.service /usr/local/bin/overscan
+	systemctl daemon-reload
+	echo "Stopped Overscan and removed the service and /usr/local/bin/overscan."
+	echo "Kept /etc/overscan, the data in /var/lib/overscan and the overscan user;"
+	echo "remove them yourself once you no longer need them."
+	exit 0
+fi
 here=$(dirname "$(readlink -f "$0")")
 for f in overscan overscan.example.yaml overscan.service; do
 	if [ ! -f "$here/$f" ]; then
@@ -41,11 +73,6 @@ for f in overscan overscan.example.yaml overscan.service; do
 		exit 1
 	fi
 done
-if ! command -v systemctl >/dev/null; then
-	echo "install.sh: systemd is needed" >&2
-	exit 1
-fi
-
 if ! id overscan >/dev/null 2>&1; then
 	useradd --system --home-dir /var/lib/overscan --no-create-home \
 		--shell /usr/sbin/nologin overscan

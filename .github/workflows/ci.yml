@@ -93,6 +93,27 @@ jobs:
       - name: Build and check the image
         run: tools/check-image.sh "$RUNNER_TEMP/image"
 
+  # What a release ships installs, upgrades and uninstalls cleanly on a
+  # fresh Debian system with systemd (D124).
+  packages:
+    name: Packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      - name: Build the archives and the Debian packages
+        run: tools/build-release.sh v0.0.0-ci
+
+      - name: Install, upgrade and uninstall them
+        run: tools/check-packages.sh dist
+
   upgrade:
     name: Upgrades
     runs-on: ubuntu-latest

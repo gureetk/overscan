@@ -6,7 +6,7 @@ The admin is at `http://<server>:8080/admin/`. Its pages are *Overview*, *Source
 
 ## Install it
 
-- **In a Proxmox container or on another Debian system:** unpack the release's archive and run `sudo ./install.sh`, which installs the binary, the configuration file and a systemd service ([install-lxc.md](install-lxc.md)).
+- **In a Proxmox container or on another Debian system:** unpack the release's archive and run `sudo ./install.sh`, which installs the binary, the configuration file and a systemd service ([install-lxc.md](install-lxc.md)). Or install the release's Debian package, `sudo apt install ./overscan_<version>_amd64.deb`, which does the same.
 - **With Docker:** unpack the archive and run `docker compose up -d --build` in it ([install-docker.md](install-docker.md)).
 - **Set the administrator's password:** `overscan admin password`, which asks for it twice. The same command resets a forgotten one.
 - **The configuration file**, `/etc/overscan/overscan.yaml`, holds the server's own settings: addresses, folders, logging, ffmpeg, reverse proxies. `deploy/overscan.example.yaml` in the archive explains each. Everything else is set in the admin.
@@ -67,11 +67,12 @@ The films and series of Xtream servers, Stalker portals, Jellyfin, Plex and fold
 - **The playback check,** in the box's own *Settings* → *Playback Check*, measures what that box plays.
 - **Details from TMDB** for a folder's titles, with a key of your own: *Settings*.
 
-## Back up, upgrade, go back
+## Back up, upgrade, go back, remove
 
 - **A backup:** `overscan backup` copies the database while the server runs; keep a copy of the key file apart, once ([backup.md](backup.md)).
 - **An upgrade** keeps everything, and copies the database first when its schema changes ([upgrading.md](upgrading.md)).
 - **Going back** to the version before: [upgrading.md](upgrading.md), *Going back*.
+- **Removing it:** `sudo ./install.sh --uninstall`, or `sudo apt remove overscan` for the package. Both keep the configuration and the data ([install-lxc.md](install-lxc.md)).
 
 ## Behind a reverse proxy
 

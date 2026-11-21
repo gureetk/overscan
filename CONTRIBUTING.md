@@ -46,7 +46,7 @@ CI runs these on every pull request. Run them before you push:
     tools/check-spdx.sh
     tools/check-es5.sh
 
-The stream repair tests run ffmpeg if it is installed, and skip what needs it otherwise. To check the Docker image as CI does, lay out a release archive's files and run `tools/check-image.sh` on them (see the `docker` job in `.github/workflows/ci.yml`).
+The stream repair tests run ffmpeg if it is installed, and skip what needs it otherwise. To check the Docker image as CI does, lay out a release archive's files and run `tools/check-image.sh` on them (see the `docker` job in `.github/workflows/ci.yml`). To check the Debian packages and `install.sh` as CI does, build a release with `tools/build-release.sh v0.0.0-dev` and run `tools/check-packages.sh dist`, which needs Docker.
 
 Browser scripts under `web/` must be ES5, since a set-top box's browser may support nothing newer. `tools/check-es5.sh` parses them as ES5; it needs Node.js. The admin, under `web/admin/`, runs in desktop browsers and is left out.
 

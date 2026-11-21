@@ -1,0 +1,41 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The Debian package's postinst (D124). It does what install.sh does: an
+# "overscan" system user; /etc/overscan/overscan.yaml from the example,
+# unless there is one; the data folder; and the service, enabled and
+# (re)started where systemd runs.
+set -e
+
+if [ "$1" = configure ]; then
+	if ! getent passwd overscan >/dev/null; then
+		useradd --system --home-dir /var/lib/overscan --no-create-home \
+			--shell /usr/sbin/nologin overscan
+		echo "Added the overscan user."
+	fi
+
+	install -d -m 0750 -o root -g overscan /etc/overscan
+	if [ -e /etc/overscan/overscan.yaml ]; then
+		echo "Kept /etc/overscan/overscan.yaml."
+	else
+		install -m 0640 -o root -g overscan /usr/share/overscan/overscan.example.yaml /etc/overscan/overscan.yaml
+		echo "Wrote /etc/overscan/overscan.yaml from the example."
+	fi
+	install -d -m 0700 -o overscan -g overscan /var/lib/overscan
+
+	if [ -e /etc/systemd/system/overscan.service ]; then
+		echo "overscan: /etc/systemd/system/overscan.service, which install.sh wrote, overrides this package's unit." >&2
+		echo "overscan: remove it and /usr/local/bin/overscan to run the package's Overscan." >&2
+	fi
+
+	if [ -d /run/systemd/system ]; then
+		systemctl daemon-reload
+		systemctl enable --quiet overscan
+		if systemctl restart overscan; then
+			echo "Overscan is running. Its log: journalctl -u overscan"
+		else
+			echo "overscan: the service did not start; its log says why: journalctl -u overscan" >&2
+		fi
+	fi
+fi
+exit 0

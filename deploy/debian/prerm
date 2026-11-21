@@ -1,0 +1,13 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The Debian package's prerm (D124): on removal, stops and disables the
+# service. An upgrade leaves it running until the new version's postinst
+# restarts it.
+set -e
+
+if [ "$1" = remove ] && [ -d /run/systemd/system ]; then
+	systemctl stop overscan || true
+	systemctl disable --quiet overscan || true
+fi
+exit 0

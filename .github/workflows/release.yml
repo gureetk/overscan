@@ -76,7 +76,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          files=(dist/*.tar.gz dist/SHA256SUMS)
+          files=(dist/*.tar.gz dist/*.deb dist/SHA256SUMS)
 
           # A release published from the Releases page already exists: add the
           # archives to it.
@@ -100,7 +100,7 @@ jobs:
             fi
             echo "Built from ${GITHUB_SHA} with $(go env GOVERSION)."
             echo
-            echo 'Take the archive for your machine (`linux_amd64` for 64-bit x86, `linux_arm64` for 64-bit ARM) and check it with `sha256sum -c SHA256SUMS --ignore-missing`.'
+            echo 'Take the archive for your machine (`linux_amd64` for 64-bit x86, `linux_arm64` for 64-bit ARM), or on Debian and Ubuntu the package (`amd64` or `arm64`), and check it with `sha256sum -c SHA256SUMS --ignore-missing`.'
             echo
             # A pre-release lists what changed since the release before it;
             # a full release, since the full release before it, so that its
