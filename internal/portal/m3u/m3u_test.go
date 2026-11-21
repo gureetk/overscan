@@ -20,6 +20,7 @@ import (
 	"overscan.gureet.ca/internal/admin"
 	"overscan.gureet.ca/internal/catchup"
 	"overscan.gureet.ca/internal/hub"
+	"overscan.gureet.ca/internal/routes"
 	"overscan.gureet.ca/internal/secrets"
 	"overscan.gureet.ca/internal/source"
 	"overscan.gureet.ca/internal/store"
@@ -115,7 +116,7 @@ func newHarness(t *testing.T) *harness {
 	logins := admin.NewLogins(st)
 	h.out = New(st, h.hub, logins, log)
 	h.out.now = func() time.Time { return h.now }
-	mux := http.NewServeMux()
+	mux := routes.NewMux()
 	h.out.Register(mux)
 	mux.Handle("GET /live/", h.hub)
 	mux.Handle("GET /archive/", h.hub)
@@ -251,7 +252,7 @@ func TestPlaylistRefusals(t *testing.T) {
 // outputs answer anywhere.
 func TestPlaylistOwnNetworks(t *testing.T) {
 	h := newHarness(t)
-	mux := http.NewServeMux()
+	mux := routes.NewMux()
 	h.out.Register(mux)
 	ask := func(from string) int {
 		r := httptest.NewRequest("GET", "/playlist/"+h.token+".m3u", nil)

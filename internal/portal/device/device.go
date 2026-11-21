@@ -31,6 +31,7 @@ import (
 	"overscan.gureet.ca/internal/hub"
 	"overscan.gureet.ca/internal/library"
 	"overscan.gureet.ca/internal/playcheck"
+	"overscan.gureet.ca/internal/routes"
 	"overscan.gureet.ca/internal/store"
 )
 
@@ -86,7 +87,7 @@ type API struct {
 	version     string
 	key         []byte // signs session tokens
 	now         func() time.Time
-	mux         *http.ServeMux
+	mux         *routes.Mux
 	pins        pinGuard
 	reports     reportLimiter // POST playback, per device
 	recorder    Recorder      // ends recordings under way; nil for none (D89)
@@ -99,7 +100,7 @@ func New(st *store.Store, reg *devices.Registry, h *hub.Hub, log *slog.Logger, v
 		libraryWait: libraryWait}
 	_, _ = rand.Read(a.key) // never fails; see crypto/rand
 
-	mux := http.NewServeMux()
+	mux := routes.NewMux()
 	mux.HandleFunc("POST "+Prefix+"session", a.session)
 	mux.HandleFunc("GET "+Prefix+"channels", a.authorized(a.channels))
 	mux.HandleFunc("GET "+Prefix+"channels/version", a.authorized(a.channelsVersion))
@@ -139,6 +140,9 @@ func New(st *store.Store, reg *devices.Registry, h *hub.Hub, log *slog.Logger, v
 	a.mux = mux
 	return a
 }
+
+// Patterns returns the patterns of the API's routes (routes.Lister).
+func (a *API) Patterns() []string { return a.mux.Patterns() }
 
 // ServeHTTP answers one call to the API.
 func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {

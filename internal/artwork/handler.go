@@ -12,6 +12,7 @@ import (
 
 	"overscan.gureet.ca/internal/adapters/folder"
 	"overscan.gureet.ca/internal/adapters/plex"
+	"overscan.gureet.ca/internal/routes"
 	"overscan.gureet.ca/internal/source"
 	"overscan.gureet.ca/internal/store"
 )
@@ -23,7 +24,7 @@ import (
 // the pictures of films, series and episodes that devices see (TitlePath). Pictures are no secret, and boxes
 // and Stalker clients load them as plain images, so this needs no session.
 func Handler(st *store.Store, c *Cache, log *slog.Logger) http.Handler {
-	mux := http.NewServeMux()
+	mux := routes.NewMux()
 	serve := func(w http.ResponseWriter, r *http.Request, kind Kind, lookup func(id int64) ([]string, store.ArtSource, error)) {
 		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 		if err != nil || id <= 0 {
