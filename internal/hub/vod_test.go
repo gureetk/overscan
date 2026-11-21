@@ -164,7 +164,7 @@ func newItemHarness(t *testing.T, limit int) *itemHarness {
 	if _, err := st.ApplyLibrary(ctx, srcID, store.KindSeries, nil, []store.LibraryTitle{{Key: "7001", Name: "Coastline"}}, at); err != nil {
 		t.Fatal(err)
 	}
-	recent, err := st.SearchTitles(ctx, "o", 5)
+	recent, err := st.SearchTitles(ctx, "o", 5, store.EverySource)
 	if err != nil || len(recent) != 2 {
 		t.Fatalf("titles %+v, %v", recent, err)
 	}
@@ -490,7 +490,7 @@ func TestFolderVideoPlays(t *testing.T) {
 		{Key: "Gone.mkv", Name: "Gone", Container: "mkv", AddedAt: time.Now()}}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	titles, err := st.RecentTitles(ctx, store.KindMovie, 5)
+	titles, err := st.RecentTitles(ctx, store.KindMovie, 5, store.EverySource)
 	if err != nil || len(titles) != 3 {
 		t.Fatalf("titles %+v, %v", titles, err)
 	}

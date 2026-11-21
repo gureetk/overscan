@@ -120,7 +120,8 @@ func streamFile(file string) (int64, string, bool) {
 }
 
 // entry returns the lineup entry that an ID names, if the account's
-// players may play it; otherwise it answers 404 and returns false.
+// players may play it, with only its streams from the sources that the
+// account uses (D114); otherwise it answers 404 and returns false.
 func (o *Output) entry(w http.ResponseWriter, r *http.Request, acct store.Account, id int64) (store.PlayableEntry, bool) {
 	entry, err := o.store.PlayableEntry(r.Context(), id)
 	switch {
@@ -134,7 +135,11 @@ func (o *Output) entry(w http.ResponseWriter, r *http.Request, acct store.Accoun
 		http.NotFound(w, r)
 		return store.PlayableEntry{}, false
 	}
-	return entry, true
+	entry, ok := acct.Sources.For(entry)
+	if !ok {
+		http.NotFound(w, r)
+	}
+	return entry, ok
 }
 
 // live serves GET /live/<username>/<password>/<stream_id>.ts, or .m3u8,
@@ -216,7 +221,7 @@ func (o *Output) item(w http.ResponseWriter, r *http.Request, kind string) {
 	case err != nil:
 		o.failed(w, "look up a title to play", err)
 		return
-	case item.Locked && acct.PINHash != "":
+	case item.Locked && acct.PINHash != "", !acct.Sources.Uses(item.SourceID):
 		http.NotFound(w, r)
 		return
 	}
@@ -281,7 +286,8 @@ func (o *Output) playArchive(w http.ResponseWriter, r *http.Request, acct store.
 	case err != nil:
 		o.failed(w, "look up a channel's archive", err)
 		return
-	case entry.LineupID != acct.LineupID, entry.Locked && acct.PINHash != "":
+	case entry.LineupID != acct.LineupID, entry.Locked && acct.PINHash != "", !acct.Sources.Uses(entry.SourceID):
+		// A past programme comes from the channel's own source (D114).
 		http.NotFound(w, r)
 		return
 	}

@@ -171,6 +171,12 @@ func (a *API) record(w http.ResponseWriter, r *http.Request, d store.Device) {
 		a.internalError(w, "look up a channel", err)
 		return
 	}
+	// A recording plays the channel as the account does, from the sources
+	// that it uses (D114).
+	if _, ok := acct.Sources.For(entry); !ok {
+		writeError(w, http.StatusNotFound, errNotFound)
+		return
+	}
 	if req.Now {
 		a.recordNow(w, r, d, acct, entry, req)
 		return

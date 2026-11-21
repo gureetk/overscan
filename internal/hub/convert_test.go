@@ -480,7 +480,7 @@ func TestConvertFromFolder(t *testing.T) {
 		{Key: "Quiet Harbour (2019).mkv", Name: "Quiet Harbour", Container: "mkv", AddedAt: time.Now()}}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := st.RecentTitles(ctx, store.KindMovie, 1)
+	rows, err := st.RecentTitles(ctx, store.KindMovie, 1, store.EverySource)
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("titles %+v, %v", rows, err)
 	}

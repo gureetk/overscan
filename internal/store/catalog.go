@@ -491,6 +491,7 @@ func rowsAffected(res sql.Result) (int, error) {
 type LineupChannel struct {
 	EntryID   int64
 	ChannelID int64
+	SourceID  int64
 	Number    int
 	Name      string
 	Logo      string // the source's logo address, "" if none
@@ -548,7 +549,7 @@ const shownEntry = `e.number IS NOT NULL AND COALESCE(e.hidden, e.rule_hidden, g
 // LineupChannels returns what a lineup shows, by number.
 func (s *Store) LineupChannels(ctx context.Context, lineupID int64) ([]LineupChannel, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT e.id, c.id, e.number, `+entryName+`, `+entryLogo+`, COALESCE(g.id, 0), COALESCE(g.name, ''),
+		SELECT e.id, c.id, c.source_id, e.number, `+entryName+`, `+entryLogo+`, COALESCE(g.id, 0), COALESCE(g.name, ''),
 			c.xmltv_id, `+archiveDaysSQL+`, `+lockedEntry+`, c.radio`+lineupEntryJoins+`
 		WHERE e.lineup_id = ? AND `+shownEntry+`
 		ORDER BY e.number`,
@@ -560,7 +561,7 @@ func (s *Store) LineupChannels(ctx context.Context, lineupID int64) ([]LineupCha
 	var out []LineupChannel
 	for rows.Next() {
 		var c LineupChannel
-		if err := rows.Scan(&c.EntryID, &c.ChannelID, &c.Number, &c.Name, &c.Logo, &c.GroupID, &c.Group,
+		if err := rows.Scan(&c.EntryID, &c.ChannelID, &c.SourceID, &c.Number, &c.Name, &c.Logo, &c.GroupID, &c.Group,
 			&c.XMLTVID, &c.ArchiveDays, &c.Locked, &c.Radio); err != nil {
 			return nil, fmt.Errorf("store: lineup %d: %w", lineupID, err)
 		}

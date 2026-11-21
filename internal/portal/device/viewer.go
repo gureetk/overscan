@@ -37,7 +37,7 @@ func (a *API) favourite(on bool) func(http.ResponseWriter, *http.Request, store.
 		if on {
 			// Only a channel the box sees can become a favourite; one that
 			// has gone can still be unmarked.
-			if err := a.store.EntryShown(ctx, acct.LineupID, id); errors.Is(err, store.ErrNotFound) {
+			if err := a.store.AccountSees(ctx, acct, id); errors.Is(err, store.ErrNotFound) {
 				writeError(w, http.StatusNotFound, errNotFound)
 				return
 			} else if err != nil {
@@ -181,7 +181,7 @@ func (a *API) search(w http.ResponseWriter, r *http.Request, d store.Device) {
 		a.internalError(w, "look up account", err)
 		return
 	}
-	entries, err := a.store.LineupChannels(ctx, acct.LineupID)
+	entries, err := a.store.AccountChannels(ctx, acct)
 	if err != nil {
 		a.internalError(w, "list channels", err)
 		return
@@ -197,15 +197,27 @@ func (a *API) search(w http.ResponseWriter, r *http.Request, d store.Device) {
 		}
 	}
 	now := a.now()
-	found, err := a.store.SearchProgrammes(ctx, acct.LineupID, q, now, now.Add(searchAhead), maxSearchProgrammes)
+	most := maxSearchProgrammes
+	if acct.Sources.Only {
+		// The lineup's channels of other sources are left out below, so the
+		// search looks further (D114).
+		most *= 4
+	}
+	found, err := a.store.SearchProgrammes(ctx, acct.LineupID, q, now, now.Add(searchAhead), most)
 	if err != nil {
 		a.internalError(w, "search the guide", err)
 		return
 	}
-	for _, p := range found {
-		resp.Programmes = append(resp.Programmes, searchProgramme{Channel: p.EntryID, programme: shortProgramme(p.Programme)})
+	seen := make(map[int64]bool, len(entries))
+	for _, c := range entries {
+		seen[c.EntryID] = true
 	}
-	if resp.Movies, resp.Series, err = a.searchTitles(ctx, d, q); err != nil {
+	for _, p := range found {
+		if seen[p.EntryID] && len(resp.Programmes) < maxSearchProgrammes {
+			resp.Programmes = append(resp.Programmes, searchProgramme{Channel: p.EntryID, programme: shortProgramme(p.Programme)})
+		}
+	}
+	if resp.Movies, resp.Series, err = a.searchTitles(ctx, acct, q); err != nil {
 		a.internalError(w, "search the films and series", err)
 		return
 	}

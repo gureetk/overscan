@@ -36,6 +36,8 @@ type Account struct {
 	// OutputProfile names the output profile of its devices and players
 	// (D110): how they get live channels, unless a device has its own.
 	OutputProfile string
+	// Sources are the sources that its devices and players use (D114).
+	Sources Sources
 }
 
 // Outputs are the outputs that an account may use (D102). Each starts off.
@@ -71,16 +73,21 @@ func (s *Store) Account(ctx context.Context, id int64) (Account, error) {
 
 // accountColumns are what scanAccount reads.
 const accountColumns = "id, name, lineup_id, expires_at, created_at, COALESCE(pin_hash, ''), COALESCE(theme_id, 0), " +
-	"COALESCE(username, ''), password_hash, token_hash IS NOT NULL, max_streams, output_m3u, output_xtream, output_profile"
+	"COALESCE(username, ''), password_hash, token_hash IS NOT NULL, max_streams, output_m3u, output_xtream, output_profile, " +
+	"sources_limited, (SELECT COALESCE(group_concat(source_id), '') FROM account_sources WHERE account_id = accounts.id)"
 
 // scanAccount reads a row of accountColumns.
 func scanAccount(row rowScanner) (Account, error) {
 	var a Account
 	var expires sql.NullString
-	var created string
+	var created, sources string
 	err := row.Scan(&a.ID, &a.Name, &a.LineupID, &expires, &created, &a.PINHash, &a.ThemeID,
-		&a.Username, &a.PasswordHash, &a.HasToken, &a.MaxStreams, &a.Outputs.M3U, &a.Outputs.Xtream, &a.OutputProfile)
+		&a.Username, &a.PasswordHash, &a.HasToken, &a.MaxStreams, &a.Outputs.M3U, &a.Outputs.Xtream, &a.OutputProfile,
+		&a.Sources.Only, &sources)
 	if err != nil {
+		return Account{}, err
+	}
+	if a.Sources.IDs, err = parseIDs(sources); err != nil {
 		return Account{}, err
 	}
 	if a.CreatedAt, err = parseTime(created); err != nil {

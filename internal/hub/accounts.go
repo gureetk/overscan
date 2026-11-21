@@ -54,6 +54,55 @@ func (h *Hub) viewer(ctx context.Context, deviceID int64) (account int64, limit 
 	return account, limit
 }
 
+// sourcesOf returns the sources that the account of a device's streams
+// uses (D114), and every source for a device of no account, such as the
+// debug playlist.
+func (h *Hub) sourcesOf(ctx context.Context, deviceID int64) (store.Sources, error) {
+	account, _ := h.viewer(ctx, deviceID)
+	if account == 0 {
+		return store.EverySource, nil
+	}
+	acct, err := h.store.Account(ctx, account)
+	if err != nil {
+		return store.Sources{}, err
+	}
+	return acct.Sources, nil
+}
+
+// usesSource reports whether a device's account uses a source (D114). If it
+// does not, or that cannot be told, it answers and returns false.
+func (h *Hub) usesSource(w http.ResponseWriter, r *http.Request, deviceID, sourceID int64, unavailable string) bool {
+	u, err := h.sourcesOf(r.Context(), deviceID)
+	if err != nil {
+		h.log.Error("cannot look up the sources that a device's account uses", "device", deviceID, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return false
+	}
+	if !u.Uses(sourceID) {
+		http.Error(w, unavailable, http.StatusNotFound)
+		return false
+	}
+	return true
+}
+
+// StopSources ends the streams of an account's devices, players and
+// recordings that come from sources it no longer uses (D114), and returns
+// how many it ended.
+func (h *Hub) StopSources(accountID int64, u store.Sources, reason string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var stop []*session
+	for _, s := range h.sessions {
+		if !s.shared && s.deviceID != 0 && s.account == accountID && !u.Uses(s.sourceID) {
+			stop = append(stop, s)
+		}
+	}
+	for _, s := range stop {
+		h.end(s, reason)
+	}
+	return len(stop)
+}
+
 // counts reports whether s is one of an account's streams now, against the
 // account's limit. It needs h.mu.
 func (s *session) counts(account int64, now time.Time) bool {

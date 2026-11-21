@@ -4,6 +4,7 @@ package stalker
 
 import (
 	"errors"
+	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -95,29 +96,31 @@ func (a *API) deviceZone(r *http.Request) *time.Location {
 	return a.local
 }
 
-// lineupID returns the lineup of d's account.
-func (a *API) lineupID(r *http.Request, d store.Device) (int64, error) {
-	acct, err := a.store.Account(r.Context(), d.AccountID)
-	return acct.LineupID, err
-}
-
 // entryProgrammes returns the programmes of the channel that the ch_id
-// parameter names, in d's lineup, between from and to. A channel that d
-// does not see has none.
-func (a *API) entryProgrammes(r *http.Request, d store.Device, from, to time.Time) (int64, []store.Programme, error) {
-	lineupID, err := a.lineupID(r, d)
+// parameter names, in the lineup of d's account, between from and to, with
+// the account. A channel that d does not see has none, nor does one of
+// sources that the account does not use (D114).
+func (a *API) entryProgrammes(r *http.Request, d store.Device, from, to time.Time) (int64, store.Account, []store.Programme, error) {
+	acct, err := a.store.Account(r.Context(), d.AccountID)
 	if err != nil {
-		return 0, nil, err
+		return 0, acct, nil, err
 	}
 	entryID, err := strconv.ParseInt(r.Form.Get("ch_id"), 10, 64)
 	if err != nil || entryID <= 0 {
-		return 0, nil, nil
+		return 0, acct, nil, nil
 	}
-	ps, err := a.store.EntryProgrammes(r.Context(), lineupID, entryID, from, to)
+	if acct.Sources.Only {
+		if err := a.store.AccountSees(r.Context(), acct, entryID); errors.Is(err, store.ErrNotFound) {
+			return entryID, acct, nil, nil
+		} else if err != nil {
+			return 0, acct, nil, err
+		}
+	}
+	ps, err := a.store.EntryProgrammes(r.Context(), acct.LineupID, entryID, from, to)
 	if errors.Is(err, store.ErrNotFound) {
-		return entryID, nil, nil
+		return entryID, acct, nil, nil
 	}
-	return entryID, ps, err
+	return entryID, acct, ps, err
 }
 
 // getShortEPG answers itv/get_short_epg: the programme on now on the
@@ -129,7 +132,7 @@ func (a *API) getShortEPG(w http.ResponseWriter, r *http.Request, d store.Device
 	}
 	size = min(size, maxShortEPGSize)
 	now := a.now()
-	entryID, ps, err := a.entryProgrammes(r, d, now, now.Add(shortEPGAhead))
+	entryID, _, ps, err := a.entryProgrammes(r, d, now, now.Add(shortEPGAhead))
 	if err != nil {
 		a.internalError(w, "read the guide", err)
 		return
@@ -150,16 +153,25 @@ func (a *API) getEPGInfo(w http.ResponseWriter, r *http.Request, d store.Device)
 		hours = defaultEPGPeriod
 	}
 	hours = min(hours, maxEPGPeriod)
-	lineupID, err := a.lineupID(r, d)
+	acct, err := a.store.Account(r.Context(), d.AccountID)
 	if err != nil {
 		a.internalError(w, "read the guide", err)
 		return
 	}
 	now := a.now()
-	byEntry, err := a.store.LineupProgrammes(r.Context(), lineupID, now, now.Add(time.Duration(hours)*time.Hour))
+	byEntry, err := a.store.LineupProgrammes(r.Context(), acct.LineupID, now, now.Add(time.Duration(hours)*time.Hour))
 	if err != nil {
 		a.internalError(w, "read the guide", err)
 		return
+	}
+	if acct.Sources.Only {
+		// Only the channels of the sources that the account uses (D114).
+		seen, err := a.store.AccountEntries(r.Context(), acct)
+		if err != nil {
+			a.internalError(w, "read the guide", err)
+			return
+		}
+		maps.DeleteFunc(byEntry, func(id int64, _ []store.Programme) bool { return !seen[id] })
 	}
 	data := make(map[string][]epgProgramme, len(byEntry))
 	for entryID, ps := range byEntry {
@@ -198,16 +210,20 @@ func (a *API) getSimpleDataTable(w http.ResponseWriter, r *http.Request, d store
 		day = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 	}
 	next := day.AddDate(0, 0, 1)
-	entryID, ps, err := a.entryProgrammes(r, d, day, next)
+	entryID, acct, ps, err := a.entryProgrammes(r, d, day, next)
 	if err != nil {
 		a.internalError(w, "read the guide", err)
 		return
 	}
 	days := 0
 	if len(ps) > 0 {
-		lineupID, err := a.lineupID(r, d)
-		if err == nil {
-			days, err = a.store.EntryArchiveDays(r.Context(), lineupID, entryID)
+		days, err = a.store.EntryArchiveDays(r.Context(), acct.LineupID, entryID)
+		if err == nil && acct.Sources.Only {
+			// Past programmes come from the channel's own source (D114).
+			var p store.PlayableEntry
+			if p, err = a.store.PlayableEntry(r.Context(), entryID); err == nil && !acct.Sources.Uses(p.SourceID) {
+				days = 0
+			}
 		}
 		if err != nil {
 			a.internalError(w, "read the guide", err)

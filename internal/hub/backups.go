@@ -66,6 +66,19 @@ func (h *Hub) candidates(entry store.PlayableEntry) []store.PlayableEntry {
 // backups it does what it always did.
 func (h *Hub) openChannel(w http.ResponseWriter, r *http.Request, c claims, token string, entry store.PlayableEntry, continuous bool) {
 	tries := h.candidates(entry)
+	// Only the streams of the sources that the device's account uses
+	// (D114).
+	u, err := h.sourcesOf(r.Context(), c.deviceID)
+	if err != nil {
+		h.log.Error("cannot look up the sources that a device's account uses", "device", c.deviceID, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	tries = slices.DeleteFunc(tries, func(t store.PlayableEntry) bool { return !u.Uses(t.SourceID) })
+	if len(tries) == 0 {
+		http.Error(w, "this channel is not available", http.StatusNotFound)
+		return
+	}
 	profile := h.outputProfile(r.Context(), c.deviceID)
 	for i, try := range tries {
 		more := i < len(tries)-1

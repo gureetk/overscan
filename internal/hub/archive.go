@@ -134,6 +134,9 @@ func (h *Hub) serveArchive(w http.ResponseWriter, r *http.Request, rest string) 
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
+		if !h.usesSource(w, r, c.deviceID, entry.SourceID, "this channel's archive is not available") {
+			return
+		}
 		opening := &session{token: token, channelID: entry.ChannelID, sourceID: entry.SourceID, channel: entry.Name,
 			repair: entry.Repair, repairHLS: entry.RepairHLS, archive: &entry.Archive,
 			aired: time.Unix(c.start, 0).UTC()}

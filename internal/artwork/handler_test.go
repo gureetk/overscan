@@ -117,7 +117,7 @@ func TestTitlePictures(t *testing.T) {
 		Poster: p.URL + "/logo.png", Summary: store.TitleSummary{Backdrop: p.URL + "/logo.jpg"}}}, at); err != nil {
 		t.Fatal(err)
 	}
-	titles, err := st.SearchTitles(ctx, "coast", 1)
+	titles, err := st.SearchTitles(ctx, "coast", 1, store.EverySource)
 	if err != nil || len(titles) != 1 {
 		t.Fatalf("titles %+v, %v", titles, err)
 	}
@@ -243,7 +243,7 @@ func TestFolderPictures(t *testing.T) {
 	srv := httptest.NewServer(Handler(st, New(t.TempDir(), quiet(), "test"), quiet()))
 	t.Cleanup(srv.Close)
 	for name, want := range map[string]int{"calm": http.StatusOK, "borrowed": http.StatusNotFound} {
-		titles, err := st.SearchTitles(ctx, name, 1)
+		titles, err := st.SearchTitles(ctx, name, 1, store.EverySource)
 		if err != nil || len(titles) != 1 {
 			t.Fatalf("titles %+v, %v", titles, err)
 		}
@@ -311,7 +311,7 @@ func TestPlexPictures(t *testing.T) {
 	srv := httptest.NewServer(Handler(st, New(t.TempDir(), quiet(), "test"), quiet()))
 	t.Cleanup(srv.Close)
 	for name, want := range map[string]int{"calm": http.StatusOK, "borrowed": http.StatusNotFound} {
-		titles, err := st.SearchTitles(ctx, name, 1)
+		titles, err := st.SearchTitles(ctx, name, 1, store.EverySource)
 		if err != nil || len(titles) != 1 {
 			t.Fatalf("titles %+v, %v", titles, err)
 		}

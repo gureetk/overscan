@@ -150,7 +150,7 @@ func TestPlexFilms(t *testing.T) {
 	if got := shelfTitles(t, st, store.KindMovie); !reflect.DeepEqual(got, want) {
 		t.Errorf("shelves %v", got)
 	}
-	recent, err := st.RecentTitles(ctx, store.KindMovie, 1)
+	recent, err := st.RecentTitles(ctx, store.KindMovie, 1, store.EverySource)
 	if err != nil || len(recent) != 1 || recent[0].Name != "Another Field" ||
 		recent[0].Poster != "plex:480x720/library/metadata/101/thumb/1" {
 		t.Fatalf("recent %+v, %v", recent, err)
@@ -205,7 +205,7 @@ func TestPlexSeries(t *testing.T) {
 	if got := shelfTitles(t, st, store.KindSeries); !reflect.DeepEqual(got, map[string][]string{"Shows": {"Coastline"}}) {
 		t.Errorf("shelves %v", got)
 	}
-	recent, err := st.RecentTitles(ctx, store.KindSeries, 1)
+	recent, err := st.RecentTitles(ctx, store.KindSeries, 1, store.EverySource)
 	if err != nil || len(recent) != 1 || !recent[0].AddedAt.Equal(time.Unix(1796127600, 0)) {
 		t.Fatalf("recent %+v, %v", recent, err)
 	}

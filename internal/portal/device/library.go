@@ -113,12 +113,9 @@ func row(t store.TitleRow, locks bool) titleRow {
 		Poster: artwork.TitlePath(artwork.PosterKind, t.ID, t.Poster), Locked: t.Locked && locks}
 }
 
-// locksApply reports whether d's account has a parental PIN, without which
+// locksApply reports whether an account has a parental PIN, without which
 // locks do nothing (D55, D85).
-func (a *API) locksApply(ctx context.Context, d store.Device) (bool, error) {
-	acct, err := a.store.Account(ctx, d.AccountID)
-	return acct.PINHash != "", err
-}
+func locksApply(acct store.Account) bool { return acct.PINHash != "" }
 
 // percent returns how much of a duration a position is, 1 to 99, or 0.
 func percent(position, duration int) int {
@@ -162,7 +159,13 @@ func (a *API) listShelves(w http.ResponseWriter, r *http.Request, d store.Device
 		writeJSON(w, http.StatusOK, resp)
 		return
 	}
-	watching, err := a.store.ContinueWatching(ctx, d.ProfileID, kind, continueTitles)
+	// Only what comes from the sources that the account uses (D114).
+	acct, err := a.store.Account(ctx, d.AccountID)
+	if err != nil {
+		a.internalError(w, "look up account", err)
+		return
+	}
+	watching, err := a.store.ContinueWatching(ctx, d.ProfileID, kind, continueTitles, acct.Sources)
 	if err != nil {
 		a.internalError(w, "list what the account is watching", err)
 		return
@@ -170,7 +173,7 @@ func (a *API) listShelves(w http.ResponseWriter, r *http.Request, d store.Device
 	if len(watching) > 0 {
 		resp.Shelves = append(resp.Shelves, shelf{ID: shelfContinue, Name: "Continue Watching", Count: len(watching)})
 	}
-	recent, err := a.store.RecentTitles(ctx, kind, recentTitles)
+	recent, err := a.store.RecentTitles(ctx, kind, recentTitles, acct.Sources)
 	if err != nil {
 		a.internalError(w, "list what was added last", err)
 		return
@@ -178,7 +181,7 @@ func (a *API) listShelves(w http.ResponseWriter, r *http.Request, d store.Device
 	if len(recent) > 0 {
 		resp.Shelves = append(resp.Shelves, shelf{ID: shelfRecent, Name: "Recently Added", Count: len(recent)})
 	}
-	shelves, err := a.store.Shelves(ctx, kind)
+	shelves, err := a.store.Shelves(ctx, kind, acct.Sources)
 	if err != nil {
 		a.internalError(w, "list the shelves", err)
 		return
@@ -226,18 +229,19 @@ func (a *API) listShelf(w http.ResponseWriter, r *http.Request, d store.Device, 
 		writeError(w, http.StatusBadRequest, errBadRequest)
 		return
 	}
-	locks, err := a.locksApply(ctx, d)
+	acct, err := a.store.Account(ctx, d.AccountID)
 	if err != nil {
 		a.internalError(w, "look up account", err)
 		return
 	}
+	locks := locksApply(acct)
 	id := r.PathValue("id")
 	resp := shelfResponse{ID: id, From: from, Titles: []titleRow{}}
 	var rows []titleRow
 	switch id {
 	case shelfContinue:
 		resp.Name = "Continue Watching"
-		watching, err := a.store.ContinueWatching(ctx, d.ProfileID, kind, continueTitles)
+		watching, err := a.store.ContinueWatching(ctx, d.ProfileID, kind, continueTitles, acct.Sources)
 		if err != nil {
 			a.internalError(w, "list what the account is watching", err)
 			return
@@ -258,21 +262,26 @@ func (a *API) listShelf(w http.ResponseWriter, r *http.Request, d store.Device, 
 		var err error
 		if id == shelfRecent {
 			resp.Name = "Recently Added"
-			titles, err = a.store.RecentTitles(ctx, kind, recentTitles)
+			titles, err = a.store.RecentTitles(ctx, kind, recentTitles, acct.Sources)
 		} else {
 			n, perr := strconv.ParseInt(id, 10, 64)
 			if perr != nil || n <= 0 {
 				writeError(w, http.StatusNotFound, errNotFound)
 				return
 			}
-			if cat, cerr := a.store.PortalCategory(ctx, kind, n); cerr == nil && a.library != nil {
+			cat, cerr := a.store.PortalCategory(ctx, kind, n)
+			switch {
+			case cerr == nil && !acct.Sources.Uses(cat.SourceID):
+				writeError(w, http.StatusNotFound, errNotFound)
+				return
+			case cerr == nil && a.library != nil:
 				a.listPortalShelf(w, r, d, kind, cat, from, count, locks)
 				return
-			} else if cerr != nil && !errors.Is(cerr, store.ErrNotFound) {
+			case cerr != nil && !errors.Is(cerr, store.ErrNotFound):
 				a.internalError(w, "look up a shelf", cerr)
 				return
 			}
-			titles, err = a.store.ShelfTitles(ctx, kind, n, order)
+			titles, err = a.store.ShelfTitles(ctx, kind, n, order, acct.Sources)
 			if len(titles) == 0 && err == nil {
 				err = store.ErrNotFound
 			}
@@ -427,6 +436,20 @@ func (a *API) open(w http.ResponseWriter, r *http.Request, d store.Device, kind 
 		writeError(w, http.StatusNotFound, errNotFound)
 		return
 	}
+	acct, err := a.store.Account(r.Context(), d.AccountID)
+	if err != nil {
+		a.internalError(w, "look up account", err)
+		return
+	}
+	// A title of a source that the account does not use is not read, nor
+	// shown (D114).
+	if t, err := a.store.Title(r.Context(), id); errors.Is(err, store.ErrNotFound) || err == nil && !acct.Sources.Uses(t.SourceID) {
+		writeError(w, http.StatusNotFound, errNotFound)
+		return
+	} else if err != nil {
+		a.internalError(w, "look up a title", err)
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), openWait)
 	defer cancel()
 	o, err := a.library.Open(ctx, id)
@@ -449,11 +472,7 @@ func (a *API) open(w http.ResponseWriter, r *http.Request, d store.Device, kind 
 		a.internalError(w, "open a title", err)
 		return
 	}
-	locks, err := a.locksApply(r.Context(), d)
-	if err != nil {
-		a.internalError(w, "look up account", err)
-		return
-	}
+	locks := locksApply(acct)
 	resp := titleResponse{ID: o.ID, Kind: o.Kind, Name: o.Name, Year: o.Year, Rating: o.Rating, Shelf: o.Shelf,
 		Plot: o.Summary.Plot, Genre: o.Summary.Genre, Cast: o.Summary.Cast, Director: o.Summary.Director,
 		Runtime: o.Summary.Runtime, Details: o.Details != nil, DetailsError: o.ReadError, Locked: o.Locked && locks}
@@ -648,15 +667,17 @@ func (a *API) playTitle(w http.ResponseWriter, r *http.Request, d store.Device, 
 		a.internalError(w, "look up a title to play", err)
 		return
 	}
-	if item.Locked {
-		acct, err := a.store.Account(r.Context(), d.AccountID)
-		if err != nil {
-			a.internalError(w, "look up account", err)
-			return
-		}
-		if acct.PINHash != "" && !a.pinOK(w, r, d, acct, req.PIN) {
-			return
-		}
+	acct, err := a.store.Account(r.Context(), d.AccountID)
+	if err != nil {
+		a.internalError(w, "look up account", err)
+		return
+	}
+	if !acct.Sources.Uses(item.SourceID) {
+		writeError(w, http.StatusNotFound, errNotFound) // a source that the account does not use (D114)
+		return
+	}
+	if item.Locked && acct.PINHash != "" && !a.pinOK(w, r, d, acct, req.PIN) {
+		return
 	}
 	if !a.room(w, a.hub.Room(r.Context(), item.SourceID, d.ID)) {
 		return
@@ -785,20 +806,17 @@ func nearEnd(position, duration int) bool {
 }
 
 // searchTitles returns the films and series whose names hold q, at most
-// maxSearchTitles of each, for d.
-func (a *API) searchTitles(ctx context.Context, d store.Device, q string) ([]titleRow, []titleRow, error) {
+// maxSearchTitles of each, for an account.
+func (a *API) searchTitles(ctx context.Context, acct store.Account, q string) ([]titleRow, []titleRow, error) {
 	movies, series := []titleRow{}, []titleRow{}
 	if a.library == nil {
 		return movies, series, nil
 	}
-	found, err := a.store.SearchTitles(ctx, q, maxSearchTitles)
+	found, err := a.store.SearchTitles(ctx, q, maxSearchTitles, acct.Sources)
 	if err != nil {
 		return nil, nil, err
 	}
-	locks, err := a.locksApply(ctx, d)
-	if err != nil {
-		return nil, nil, err
-	}
+	locks := locksApply(acct)
 	for _, t := range found {
 		if t.Kind == store.KindMovie {
 			movies = append(movies, row(t, locks))

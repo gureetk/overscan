@@ -33,7 +33,7 @@ func TestTitleLocksAndAdultMarks(t *testing.T) {
 		t.Fatal(err)
 	}
 	titles := titleIDs(t, s)
-	shelves, err := s.Shelves(ctx, KindMovie)
+	shelves, err := s.Shelves(ctx, KindMovie, EverySource)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestTitleLocksAndAdultMarks(t *testing.T) {
 	}
 	all := func() map[string]bool {
 		t.Helper()
-		rows, total, err := s.TitlePage(ctx, KindMovie, 0, "", ByName, 0, 10, false)
+		rows, total, err := s.TitlePage(ctx, KindMovie, 0, "", ByName, 0, 10, false, EverySource)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -80,7 +80,7 @@ func TestTitleLocksAndAdultMarks(t *testing.T) {
 	if got := all(); !got["quiet harbour"] || !got["The Long Field"] || !got["Around 100% of_it"] || !got["count"] {
 		t.Errorf("locked: %v", got)
 	}
-	if shelves, _ := s.Shelves(ctx, KindMovie); !shelves[0].Locked || shelves[1].Locked {
+	if shelves, _ := s.Shelves(ctx, KindMovie, EverySource); !shelves[0].Locked || shelves[1].Locked {
 		t.Errorf("shelves %+v", shelves)
 	}
 	if n, err := s.LibraryLocks(ctx); err != nil || n != 2 {
@@ -91,7 +91,7 @@ func TestTitleLocksAndAdultMarks(t *testing.T) {
 		t.Errorf("playable %+v, %v", film, err)
 	}
 	// Devices that leave locked titles out see the rest.
-	if rows, total, err := s.TitlePage(ctx, KindMovie, 0, "", ByName, 0, 10, true); err != nil || total != 1 ||
+	if rows, total, err := s.TitlePage(ctx, KindMovie, 0, "", ByName, 0, 10, true, EverySource); err != nil || total != 1 ||
 		len(rows) != 1 || rows[0].Name != "Lost Reel" {
 		t.Errorf("unlocked titles: %d, %v", total, err)
 	}
@@ -118,11 +118,11 @@ func TestTitleLocksAndAdultMarks(t *testing.T) {
 	if err := s.SetAdultMarks(ctx, AdultHide); err != nil {
 		t.Fatal(err)
 	}
-	rows, total, err := s.TitlePage(ctx, KindMovie, 0, "", ByName, 0, 10, false)
+	rows, total, err := s.TitlePage(ctx, KindMovie, 0, "", ByName, 0, 10, false, EverySource)
 	if err != nil || total != 3 || len(rows) != 3 {
 		t.Errorf("marks hide: %d titles, %v", total, err)
 	}
-	if found, _ := s.SearchTitles(ctx, "100%", 5); len(found) != 0 {
+	if found, _ := s.SearchTitles(ctx, "100%", 5, EverySource); len(found) != 0 {
 		t.Errorf("search finds a hidden title: %+v", found)
 	}
 	// The admin still lists it.

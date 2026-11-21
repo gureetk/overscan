@@ -53,16 +53,16 @@ type page struct {
 	Data         []itvChannel `json:"data"`
 }
 
-// lineup returns the channels d's account sees, and their genres in the order
-// of their first channel (see lineup.Groups). Channels that need the
-// account's parental PIN are left out, since Stalker clients have no way to
-// ask for it (D55).
+// lineup returns the channels d's account sees, of the sources it uses
+// (D114), and their genres in the order of their first channel (see
+// lineup.Groups). Channels that need the account's parental PIN are left
+// out, since Stalker clients have no way to ask for it (D55).
 func (a *API) lineup(r *http.Request, d store.Device) ([]store.LineupChannel, []genre, error) {
 	acct, err := a.store.Account(r.Context(), d.AccountID)
 	if err != nil {
 		return nil, nil, err
 	}
-	channels, err := a.store.LineupChannels(r.Context(), acct.LineupID)
+	channels, err := a.store.AccountChannels(r.Context(), acct)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -221,6 +221,11 @@ func (a *API) createLink(w http.ResponseWriter, r *http.Request, d store.Device)
 		return
 	}
 	if entry.LineupID != acct.LineupID || (entry.Locked && acct.PINHash != "") {
+		reply("", "nothing_to_play")
+		return
+	}
+	// Only its streams from the sources that the account uses (D114).
+	if entry, ok = acct.Sources.For(entry); !ok {
 		reply("", "nothing_to_play")
 		return
 	}

@@ -27,6 +27,9 @@ type Streams interface {
 	Encoder() hub.Encoder
 	// StopPlayers ends the streams of the players that match (D104).
 	StopPlayers(match func(hub.Player) bool, reason string) int
+	// StopSources ends what an account plays from sources it no longer
+	// uses (D114).
+	StopSources(accountID int64, u store.Sources, reason string) int
 }
 
 // UseStreams gives the admin what lists the streams playing. Without it, the

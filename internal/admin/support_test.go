@@ -114,7 +114,7 @@ func TestSupportBundle(t *testing.T) {
 			"Timeshift: keeps 0 minutes of a box's channel (0 is off)",
 			fmt.Sprintf("Themes: 1 installed; the household's: theme %d; profiles with their own: 0", th.ID),
 			"Messages: 0 in the admin's list, waiting on 0 boxes",
-			"Accounts: 1; with a login: 0; with a limit on streams: 0",
+			"Accounts: 1; with a login: 0; with a limit on streams: 0; with only some sources: 0\n",
 			"Lineups: 1; accounts that see another than the household's: 0",
 			"Rules: 0 in all lineups; 0 in the household's",
 			"Channels with backups in the household's lineup: 0",

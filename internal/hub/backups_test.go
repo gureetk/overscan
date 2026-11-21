@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -220,5 +221,55 @@ func TestBackupOfASharedChannel(t *testing.T) {
 	}
 	if !strings.Contains(h.logs.String(), `msg="a channel plays from a backup" channel=one:live/1 source=two device=2`) {
 		t.Errorf("logs:\n%s", h.logs)
+	}
+}
+
+// An account that uses only some sources plays a channel from those of its
+// streams that come from them, without trying the others, and nothing of a
+// channel without one; changing its sources stops what it plays from the
+// others (D114).
+func TestSourcesOfAnAccount(t *testing.T) {
+	h := backupHarness(t)
+	h.backups("one:live/1", "two:live/2")
+	ctx := context.Background()
+	sam, devs := h.accountDevices("Sam", 0, "00:1A:79:00:00:01", "00:1A:79:00:00:02")
+	one, two := h.entries["one:live/1"].SourceID, h.entries["two:live/2"].SourceID
+	if err := h.hub.store.SetAccountSources(ctx, sam, store.Sources{Only: true, IDs: []int64{two}}); err != nil {
+		t.Fatal(err)
+	}
+	resp := h.play(h.link(devs[0], "one:live/1"))
+	logs := h.logs.String()
+	if want := `msg="stream started" channel=one:live/1 source=two device=` + strconv.FormatInt(devs[0], 10); !strings.Contains(logs, want) {
+		t.Errorf("logs lack %s:\n%s", want, logs)
+	}
+	if strings.Contains(logs, "source=one") {
+		t.Errorf("a stream of one was tried:\n%s", logs)
+	}
+	resp.Body.Close()
+	h.waitIdle()
+	refused := get(t, h.link(devs[1], "one:live/3"))
+	if text := body(t, refused); refused.StatusCode != http.StatusNotFound || !strings.Contains(text, "not available") {
+		t.Errorf("a channel of one alone: %s %q", refused.Status, text)
+	}
+
+	// With both sources, Sam plays from both; with one, what played from
+	// two stops.
+	if err := h.hub.store.SetAccountSources(ctx, sam, store.Sources{Only: true, IDs: []int64{one, two}}); err != nil {
+		t.Fatal(err)
+	}
+	first := h.play(h.link(devs[0], "one:live/3"))
+	defer first.Body.Close()
+	second := h.play(h.link(devs[1], "two:live/2"))
+	defer second.Body.Close()
+	// It ends the stream that plays from two, and the session of Sam's first
+	// stream, which waits for its player to come back.
+	if n := h.hub.StopSources(sam, store.Sources{Only: true, IDs: []int64{one}}, "the account no longer uses the stream's source"); n != 2 {
+		t.Errorf("StopSources ended %d streams, want 2", n)
+	}
+	if n := h.hub.AccountStreams(sam); n != 1 {
+		t.Errorf("Sam plays %d streams, want 1", n)
+	}
+	if !strings.Contains(h.logs.String(), `channel=two:live/2 source=two device=`+strconv.FormatInt(devs[1], 10)+` reason="the account no longer uses the stream's source"`) {
+		t.Errorf("the log does not say why:\n%s", h.logs.String())
 	}
 }

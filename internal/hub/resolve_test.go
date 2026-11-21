@@ -265,7 +265,7 @@ func TestResolvedFilms(t *testing.T) {
 	if err := st.ApplyPortalCategories(ctx, src, store.KindMovie, []store.LibraryCategory{{Key: "vod:1", Name: "Drama"}}, now); err != nil {
 		t.Fatal(err)
 	}
-	shelves, _ := st.Shelves(ctx, store.KindMovie)
+	shelves, _ := st.Shelves(ctx, store.KindMovie, store.EverySource)
 	if err := st.ApplyPortalPage(ctx, shelves[0].ID, 1, []store.PortalItem{{Kind: store.KindMovie,
 		Title: store.LibraryTitle{Key: "vod:1001", Name: "Example Film", File: "cmd=%2Fmedia%2F1001.mpg"}}}, 1, now); err != nil {
 		t.Fatal(err)

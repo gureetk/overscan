@@ -23,6 +23,7 @@ func (f fakeStreams) CanRepair() bool                               { return tru
 func (f fakeStreams) CanConvert() bool                              { return true }
 func (f fakeStreams) Encoder() hub.Encoder                          { return hub.Encoder{H264: true, ToneMap: true} }
 func (f fakeStreams) StopPlayers(func(hub.Player) bool, string) int { return 0 }
+func (f fakeStreams) StopSources(int64, store.Sources, string) int  { return 0 }
 
 // withActivity gives the test admin the lineup of withLineup, a device that
 // plays a channel, one that waits, and a captured request.

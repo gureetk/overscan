@@ -91,6 +91,9 @@ func (h *Hub) serveItem(w http.ResponseWriter, r *http.Request, rest string) {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
+		if !h.usesSource(w, r, c.deviceID, item.SourceID, "this title is not available") {
+			return
+		}
 		s, err = h.openItem(r.Context(), c, token, item)
 		if errors.Is(err, ErrNoLink) {
 			h.resolveFailed(w, r, "title", item.Name, item.SourceID, c.deviceID, err)

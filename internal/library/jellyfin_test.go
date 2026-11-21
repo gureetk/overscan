@@ -150,13 +150,13 @@ func newJellyfinLibrary(t *testing.T, srv *httptest.Server, user string) (*Libra
 func shelfTitles(t *testing.T, st *store.Store, kind string) map[string][]string {
 	t.Helper()
 	ctx := context.Background()
-	shelves, err := st.Shelves(ctx, kind)
+	shelves, err := st.Shelves(ctx, kind, store.EverySource)
 	if err != nil {
 		t.Fatal(err)
 	}
 	out := map[string][]string{}
 	for _, sh := range shelves {
-		rows, err := st.ShelfTitles(ctx, kind, sh.ID, store.ByName)
+		rows, err := st.ShelfTitles(ctx, kind, sh.ID, store.ByName, store.EverySource)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -181,7 +181,7 @@ func TestJellyfinFilms(t *testing.T) {
 	if got := shelfTitles(t, st, store.KindMovie); !reflect.DeepEqual(got, want) {
 		t.Errorf("shelves %v", got)
 	}
-	recent, err := st.RecentTitles(ctx, store.KindMovie, 1)
+	recent, err := st.RecentTitles(ctx, store.KindMovie, 1, store.EverySource)
 	if err != nil || len(recent) != 1 || recent[0].Name != "Another Field" ||
 		recent[0].Poster != srv.URL+"/Items/a1/Images/Primary?maxWidth=480&tag=pa1" {
 		t.Fatalf("recent %+v, %v", recent, err)
@@ -236,7 +236,7 @@ func TestJellyfinSeries(t *testing.T) {
 	if got := shelfTitles(t, st, store.KindSeries); !reflect.DeepEqual(got, map[string][]string{"Shows": {"Coastline"}}) {
 		t.Errorf("shelves %v", got)
 	}
-	recent, err := st.RecentTitles(ctx, store.KindSeries, 1)
+	recent, err := st.RecentTitles(ctx, store.KindSeries, 1, store.EverySource)
 	if err != nil || len(recent) != 1 || !recent[0].AddedAt.Equal(time.Date(2026, 12, 1, 8, 0, 0, 0, time.UTC)) {
 		t.Fatalf("recent %+v, %v", recent, err)
 	}

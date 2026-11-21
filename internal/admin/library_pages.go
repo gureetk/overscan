@@ -171,7 +171,7 @@ func (a *Admin) showLibrary(w http.ResponseWriter, r *http.Request, s store.Admi
 		fail(err)
 		return
 	}
-	if _, d.Shown, err = a.store.TitlePage(ctx, lv.Kind, 0, "", store.ByName, 0, 0, false); err != nil {
+	if _, d.Shown, err = a.store.TitlePage(ctx, lv.Kind, 0, "", store.ByName, 0, 0, false, store.EverySource); err != nil {
 		fail(err)
 		return
 	}

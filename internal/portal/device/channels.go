@@ -67,7 +67,7 @@ func (a *API) lineupOf(ctx context.Context, d store.Device) (channelsResponse, s
 	if err != nil {
 		return channelsResponse{}, store.Account{}, err
 	}
-	entries, err := a.store.LineupChannels(ctx, acct.LineupID)
+	entries, err := a.store.AccountChannels(ctx, acct)
 	if err != nil {
 		return channelsResponse{}, store.Account{}, err
 	}
@@ -201,6 +201,12 @@ func (a *API) play(w http.ResponseWriter, r *http.Request, d store.Device) {
 		return
 	}
 	if entry.LineupID != acct.LineupID {
+		writeError(w, http.StatusNotFound, errNotFound)
+		return
+	}
+	// Only its streams from the sources that the account uses (D114).
+	entry, ok := acct.Sources.For(entry)
+	if !ok {
 		writeError(w, http.StatusNotFound, errNotFound)
 		return
 	}
@@ -352,7 +358,9 @@ func (a *API) playArchive(w http.ResponseWriter, r *http.Request, d store.Device
 		a.internalError(w, "look up account", err)
 		return
 	}
-	if entry.LineupID != acct.LineupID {
+	// A past programme comes from the channel's own source's archive, which
+	// the account must use (D114).
+	if entry.LineupID != acct.LineupID || !acct.Sources.Uses(entry.SourceID) {
 		writeError(w, http.StatusNotFound, errNotFound)
 		return
 	}
