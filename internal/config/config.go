@@ -17,9 +17,11 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/goccy/go-yaml"
 
+	"overscan.gureet.ca/internal/clientaddr"
 	"overscan.gureet.ca/internal/source"
 )
 
@@ -51,6 +53,11 @@ type Config struct {
 	// path, or a name to look for in PATH. "ffmpeg" if not set; "off" turns
 	// repair and conversion off.
 	FFmpeg string `yaml:"ffmpeg"`
+	// TrustedProxies are the reverse proxies whose X-Forwarded-For and
+	// X-Forwarded-Proto headers say whom a request is for and whether it
+	// came over HTTPS (D119): addresses or ranges, each on the server's own
+	// networks. Without any, those headers are ignored.
+	TrustedProxies []string `yaml:"trusted_proxies"`
 	// Sources are imported into the database at start, each once (D46).
 	Sources []Source `yaml:"sources"`
 }
@@ -216,6 +223,10 @@ var envVars = []struct {
 	{"OVERSCAN_LOG_LEVEL", func(c *Config, v string) { c.Log.Level = v }},
 	{"OVERSCAN_LOG_FORMAT", func(c *Config, v string) { c.Log.Format = v }},
 	{"OVERSCAN_FFMPEG", func(c *Config, v string) { c.FFmpeg = v }},
+	// A list, its entries split by commas or spaces.
+	{"OVERSCAN_TRUSTED_PROXIES", func(c *Config, v string) {
+		c.TrustedProxies = strings.FieldsFunc(v, func(r rune) bool { return r == ',' || unicode.IsSpace(r) })
+	}},
 }
 
 // Load returns the defaults, overridden first by the YAML file at path and then
@@ -298,6 +309,9 @@ func (c Config) validate() error {
 	}
 	if strings.ContainsRune(c.FFmpeg, '/') && !filepath.IsAbs(c.FFmpeg) {
 		return errors.New("ffmpeg must be an absolute path, or a name to look for in PATH")
+	}
+	if _, err := clientaddr.Parse(c.TrustedProxies); err != nil {
+		return fmt.Errorf("trusted_proxies: %w", err)
 	}
 	names := map[string]bool{}
 	for i, src := range c.Sources {

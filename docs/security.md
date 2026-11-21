@@ -10,9 +10,9 @@ Overscan runs on a home network for the household's own devices. It trusts the a
 
 | Area | In place |
 |---|---|
-| Network | Plain HTTP on port 8080, for the home network. `admin_listen` can give the admin an address of its own, such as `127.0.0.1:8081` reached over SSH (D44). Do not expose Overscan to the internet; if you must, put it behind a reverse proxy with TLS. |
+| Network | Plain HTTP on port 8080, for the home network. `admin_listen` can give the admin an address of its own, such as `127.0.0.1:8081` reached over SSH (D44). Do not expose Overscan to the internet; if you must, put it behind a reverse proxy with TLS, named in `trusted_proxies` (D119). |
 | Devices | A new device waits for approval. The MAG page pairs with a secret that the server keeps hashed, and the Stalker API refuses the MAC address of a paired box (D39). Stalker tokens are kept hashed. |
-| Admin | An argon2id password; sessions in the database behind `HttpOnly`, `SameSite=Strict` cookies, `Secure` when the request came over TLS; CSRF tokens on every change; sign-ins slowed after failures; a content security policy with no inline scripts, `frame-ancestors 'none'` and `nosniff`. |
+| Admin | An argon2id password; sessions in the database behind `HttpOnly`, `SameSite=Strict` cookies, `Secure` when the request came over TLS, or through a trusted reverse proxy that says it did (D119); CSRF tokens on every change; sign-ins slowed after failures; a content security policy with no inline scripts, `frame-ancestors 'none'` and `nosniff`. |
 | Secrets | Source addresses and logins, and stream addresses that hold them, encrypted with AES-256-GCM under a key file kept outside the database (D46). They never reach a device, a page, a log or an error message, and ffmpeg never sees them. Tokens and secrets are compared in constant time. |
 | Files | Readable by their owner only, whatever the umask: the database and its companions, the key file, backups (0600 in 0700 folders). The systemd unit adds its sandbox: no privileges or capabilities, a read-only system, private `/tmp` and devices, three address families, no new namespaces, no writable and executable memory. The Docker image runs as its own user on a read-only file system with no capabilities. |
 | Streams | Links signed with HMAC, bound to the device and the channel, valid for a minute (D21). The hub proxies every stream, so upstream addresses stay on the server (D20), and keeps each source's limit (D36). |
@@ -36,7 +36,7 @@ Overscan runs on a home network for the household's own devices. It trusts the a
 
 ## Known limits in v0.1.0
 
-- Overscan speaks plain HTTP; TLS is a reverse proxy's job. Behind one, the admin's cookie lacks the `Secure` flag, since Overscan sees plain HTTP.
+- Overscan speaks plain HTTP; TLS is a reverse proxy's job. Behind one, the admin's cookie lacks the `Secure` flag, since Overscan sees plain HTTP, unless the proxy is named in `trusted_proxies` and says that the browser came over HTTPS (D119).
 - A source can make Overscan fetch any http or https address, addresses on the home network included: redirects, HLS segments and keys, logos. What comes back goes only to the household's devices, but the request is made. An option to refuse private addresses for a source is planned (plan, section 11).
 - An M3U source can be a local file, which the admin can name; Overscan reads it as its own user, and only playlist entries come out of it.
 - The probe page's report address takes reports from anyone on the network, at most 100 of 256 KiB each.
@@ -45,7 +45,7 @@ Overscan runs on a home network for the household's own devices. It trusts the a
 ## Known limits of the outputs
 
 - Players that read a playlist, and those that sign in to an Xtream server, carry their token or their login in every address they ask for, as their protocols have it. Whoever sees an address can play the account's channels, so the outputs answer the server's own networks only, until told otherwise.
-- Behind a reverse proxy, every player seems to come from the proxy's address. The check of the server's own networks then lets every player through, and the proxy has to decide who reaches the outputs. Wrong logins from anyone through the proxy also make every player's logins wait, since they count by address.
+- Behind a reverse proxy that is not named in `trusted_proxies`, every player seems to come from the proxy's address. The check of the server's own networks then lets every player through, and the proxy has to decide who reaches the outputs. Wrong logins from anyone through the proxy also make every player's logins wait, since they count by address. Named there, the proxy says who each player is, and the check and the waits go by that player (D119).
 - Someone who sends 50 wrong logins in 15 minutes, from ten addresses or more, makes every player's login wait until the oldest is 15 minutes old, as the admin's sign-in does. What plays goes on, and players that use a playlist's token are not affected.
 - Overscan tells players apart by their address and their user agent, so two players behind one address with the same user agent count as one against the account's limit.
 

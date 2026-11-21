@@ -372,7 +372,7 @@ Until the admin exists (M2), sources are declared in the config file and devices
 
 | Area | Approach |
 |---|---|
-| Exposure | LAN-only by default. Documentation advises against exposing it to the internet; if needed, behind a reverse proxy with TLS. |
+| Exposure | LAN-only by default. Documentation advises against exposing it to the internet; if needed, behind a reverse proxy with TLS, which the configuration names so that it can say who each client is (D119). |
 | Device identity | A MAC is weak identity. New devices wait for approval in the admin, and the MAG UI also holds a device secret issued at approval. Optional per-device login for Stalker clients; auto-registration off by default. |
 | Admin | An argon2id password hash set from the command line, sessions in the database behind HttpOnly and SameSite=Strict cookies, CSRF tokens, slowed-down failed sign-ins, and an optional address of its own (D44). |
 | Secrets at rest | Source addresses and credentials, and the channels' stream addresses that carry them, encrypted with AES-256-GCM under a key file kept outside the database, readable by its owner only (D46). |

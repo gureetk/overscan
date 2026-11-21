@@ -5,13 +5,13 @@ package server
 import (
 	"errors"
 	"io/fs"
-	"net"
 	"net/http"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
 
+	"overscan.gureet.ca/internal/clientaddr"
 	"overscan.gureet.ca/internal/store"
 	"overscan.gureet.ca/internal/theme"
 	"overscan.gureet.ca/web"
@@ -131,10 +131,7 @@ func (t *themeSheets) get(name string, data []byte) (string, error) {
 // noteMAGPage logs a request for the page, so the administrator sees a box
 // load it, at most once per address in magLogInterval.
 func (s *Server) noteMAGPage(r *http.Request) {
-	from, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		from = r.RemoteAddr
-	}
+	from := clientaddr.Of(r).String()
 	now := time.Now()
 	s.pages.mu.Lock()
 	last, seen := s.pages.last[from]
