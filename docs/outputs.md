@@ -34,7 +34,7 @@ A person who should have a lineup of their own, a limit of their own or their ow
 - A guide of those channels, from a day back, or as far back as a channel's archive, to a week ahead, with every time in UTC.
 - With an Xtream login, the films and series too, as the boxes' *Movies* and *Series* show them, except a Stalker portal's, which Overscan reads a page at a time as a box browses them. A film's or a series' details are read from its source when a player opens it, as when a box does.
 
-An account that uses only some sources, as its card's *Sources* says, gets only what comes from them: the channels with a stream of theirs, their own or a backup's, playing from those streams alone, and the films and series of those sources.
+An account that uses only some sources, as its card's *Sources* says, gets only what comes from them: the channels with a stream of theirs, their own or a backup's, playing from those streams alone, and the films and series of those sources. Recordings play from the `recordings` folder source, so such an account plays them only if that source is among its own.
 
 Each channel plays through Overscan as one continuous MPEG-TS stream, never from the source's own address, which keeps its login on the server. With an Xtream login, a player that asks for HLS gets it for channels whose source sends HLS. Films and episodes play as their files are, and the player can seek in them.
 
