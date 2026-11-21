@@ -17,9 +17,11 @@ Its results settled the MAG UI's toolchain ([plan](plan.md), section 9; D17 and 
        tar xzf overscan_<version>_linux_amd64.tar.gz
        cd overscan_<version>_linux_amd64
        mkdir -p data
-       OVERSCAN_DATA_DIR="$PWD/data" ./overscan
+       OVERSCAN_DATA_DIR="$PWD/data" OVERSCAN_PROBE_REPORTS=true ./overscan
 
    Or build it from a checkout with `go build -o overscan ./cmd/overscan`. Overscan listens on port 8080, and reports are saved in the data directory's `probe/` folder.
+
+   The server saves reports only while it is told to (D120): `OVERSCAN_PROBE_REPORTS=true` above, or `probe_reports: true` in the configuration file of a server installed as a service, which then needs a restart (`systemctl restart overscan`). It takes them from the server's own networks only, and keeps at most 100. Without it, the page still shows its results on the screen, and says that the report was not saved. Turn it off again once the reports are in.
 
 2. On the box, open *System settings → Servers → Portals* and put `http://<server address>:8080/probe/` in *Portal 1 URL*, with any name in *Portal 1 name*. The **KB** button on the remote opens the on-screen keyboard. Save, then choose *System settings → Restart Portal*. To keep your current portal, use the second portal slot instead: with two portals set, the box asks which one to load, and pressing **Menu** while it shows *Loading portal...* also opens that choice. This follows Infomir's [External portal loading](https://wiki.infomir.eu/eng/set-top-box/stb-linux-webkit/embedded-portal/external-portal-loading) page; menu names can differ between firmware versions.
 

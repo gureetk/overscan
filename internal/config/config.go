@@ -15,6 +15,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -58,6 +59,9 @@ type Config struct {
 	// came over HTTPS (D119): addresses or ranges, each on the server's own
 	// networks. Without any, those headers are ignored.
 	TrustedProxies []string `yaml:"trusted_proxies"`
+	// ProbeReports lets the probe page save its reports in DataDir/probe,
+	// from the server's own networks (D120); off if not set.
+	ProbeReports bool `yaml:"probe_reports"`
 	// Sources are imported into the database at start, each once (D46).
 	Sources []Source `yaml:"sources"`
 }
@@ -213,19 +217,28 @@ func Default() Config {
 // envVars are the environment variables that override settings.
 var envVars = []struct {
 	name string
-	set  func(*Config, string)
+	set  func(*Config, string) error
 }{
-	{"OVERSCAN_LISTEN", func(c *Config, v string) { c.Listen = v }},
-	{"OVERSCAN_ADMIN_LISTEN", func(c *Config, v string) { c.AdminListen = v }},
-	{"OVERSCAN_DATA_DIR", func(c *Config, v string) { c.DataDir = v }},
-	{"OVERSCAN_KEY_FILE", func(c *Config, v string) { c.KeyFile = v }},
-	{"OVERSCAN_RECORDINGS_DIR", func(c *Config, v string) { c.RecordingsDir = v }},
-	{"OVERSCAN_LOG_LEVEL", func(c *Config, v string) { c.Log.Level = v }},
-	{"OVERSCAN_LOG_FORMAT", func(c *Config, v string) { c.Log.Format = v }},
-	{"OVERSCAN_FFMPEG", func(c *Config, v string) { c.FFmpeg = v }},
+	{"OVERSCAN_LISTEN", func(c *Config, v string) error { c.Listen = v; return nil }},
+	{"OVERSCAN_ADMIN_LISTEN", func(c *Config, v string) error { c.AdminListen = v; return nil }},
+	{"OVERSCAN_DATA_DIR", func(c *Config, v string) error { c.DataDir = v; return nil }},
+	{"OVERSCAN_KEY_FILE", func(c *Config, v string) error { c.KeyFile = v; return nil }},
+	{"OVERSCAN_RECORDINGS_DIR", func(c *Config, v string) error { c.RecordingsDir = v; return nil }},
+	{"OVERSCAN_LOG_LEVEL", func(c *Config, v string) error { c.Log.Level = v; return nil }},
+	{"OVERSCAN_LOG_FORMAT", func(c *Config, v string) error { c.Log.Format = v; return nil }},
+	{"OVERSCAN_FFMPEG", func(c *Config, v string) error { c.FFmpeg = v; return nil }},
 	// A list, its entries split by commas or spaces.
-	{"OVERSCAN_TRUSTED_PROXIES", func(c *Config, v string) {
+	{"OVERSCAN_TRUSTED_PROXIES", func(c *Config, v string) error {
 		c.TrustedProxies = strings.FieldsFunc(v, func(r rune) bool { return r == ',' || unicode.IsSpace(r) })
+		return nil
+	}},
+	{"OVERSCAN_PROBE_REPORTS", func(c *Config, v string) error {
+		on, err := strconv.ParseBool(v)
+		if err != nil {
+			return fmt.Errorf("OVERSCAN_PROBE_REPORTS must be true or false, not %q", v)
+		}
+		c.ProbeReports = on
+		return nil
 	}},
 }
 
@@ -258,7 +271,9 @@ func Load(path string, required bool, lookupEnv func(string) (string, bool)) (cf
 
 	for _, v := range envVars {
 		if value, ok := lookupEnv(v.name); ok {
-			v.set(&cfg, value)
+			if err := v.set(&cfg, value); err != nil {
+				return Config{}, false, fmt.Errorf("config: %w", err)
+			}
 		}
 	}
 	for i := range cfg.Sources {

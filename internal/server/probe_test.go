@@ -23,6 +23,7 @@ func probeServer(t *testing.T) (*Server, string, *bytes.Buffer) {
 	t.Helper()
 	cfg := config.Default()
 	cfg.DataDir = t.TempDir()
+	cfg.ProbeReports = true
 	var logs bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&logs, nil))
 	st := testStore(t)
@@ -39,8 +40,39 @@ func postReport(s *Server, body string) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/probe/report", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "192.168.1.20:5000"
 	s.Handler().ServeHTTP(rec, req)
 	return rec
+}
+
+// Reports are saved only while the configuration lets them, and only from
+// the server's own networks (D120).
+func TestProbeReportsAreOffUnlessTurnedOn(t *testing.T) {
+	s, dir, _ := probeServer(t)
+	s.cfg.ProbeReports = false
+	rec := postReport(s, `{"environment": {"user_agent": "test"}}`)
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "probe_reports") {
+		t.Errorf("with reports off: %d %q", rec.Code, rec.Body)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("with reports off, the folder: %v", err)
+	}
+	// The page is served still, and shows its results on the screen.
+	if rec := get(s, "/probe/"); rec.Code != http.StatusOK {
+		t.Errorf("the page with reports off: %d", rec.Code)
+	}
+
+	s.cfg.ProbeReports = true
+	req := httptest.NewRequest(http.MethodPost, "/probe/report", strings.NewReader(`{}`))
+	req.RemoteAddr = "203.0.113.7:5000"
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "own networks") {
+		t.Errorf("from outside the server's networks: %d %q", rec.Code, rec.Body)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("from outside, the folder: %v", err)
+	}
 }
 
 func TestProbePageIsServedUncached(t *testing.T) {
@@ -173,6 +205,7 @@ func TestProbeCookieFromLastRun(t *testing.T) {
 
 		before, _ := filepath.Glob(filepath.Join(dir, "*.json"))
 		report := httptest.NewRequest(http.MethodPost, "/probe/report", strings.NewReader(`{"probe_version":2}`))
+		report.RemoteAddr = "192.168.1.20:5000"
 		for _, c := range jar {
 			report.AddCookie(c)
 		}

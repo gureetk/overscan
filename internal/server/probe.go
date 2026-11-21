@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"overscan.gureet.ca/internal/clientaddr"
 	"overscan.gureet.ca/web"
 )
 
@@ -68,8 +69,17 @@ func probeFiles() http.Handler {
 	})
 }
 
-// handleProbeReport saves a report from the probe page in DataDir/probe.
+// handleProbeReport saves a report from the probe page in DataDir/probe,
+// while the configuration lets it, from the server's own networks (D120).
 func (s *Server) handleProbeReport(w http.ResponseWriter, r *http.Request) {
+	if !s.cfg.ProbeReports {
+		http.Error(w, "probe reports are off: set probe_reports to true in the server's configuration, and restart it", http.StatusForbidden)
+		return
+	}
+	if !clientaddr.Of(r).Local() {
+		http.Error(w, "probe reports come from the server's own networks only", http.StatusForbidden)
+		return
+	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxProbeReportBytes))
 	if err != nil {
 		var tooLarge *http.MaxBytesError

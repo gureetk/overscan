@@ -233,6 +233,26 @@ func TestTrustedProxies(t *testing.T) {
 	}
 }
 
+func TestProbeReports(t *testing.T) {
+	absent := filepath.Join(t.TempDir(), "absent.yaml")
+	if cfg, _, err := Load(absent, false, env(nil)); err != nil || cfg.ProbeReports {
+		t.Fatalf("default: %v, %v", cfg.ProbeReports, err)
+	}
+	if cfg, _, err := Load(writeFile(t, "probe_reports: true\n"), true, env(nil)); err != nil || !cfg.ProbeReports {
+		t.Errorf("from the file: %v, %v", cfg.ProbeReports, err)
+	}
+	if cfg, _, err := Load(absent, false, env(map[string]string{"OVERSCAN_PROBE_REPORTS": "true"})); err != nil || !cfg.ProbeReports {
+		t.Errorf("from the environment: %v, %v", cfg.ProbeReports, err)
+	}
+	if cfg, _, err := Load(writeFile(t, "probe_reports: true\n"), true, env(map[string]string{"OVERSCAN_PROBE_REPORTS": "0"})); err != nil || cfg.ProbeReports {
+		t.Errorf("the environment over the file: %v, %v", cfg.ProbeReports, err)
+	}
+	if _, _, err := Load(absent, false, env(map[string]string{"OVERSCAN_PROBE_REPORTS": "yes please"})); err == nil ||
+		!strings.Contains(err.Error(), "OVERSCAN_PROBE_REPORTS") {
+		t.Errorf("a value that is not true or false: %v", err)
+	}
+}
+
 func TestExampleConfigLoads(t *testing.T) {
 	cfg, readFile, err := Load(filepath.Join("..", "..", "deploy", "overscan.example.yaml"), true, env(nil))
 	if err != nil {

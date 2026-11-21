@@ -529,7 +529,7 @@
     request.setRequestHeader('Content-Type', 'application/json');
     request.onreadystatechange = function () {
       if (request.readyState === 4) {
-        done(request.status);
+        done(request.status, String(request.responseText || '').slice(0, 200));
       }
     };
     request.send(toJSON(report));
@@ -629,10 +629,10 @@
     guard('summary', summarise);
     setStatus('Sending the report...');
     var sent = guard('send', function () {
-      send(function (status) {
+      send(function (status, text) {
         setStatus(status === 204 ?
           'Report saved on the server. You can switch the portal back now.' :
-          'The server answered ' + status + ', so the report was not saved.');
+          'The server answered ' + status + ', so the report was not saved' + (text ? ': ' + text : '.'));
       });
       return true;
     });
