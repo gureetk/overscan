@@ -4,7 +4,7 @@ How Overscan is tested, and how to run each kind of test. The [plan](plan.md), s
 
 ## On every pull request
 
-CI checks formatting, module tidiness and vet, runs the Go tests with the race detector, the conformance suite and the fuzz tests' seeds among them, and checks licence headers, ES5 syntax in browser scripts, sign-offs and known vulnerabilities. It installs ffmpeg first, so that the stream repair tests run the real one. For the MAG page it type-checks the sources, builds the page, fails if the build differs from the committed `web/mag/dist/`, and lints the build. It also builds the Docker image from a release archive's files and checks it with `tools/check-image.sh`. [CONTRIBUTING](../CONTRIBUTING.md) lists the commands to run the same checks locally.
+CI checks formatting, module tidiness and vet, runs the Go tests with the race detector, the conformance suite and the fuzz tests' seeds among them, and checks licence headers, ES5 syntax in browser scripts, sign-offs and known vulnerabilities. It installs ffmpeg first, so that the stream repair tests run the real one. For the MAG page it type-checks the sources, builds the page, fails if the build differs from the committed `web/mag/dist/`, and lints the build. It also builds the Docker image from a release archive's files and checks it with `tools/check-image.sh`, and upgrades a household from every full release since v0.3.0 to the change, as [*Upgrades*](#upgrades) says. [CONTRIBUTING](../CONTRIBUTING.md) lists the commands to run the same checks locally.
 
 ## Fuzzing
 
@@ -67,7 +67,25 @@ Memory peaks in the first seconds, when the four boxes load the whole lineup at 
 
 ## Upgrades
 
-From v0.1.0 on, each release is tried as an upgrade of the one before. The previous release reads a source and gets an approved device. The new release then starts on the same data directory, and a Stalker client must see the same channels, with the same numbers, and play one. For v0.1.0 this was done from v0.0.9 and from v0.0.17, directly and one after the other, with a fictional playlist of 3,000 channels. For v0.4.0's pre-releases, each was tried from the one before, and the last from v0.3.0 directly.
+From 1.0 on, an upgrade keeps what a household set up ([D115](decisions.md)), and CI checks it with every change ([D118](decisions.md)). Its *Upgrades* job downloads the Linux binary of every full release from v0.3.0 on, and of the newest pre-release when it is newer than them all, with `tools/fetch-releases.sh`, and runs `tools/upgradetest` with each. For each release, the test:
+
+1. serves a fictional provider, two playlists with a guide, logos and endless streams, and a folder of films and series;
+2. runs the release on a new data directory, and sets up a household through its own APIs: sources, lineup edits and groups, the parental PIN, settings, a box paired by its code with favourites, recent channels, settings and resume points, a Stalker client, a blocked box, recordings to come and one called off, a shelf renamed and titles hidden and locked, and, as far as the release has them, profiles with a PIN and a theme, the household's end date, messages, a recording made and stopped, accounts with a login, a token, a limit, an end date, a PIN, an output profile and only some sources, a second lineup with rules, merge and guide rules, a channel's backup, and the outputs on;
+3. records what the admin's API, the box, the Stalker client, and players through the Xtream login and the account's playlist, see;
+4. starts the release again and records it all once more, to learn what changes by itself across a restart, such as when a source was last read;
+5. starts this build on the same data directory: the administrator's password must still sign in, the box must still be paired, and every answer must be the same, with nothing missing, apart from the server's version and what step 4 found;
+6. checks that the database was backed up before its schema changed ([D117](decisions.md)), that a copy of it upgraded by this build alone holds every row it had, in every table and column, and that its schema is a new database's.
+
+To run it on your machine, with the binaries of the releases to upgrade from:
+
+    tools/fetch-releases.sh /tmp/releases
+    go run ./tools/upgradetest /tmp/releases/overscan-*
+
+`-keep` keeps each upgrade's folder, with the servers' logs and databases, and `-v` lists what step 4 left out. Each release takes under a minute.
+
+Every migration from 43 on also has a test of its own in `internal/store`, `TestMigrationNNNN…`, which makes a database with the schema before it, holding what a household sets up, applies the migration and checks that nothing was lost or changed: `TestNewMigrationsHaveUpgradeTests` fails without one. `TestMigrationsAreUnchanged` holds every migration to its SHA-256 in `internal/store/testdata/migrations.sha256`, since a migration that a release holds is never edited.
+
+Before 1.0, each release was tried by hand as an upgrade of the one before: the previous release read a source and got an approved device, and the new release, started on the same data directory, had to give a Stalker client the same channels, with the same numbers. For v0.1.0 this was done from v0.0.9 and from v0.0.17, and for v0.4.0 and v0.5.0 from each pre-release before them and from the full release before.
 
 ## On the box
 
