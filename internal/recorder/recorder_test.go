@@ -23,11 +23,16 @@ import (
 
 // fakeHub plays any link as packets of MPEG-TS until the request ends, or
 // refuses it as a source at its limit does. With once, it plays the first
-// request for a moment, and refuses the others.
+// request for a moment, and refuses the others. With cut, it ends what it
+// plays and refuses the channel, as the hub does once an account no longer
+// uses any of the channel's sources (D114); with end, it ends what it plays
+// once, as the hub does when a backup can take over.
 type fakeHub struct {
 	mu       sync.Mutex
 	refuse   bool
 	once     bool
+	cut      bool
+	end      bool
 	requests int
 	devices  []int64
 }
@@ -45,6 +50,10 @@ func (h *fakeHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	refuse := h.refuse || (h.once && h.requests > 1)
 	brief := h.once
 	h.mu.Unlock()
+	if h.isCut() {
+		http.Error(w, "this channel is not available", http.StatusNotFound)
+		return
+	}
 	if refuse || !strings.HasSuffix(r.URL.Path, ".ts") {
 		http.Error(w, "the source is at its limit", http.StatusServiceUnavailable)
 		return
@@ -54,7 +63,7 @@ func (h *fakeHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(bytes.Repeat([]byte{0x47}, 188))
 		return
 	}
-	for {
+	for !h.ended() {
 		if _, err := w.Write(bytes.Repeat([]byte{0x47}, 188)); err != nil {
 			return
 		}
@@ -64,6 +73,30 @@ func (h *fakeHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case <-time.After(5 * time.Millisecond):
 		}
 	}
+}
+
+func (h *fakeHub) isCut() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.cut
+}
+
+// ended reports whether the stream that plays should end: after cut, or
+// once after end.
+func (h *fakeHub) ended() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.end {
+		h.end = false
+		return true
+	}
+	return h.cut
+}
+
+func (h *fakeHub) asked() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.requests
 }
 
 // newRecorder returns a recorder over a store with one channel, and the
@@ -446,6 +479,123 @@ func TestRecordingStopsWithItsAccount(t *testing.T) {
 	r.Check(ctx)
 	if got := waitState(t, st, later.ID, store.RecordingFailed); got.Error != errAccountEnded || got.File != "" {
 		t.Errorf("after the account's end: %+v", got)
+	}
+}
+
+// A recording stops, keeping what it wrote, once its account no longer uses
+// its channel's source, rather than asking for the channel again until its
+// end; and none of that channel begins for the account after it (D114).
+func TestRecordingStopsWithItsSources(t *testing.T) {
+	hub := &fakeHub{}
+	r, st, entry := newRecorder(t, hub)
+	rt := retry
+	retry = 10 * time.Millisecond
+	t.Cleanup(func() { retry = rt })
+	ctx := context.Background()
+	other, err := st.AddSource(ctx, source.Settings{Name: "one", URL: "http://provider.example/one.m3u"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().Truncate(time.Second)
+	rec, err := st.ScheduleRecording(ctx, store.Recording{AccountID: 1, EntryID: entry, Channel: "Example News",
+		Title: "Long", Start: now.Add(-time.Second), Stop: now.Add(time.Hour), CreatedAt: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Check(ctx)
+	waitState(t, st, rec.ID, store.RecordingRecording)
+	time.Sleep(50 * time.Millisecond)
+	if err := st.SetAccountSources(ctx, 1, store.Sources{Only: true, IDs: []int64{other}}); err != nil {
+		t.Fatal(err)
+	}
+	hub.mu.Lock()
+	hub.cut = true
+	hub.mu.Unlock()
+	got := waitState(t, st, rec.ID, store.RecordingFailed)
+	if got.Error != errSources || got.Size == 0 || got.File == "" {
+		t.Errorf("once its account's sources changed: %+v", got)
+	}
+	if _, err := os.Stat(filepath.Join(r.Dir(), got.File)); err != nil {
+		t.Errorf("what it wrote: %v", err)
+	}
+	if n := hub.asked(); n != 1 {
+		t.Errorf("%d requests, not 1", n)
+	}
+
+	later, err := st.ScheduleRecording(ctx, store.Recording{AccountID: 1, EntryID: entry, Channel: "Example News",
+		Title: "Later", Start: time.Now().Add(-time.Second), Stop: time.Now().Add(time.Hour), CreatedAt: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Check(ctx)
+	if got := waitState(t, st, later.ID, store.RecordingFailed); got.Error != errSources || got.File != "" {
+		t.Errorf("after the change: %+v", got)
+	}
+	if n := hub.asked(); n != 1 {
+		t.Errorf("%d requests after the change, not 1", n)
+	}
+}
+
+// A recording goes on, from the channel's backup, when its account keeps
+// only the backup's source (D109, D114).
+func TestRecordingGoesOnFromABackup(t *testing.T) {
+	hub := &fakeHub{}
+	r, st, entry := newRecorder(t, hub)
+	rt := retry
+	retry = 10 * time.Millisecond
+	t.Cleanup(func() { retry = rt })
+	ctx := context.Background()
+	other, err := st.AddSource(ctx, source.Settings{Name: "one", URL: "http://provider.example/one.m3u"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ApplyCatalog(ctx, other, []store.CatalogChannel{{IdentityKey: "1", Name: "Example News HD",
+		StreamURL: "http://streams.example/one/1.ts"}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := st.LineupChannels(ctx, store.DefaultLineupID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var backup int64
+	for _, c := range cs {
+		if c.SourceID == other {
+			backup = c.EntryID
+		}
+	}
+	if err := st.SetEntryBackups(ctx, store.DefaultLineupID, entry, []int64{backup}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().Truncate(time.Second)
+	rec, err := st.ScheduleRecording(ctx, store.Recording{AccountID: 1, EntryID: entry, Channel: "Example News",
+		Title: "Long", Start: now.Add(-time.Second), Stop: now.Add(time.Hour), CreatedAt: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Check(ctx)
+	waitState(t, st, rec.ID, store.RecordingRecording)
+	time.Sleep(50 * time.Millisecond)
+	if err := st.SetAccountSources(ctx, 1, store.Sources{Only: true, IDs: []int64{other}}); err != nil {
+		t.Fatal(err)
+	}
+	hub.mu.Lock()
+	hub.end = true
+	hub.mu.Unlock()
+	for range 200 {
+		if hub.asked() > 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if n := hub.asked(); n < 2 {
+		t.Fatalf("%d requests: it did not play the channel again", n)
+	}
+	if got, _ := st.RecordingByID(ctx, rec.ID); got.State != store.RecordingRecording {
+		t.Errorf("after the change: %+v", got)
+	}
+	r.Cancel(rec.ID)
+	if done := waitState(t, st, rec.ID, store.RecordingDone); done.Error != "" || done.Size == 0 {
+		t.Errorf("done %+v", done)
 	}
 }
 
