@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -226,6 +227,41 @@ func TestRefreshFromFile(t *testing.T) {
 	}
 	if len(h.channelNames()) != 2 {
 		t.Errorf("channels %v", h.channelNames())
+	}
+}
+
+func TestPlaylistFileMustBeRegular(t *testing.T) {
+	h := newHarness(t)
+	dir := t.TempDir()
+	fifo := filepath.Join(dir, "pipe.m3u")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	missing := filepath.Join(dir, "missing.m3u")
+	for path, want := range map[string]error{
+		fifo:        errPlaylistNotRegular, // would hold the refresh up until something writes to it
+		dir:         errPlaylistNotRegular,
+		"/dev/zero": errPlaylistNotRegular,
+		missing:     errPlaylistMissing,
+	} {
+		src := h.source()
+		src.URL = path
+		done := make(chan error, 1)
+		go func() {
+			_, err := h.r.Refresh(context.Background(), src, h.srcID)
+			done <- err
+		}()
+		select {
+		case err := <-done:
+			if !errors.Is(err, want) {
+				t.Errorf("%s: %v, want %v", path, err, want)
+			}
+			if err != nil && strings.Contains(err.Error(), path) {
+				t.Errorf("%s: the error names the path: %v", path, err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%s: the refresh did not end", path)
+		}
 	}
 }
 
