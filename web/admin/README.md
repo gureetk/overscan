@@ -8,7 +8,7 @@ The admin's pages (D14, D44) are Go templates, rendered by `internal/admin` and 
 | `templates/*.html` | One file per page; each defines `content` for the layout. |
 | `templates/lineup-nav.html` | A part that two pages share rather than a page: the tabs and the lineup picker at the top of *Live TV*'s channels (`lineup.html`) and rules (`rules.html`). |
 | `static/admin.css` | The styles: the TV interface's look (D52, D59), dark or light with the browser. |
-| `static/admin.js` | Small helps that the pages work without: filtering the groups, ticking every channel, marking the channel open in the panel, closing menus, choosing a group on a phone. |
+| `static/admin.js` | Small helps that the pages work without: filtering the groups, ticking every channel, marking the channel open in the panel, closing menus and keeping them on the screen, choosing a group on a phone. |
 | `static/fonts/` | Instrument Sans, the same files as the MAG page's (`web/mag/src/assets/fonts`), under the SIL Open Font License 1.1 (`OFL.txt`). |
 | `static/icon.svg` | The Overscan icon from `docs/logo`, as the favicon (Apache-2.0). |
 | `static/vendor/` | Files from other projects, listed below. |
