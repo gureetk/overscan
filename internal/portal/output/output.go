@@ -7,35 +7,19 @@ package output
 
 import (
 	"context"
-	"net"
 	"net/http"
-	"net/netip"
 	"strings"
 
+	"overscan.gureet.ca/internal/clientaddr"
 	"overscan.gureet.ca/internal/hub"
 	"overscan.gureet.ca/internal/store"
 )
 
-// cgnat is the shared address space of RFC 6598, which carrier-grade NAT
-// and some VPNs, such as Tailscale, use inside a network of their own.
-var cgnat = netip.MustParsePrefix("100.64.0.0/10")
-
-// OwnNetwork reports whether an address is on one of this server's own
-// networks, as far as an address can say: private (RFC 1918 and RFC
-// 4193), loopback, link-local, or the shared space of RFC 6598.
-func OwnNetwork(addr netip.Addr) bool {
-	addr = addr.Unmap()
-	return addr.IsPrivate() || addr.IsLoopback() || addr.IsLinkLocalUnicast() || cgnat.Contains(addr)
-}
-
-// ClientAddress returns the address that a request came from, without its
-// port.
+// ClientAddress returns the address that a request came from, for the log
+// and for telling players apart: the client that a trusted reverse proxy
+// names (D119), or "unknown" if it names none.
 func ClientAddress(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
+	return clientaddr.Of(r).String()
 }
 
 // Refusal is why an output does not answer: a status and a short text,
@@ -47,8 +31,9 @@ type Refusal struct {
 
 // Gate says whether the outputs answer a request at all: while they are
 // off, nothing is there (404); a request from outside the server's own
-// networks is refused unless the outputs answer anywhere (403). It returns
-// nil if they answer.
+// networks, or one that a trusted proxy forwarded without saying for whom,
+// is refused unless the outputs answer anywhere (403). It returns nil if
+// they answer.
 func Gate(ctx context.Context, st *store.Store, r *http.Request) (*Refusal, error) {
 	on, err := st.Outputs(ctx)
 	if err != nil {
@@ -61,11 +46,8 @@ func Gate(ctx context.Context, st *store.Store, r *http.Request) (*Refusal, erro
 	if err != nil {
 		return nil, err
 	}
-	if !anywhere {
-		addr, err := netip.ParseAddr(ClientAddress(r))
-		if err != nil || !OwnNetwork(addr) {
-			return &Refusal{http.StatusForbidden, "Overscan's outputs answer players on its own networks only."}, nil
-		}
+	if !anywhere && !clientaddr.Of(r).Local() {
+		return &Refusal{http.StatusForbidden, "Overscan's outputs answer players on its own networks only."}, nil
 	}
 	return nil, nil
 }

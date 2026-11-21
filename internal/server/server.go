@@ -11,10 +11,12 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"overscan.gureet.ca/internal/admin"
 	"overscan.gureet.ca/internal/artwork"
+	"overscan.gureet.ca/internal/clientaddr"
 	"overscan.gureet.ca/internal/config"
 	"overscan.gureet.ca/internal/devices"
 	"overscan.gureet.ca/internal/hub"
@@ -137,7 +139,15 @@ func New(cfg config.Config, log *slog.Logger, version string, svc Services) *Ser
 	xo.Register(mux)
 	mux.HandleFunc("GET /debug/lineup.m3u", s.handleDebugLineup)
 	mux.HandleFunc("GET /debug/play/{entry}", s.handleDebugPlay)
-	s.handler = mux
+	// Requests through a trusted reverse proxy are known by the client
+	// that it names (D119). The configuration is checked as it loads.
+	proxies, err := clientaddr.Parse(cfg.TrustedProxies)
+	if err != nil {
+		log.Warn("trusting no reverse proxy", "err", err)
+	} else if proxies.Len() > 0 {
+		log.Info("trusting reverse proxies to say whom requests are for", "proxies", strings.Join(cfg.TrustedProxies, " "))
+	}
+	s.handler = proxies.Middleware(mux)
 	s.routes = mux
 
 	// The admin shares the main address unless admin_listen names one of
@@ -162,7 +172,7 @@ func New(cfg config.Config, log *slog.Logger, version string, svc Services) *Ser
 	if cfg.AdminListen != "" {
 		amux = routes.NewMux()
 		amux.Handle("GET /{$}", http.RedirectHandler("/admin/", http.StatusFound))
-		s.adminHandler = amux
+		s.adminHandler = proxies.Middleware(amux)
 		s.adminRoutes = amux
 	}
 	amux.Handle("/admin/", adm)

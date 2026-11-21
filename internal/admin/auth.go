@@ -9,13 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
+	"overscan.gureet.ca/internal/clientaddr"
 	"overscan.gureet.ca/internal/store"
 )
 
@@ -341,7 +341,7 @@ func sessionCookie(r *http.Request, token string, maxAge int) *http.Cookie {
 		MaxAge:   maxAge,
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
-		Secure:   r.TLS != nil,
+		Secure:   clientaddr.Of(r).HTTPS,
 	}
 }
 
@@ -352,14 +352,10 @@ func randomToken() string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-// clientAddress returns the address that a request came from, without its
-// port.
+// clientAddress returns the address that a request came from: the client
+// that a trusted reverse proxy names (D119), or "unknown" if it names none.
 func clientAddress(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
+	return clientaddr.Of(r).String()
 }
 
 // safeNext returns where to go after signing in: next if it is a page of the

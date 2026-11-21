@@ -207,6 +207,32 @@ func TestFFmpeg(t *testing.T) {
 	}
 }
 
+func TestTrustedProxies(t *testing.T) {
+	absent := filepath.Join(t.TempDir(), "absent.yaml")
+	if cfg, _, err := Load(absent, false, env(nil)); err != nil || cfg.TrustedProxies != nil {
+		t.Fatalf("default: %q, %v", cfg.TrustedProxies, err)
+	}
+	cfg, _, err := Load(writeFile(t, "trusted_proxies: [192.168.1.2, 172.16.0.0/24, \"fd00::/8\"]\n"), true, env(nil))
+	if want := []string{"192.168.1.2", "172.16.0.0/24", "fd00::/8"}; err != nil || !reflect.DeepEqual(cfg.TrustedProxies, want) {
+		t.Errorf("from the file: %q, %v", cfg.TrustedProxies, err)
+	}
+	cfg, _, err = Load(absent, false, env(map[string]string{"OVERSCAN_TRUSTED_PROXIES": " 127.0.0.1, ::1  192.168.1.0/24,"}))
+	if want := []string{"127.0.0.1", "::1", "192.168.1.0/24"}; err != nil || !reflect.DeepEqual(cfg.TrustedProxies, want) {
+		t.Errorf("from the environment: %q, %v", cfg.TrustedProxies, err)
+	}
+	// The environment's empty value trusts none, over the file's.
+	cfg, _, err = Load(writeFile(t, "trusted_proxies: [192.168.1.2]\n"), true, env(map[string]string{"OVERSCAN_TRUSTED_PROXIES": ""}))
+	if err != nil || len(cfg.TrustedProxies) != 0 {
+		t.Errorf("an empty variable: %q, %v", cfg.TrustedProxies, err)
+	}
+	for _, bad := range []string{"proxy.example", "0.0.0.0/0", "192.0.2.10", "192.168.1.0/33"} {
+		_, _, err := Load(absent, false, env(map[string]string{"OVERSCAN_TRUSTED_PROXIES": bad}))
+		if err == nil || !strings.Contains(err.Error(), "trusted_proxies") {
+			t.Errorf("%q: %v", bad, err)
+		}
+	}
+}
+
 func TestExampleConfigLoads(t *testing.T) {
 	cfg, readFile, err := Load(filepath.Join("..", "..", "deploy", "overscan.example.yaml"), true, env(nil))
 	if err != nil {

@@ -8,8 +8,8 @@ import (
 	"net/netip"
 	"slices"
 
+	"overscan.gureet.ca/internal/clientaddr"
 	"overscan.gureet.ca/internal/hub"
-	"overscan.gureet.ca/internal/portal/output"
 	"overscan.gureet.ca/internal/store"
 )
 
@@ -42,7 +42,7 @@ func (a *Admin) setOutputsAnywhere(ctx context.Context, on bool) error {
 	if !on {
 		a.stopPlayers(func(p hub.Player) bool {
 			addr, err := netip.ParseAddr(p.Address)
-			return err != nil || !output.OwnNetwork(addr)
+			return err != nil || !clientaddr.OwnNetwork(addr)
 		}, "the outputs answer players on the server's own networks only")
 	}
 	return nil
