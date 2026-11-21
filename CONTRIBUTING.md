@@ -1,6 +1,6 @@
 # Contributing
 
-Outside contributions are not open yet (see the README). The rules below already apply to every commit, the maintainer's included.
+Outside contributions are not open yet (see the README). The rules below already apply to every commit, the maintainer's included, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) to everyone who takes part.
 
 ## Before you start
 
@@ -67,7 +67,7 @@ The schema lives in `internal/store/migrations/`, one SQL file per version, name
 An upgrade never loses or changes what a household set up ([D115](docs/decisions.md)), so a migration that changes how something is kept carries it over to the new form, and drops nothing that a household made. With each new migration:
 
 - add the line that `sha256sum` gives for it to `internal/store/testdata/migrations.sha256`. Once a migration has been released, never edit it: change the schema in a new one. `TestMigrationsAreUnchanged` checks this.
-- write its upgrade test, `TestMigrationNNNN…` in `internal/store`: make a database with the schema before it (`open` with the migrations before it), put in what a household sets up that the migration touches, apply it, and check that all of it is still there and the same. `TestProfilesMigration` is an example, and `TestNewMigrationsHaveUpgradeTests` checks that the test exists.
+- write its upgrade test, `TestMigrationNNNN…` in `internal/store`: make a database with the schema before it (`open` with the migrations before it), put in what a household sets up that the migration touches, apply it, and check that all of it is still there and the same. `TestMigration0043SourcePublicOnly` is an example, and `TestNewMigrationsHaveUpgradeTests` checks that the test exists.
 
 CI's *Upgrades* job then upgrades a household from every full release since v0.3.0 to the change ([docs/testing.md](docs/testing.md#upgrades)).
 

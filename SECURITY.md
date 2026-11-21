@@ -10,7 +10,7 @@ If something in the repository looks like proprietary code or data, report it th
 
 ## Supported versions
 
-Fixes go into the latest release. Versions 0.0.x were development builds and get no fixes.
+Fixes go into the next release, from the latest. Upgrading keeps everything that a household set up, from every full release since v0.3.0 ([docs/upgrading.md](docs/upgrading.md)), so upgrading is how to get a fix. Older releases and pre-releases get no fixes of their own.
 
 ## Scope
 

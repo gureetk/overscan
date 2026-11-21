@@ -168,6 +168,8 @@ Code contributions are not open yet. When they are, contributions will use the
 [Developer Certificate of Origin](https://developercertificate.org/) (a
 `Signed-off-by` line on each commit) and no CLA, and the clean-room rules in
 [docs/clean-room.md](docs/clean-room.md) will apply to anything touching the
-protocol. [CONTRIBUTING.md](CONTRIBUTING.md) has the details.
+protocol. [CONTRIBUTING.md](CONTRIBUTING.md) has the details, and
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) says what is expected of everyone who
+takes part.
 
 Copyright © Overscan contributors.

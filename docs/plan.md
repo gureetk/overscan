@@ -704,6 +704,7 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 6. Answered: HDHomeRun emulation waits in the backlog (section 22); M6 ships without it.
 7. Answered: the MAG UI keeps its device secret in a cookie, with a copy in a `SaveUserData` file (D38).
 8. Publishing under the project's name: a container image on a registry, a package repository, signed releases. Until this is decided, a release holds its archives, its Debian packages and their checksums (D116).
+9. A private way to reach the maintainer about conduct. Until there is one, the code of conduct names GitHub's private vulnerability reporting (D123).
 
 ---
 
