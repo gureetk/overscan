@@ -6,8 +6,8 @@
 # Each setting can also come from an environment variable, which wins over
 # this file: OVERSCAN_LISTEN, OVERSCAN_ADMIN_LISTEN, OVERSCAN_DATA_DIR,
 # OVERSCAN_KEY_FILE, OVERSCAN_RECORDINGS_DIR, OVERSCAN_LOG_LEVEL,
-# OVERSCAN_LOG_FORMAT, OVERSCAN_FFMPEG and OVERSCAN_TRUSTED_PROXIES (a list
-# split by commas or spaces).
+# OVERSCAN_LOG_FORMAT, OVERSCAN_FFMPEG, OVERSCAN_TRUSTED_PROXIES (a list
+# split by commas or spaces) and OVERSCAN_PROBE_REPORTS.
 
 # Address of the device-facing HTTP server, which boxes and players use.
 listen: ":8080"
@@ -27,6 +27,12 @@ listen: ":8080"
 # rather than against the proxy. Without any, those headers are ignored and
 # a proxy's requests come from the proxy.
 # trusted_proxies: ["127.0.0.1"]
+
+# Whether the probe page at /probe/, which reports what a box's browser
+# supports (docs/probe.md), may save its reports in data_dir's probe folder,
+# from the server's own networks, at most 100 of them (D120). Turn it on
+# only while you probe a box.
+# probe_reports: false
 
 # Where Overscan keeps its database and the other files it writes.
 data_dir: /var/lib/overscan
