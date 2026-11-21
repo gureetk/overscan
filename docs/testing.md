@@ -45,9 +45,9 @@ They run with the other tests:
 
 `tools/soak` runs Overscan under load and records its memory and CPU use:
 
-1. It serves a fake provider with a lineup of 20,000 channels in 200 groups, each an endless MPEG-TS stream at 5 Mbit/s.
-2. It runs Overscan against that lineup, built from the repository unless `-bin` names a binary, and lets it idle for 30 seconds with the lineup loaded.
-3. It simulates four boxes for ten minutes, half through the Stalker API and half as the MAG page through the device API. Each signs in, loads the whole channel list, then watches random channels, switching every two minutes on average; the Stalker boxes also make the keep-alive call.
+1. It serves a fake provider with a lineup of 20,000 channels in 200 groups, each an endless MPEG-TS stream at 5 Mbit/s, and their guide: a programme an hour for a day, 480,000 programmes in all. It writes a folder of 10,000 films and 500 series of 20 episodes each, as empty videos.
+2. It runs Overscan with both as sources, built from the repository unless `-bin` names a binary, and lets it idle for 30 seconds once the lineup and its guide are loaded.
+3. It simulates four boxes for ten minutes, half through the Stalker API and half as the MAG page through the device API. Each signs in, loads the whole channel list, then watches random channels, switching every two minutes on average; the Stalker boxes also make the keep-alive call, and those of the MAG page open *Movies* and read a page of its shelf of films before each channel.
 4. Every five seconds it reads the server's resident memory and CPU time from `/proc`, so it runs on Linux only.
 
 Run it from the repository:
@@ -60,6 +60,8 @@ Run it from the repository:
 | `-duration` | `10m` | How long the boxes run |
 | `-boxes` | `4` | How many boxes, each watching one stream |
 | `-channels` | `20000` | How many channels the fake provider lists |
+| `-guide` | `24` | Hours of one-hour programmes in the guide for each channel; 0 for no guide |
+| `-films`, `-series` | `10000`, `500` | Films, and series of two seasons of ten episodes, in the folder |
 | `-bitrate` | `5000000` | Each stream's rate, in bits per second |
 | `-zap` | `2m` | How long a box stays on a channel, on average |
 | `-bin` | | The Overscan binary to test, instead of building one |
@@ -69,7 +71,7 @@ Run it from the repository:
 
 It prints a summary and writes the samples, and it fails if the server breaks a budget or if any stream or call fails. The memory budgets are the plan's: under about 60 MB idle, and under about 150 MB with a large catalog.
 
-The *Soak* workflow runs the ten-minute version every Monday, and on demand from the repository's Actions tab, and keeps the samples for 30 days. Hosted runners vary from run to run, so the 24-hour run belongs on the LXC.
+The *Soak* workflow runs the ten-minute version every Monday, and on demand from the repository's Actions tab for as long as asked, up to 330 minutes, since a job of GitHub's stops at six hours. It keeps the samples for 30 days. Hosted runners vary from run to run, so a run on the machine that Overscan will run on says more about it.
 
 ### Baseline
 
