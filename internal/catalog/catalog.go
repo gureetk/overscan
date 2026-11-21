@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -767,7 +768,7 @@ func (r *Refresher) readFolder(ctx context.Context, src source.Settings) (readRe
 // open returns the playlist's content.
 func (r *Refresher) open(ctx context.Context, src source.Settings) (io.ReadCloser, error) {
 	if src.IsFile() {
-		f, err := os.Open(src.URL)
+		f, err := openPlaylistFile(src.URL)
 		if err != nil {
 			return nil, err
 		}
@@ -796,6 +797,46 @@ func (r *Refresher) open(ctx context.Context, src source.Settings) (io.ReadClose
 		return nil, fmt.Errorf("the server answered %s", resp.Status)
 	}
 	return &capReader{r: resp.Body, c: resp.Body, left: r.maxBytes}, nil
+}
+
+// Why a playlist file cannot be read, without its path, which is sealed
+// as a source's address is (D46).
+var (
+	errPlaylistMissing    = errors.New("the playlist file does not exist")
+	errPlaylistDenied     = errors.New("Overscan may not read the playlist file")
+	errPlaylistNotRegular = errors.New("the playlist is not a regular file")
+)
+
+// openPlaylistFile opens a playlist file, which must be a regular file: a
+// named pipe or a device could hold a refresh up for ever, or give data
+// without end, and a directory is no playlist.
+func openPlaylistFile(path string) (*os.File, error) {
+	opened := func(err error) error {
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			return errPlaylistMissing
+		case errors.Is(err, fs.ErrPermission):
+			return errPlaylistDenied
+		}
+		return errors.New("the playlist file cannot be read")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, opened(err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errPlaylistNotRegular
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, opened(err)
+	}
+	// What the path names may have changed since it was looked at.
+	if info, err := f.Stat(); err != nil || !info.Mode().IsRegular() {
+		f.Close()
+		return nil, errPlaylistNotRegular
+	}
+	return f, nil
 }
 
 // capReader fails once more than left bytes have been read.

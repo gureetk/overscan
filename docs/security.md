@@ -38,7 +38,7 @@ Overscan runs on a home network for the household's own devices. It trusts the a
 
 - Overscan speaks plain HTTP; TLS is a reverse proxy's job. Behind one, the admin's cookie lacks the `Secure` flag, since Overscan sees plain HTTP, unless the proxy is named in `trusted_proxies` and says that the browser came over HTTPS (D119).
 - A source can make Overscan fetch any http or https address, addresses on the home network included: redirects, HLS segments and keys, logos. What comes back goes only to the household's devices, but the request is made. An option to refuse private addresses for a source is planned (plan, section 11).
-- An M3U source can be a local file, which the admin can name; Overscan reads it as its own user, and only playlist entries come out of it.
+- An M3U source can be a local file, which the admin can name; Overscan reads it as its own user, and only playlist entries come out of it. It must be a regular file: a named pipe, a device or a folder is refused, and what goes wrong is said without the file's path.
 - The probe page's report address takes reports from anyone on the server's own networks, at most 100 of 256 KiB each, but only while `probe_reports` is on, which it is not by default (D120).
 - Once a device is approved, its MAC address is all that a Stalker client needs, as the protocol has it. The MAG page adds its pairing secret.
 
