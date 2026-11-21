@@ -29,6 +29,21 @@ import (
 	"overscan.gureet.ca/internal/store"
 )
 
+// Limits on what a request may make the server hold. Headers have
+// readHeaderTimeout to arrive in, and at most maxHeaderBytes, which no box,
+// player or browser comes near; a body has bodyTimeout to arrive in, from
+// its first byte, or the request fails. A connection that has been idle for
+// idleTimeout is closed. Nothing limits how long an answer takes, since a
+// stream goes on for as long as someone watches.
+const (
+	readHeaderTimeout = 10 * time.Second
+	maxHeaderBytes    = 64 << 10
+	idleTimeout       = 2 * time.Minute
+)
+
+// bodyTimeout is a variable so that tests can shorten it.
+var bodyTimeout = time.Minute
+
 // shutdownTimeout is how long the server waits for open requests when it stops.
 // Streams can stay open far longer, so after this the remaining connections are
 // closed.
@@ -219,11 +234,13 @@ func (s *Server) ServeAdmin(ctx context.Context, ln net.Listener) error {
 
 func (s *Server) serve(ctx context.Context, ln net.Listener, handler http.Handler, what string) error {
 	srv := &http.Server{
-		Handler:           handler,
-		ReadHeaderTimeout: 10 * time.Second,
-		IdleTimeout:       2 * time.Minute,
+		Handler:           bodyDeadline(handler),
+		ReadHeaderTimeout: readHeaderTimeout,
+		MaxHeaderBytes:    maxHeaderBytes,
+		IdleTimeout:       idleTimeout,
 		ErrorLog:          slog.NewLogLogger(s.log.Handler(), slog.LevelWarn),
-		// No WriteTimeout: a stream stays open for as long as someone watches.
+		// No ReadTimeout or WriteTimeout: a stream stays open for as long
+		// as someone watches.
 	}
 	served := make(chan error, 1)
 	go func() { served <- srv.Serve(ln) }()

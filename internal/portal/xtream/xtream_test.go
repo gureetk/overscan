@@ -357,6 +357,16 @@ func TestAccount(t *testing.T) {
 	if !strings.Contains(string(b), `"auth":1`) {
 		t.Errorf("POST: %s %s", resp.Status, b)
 	}
+	// A form far larger than a login is refused before it is read.
+	resp, err = http.PostForm(h.front.URL+"/player_api.php", url.Values{"username": {username}, "password": {password},
+		"padding": {strings.Repeat("x", 2*maxFormBytes)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("POST of a large form: %s", resp.Status)
+	}
 
 	// An account that has ended reads its state, and nothing else.
 	if err := h.store.SetAccountExpiry(ctx, store.HouseholdAccount, h.now.Add(-time.Hour)); err != nil {

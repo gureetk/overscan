@@ -40,6 +40,10 @@ const (
 // bytes: a login holds far less (D102).
 const maxLoginField = 256
 
+// maxFormBytes caps the body of a request to the API, which holds a login
+// and a few parameters at most.
+const maxFormBytes = 16 << 10
+
 // Output serves the Xtream-compatible API.
 type Output struct {
 	store   *store.Store
@@ -146,6 +150,9 @@ func writeJSON(w http.ResponseWriter, v any) {
 // sign in, as panels do (notes, section 2).
 func (o *Output) api(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	// A player sends a login and a few parameters, in the address or in a
+	// form.
+	r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
