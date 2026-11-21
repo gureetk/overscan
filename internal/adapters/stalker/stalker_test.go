@@ -214,7 +214,7 @@ func TestParseDate(t *testing.T) {
 			t.Errorf("%q: %v, %v; want %v", s, got, ok, want)
 		}
 	}
-	for _, s := range []string{"", "0", "-5", "unlimited", "12/03/2027"} {
+	for _, s := range []string{"", "0", "-5", "unlimited", "12/03/2027", "0000-01-01", "December 1, 0000, 0:00 am"} {
 		if _, ok := ParseDate(s); ok {
 			t.Errorf("%q read as a date", s)
 		}

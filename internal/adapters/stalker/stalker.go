@@ -700,7 +700,9 @@ func ParseDate(s string) (time.Time, bool) {
 		return time.Time{}, false
 	}
 	for _, layout := range dateLayouts {
-		if t, err := time.ParseInLocation(layout, s, time.UTC); err == nil {
+		// A year before Unix time began is no date a portal means, as
+		// Unix seconds of 0 or less are not.
+		if t, err := time.ParseInLocation(layout, s, time.UTC); err == nil && t.Year() >= 1970 {
 			return t, true
 		}
 	}

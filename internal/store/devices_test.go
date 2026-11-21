@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -231,4 +232,26 @@ func TestPendingDevices(t *testing.T) {
 	if n, err := s.PendingDevices(ctx); err != nil || n != 1 {
 		t.Errorf("%d pending, %v; want 1", n, err)
 	}
+}
+
+// FuzzParseMAC reads MAC addresses as devices send them, in cookies and
+// bodies: what it accepts comes out in the one form the store keeps, which
+// reads back as itself.
+func FuzzParseMAC(f *testing.F) {
+	for _, s := range []string{"00:1A:79:00:00:01", "00-1a-79-00-00-01", "001a.7900.0001", "001A79000001", " 00:1A:79:00:00:01 ", "00:1A:79:00:00:01:02:03"} {
+		f.Add(s)
+	}
+	form := regexp.MustCompile(`^([0-9A-F]{2}:){5}[0-9A-F]{2}$`)
+	f.Fuzz(func(t *testing.T, s string) {
+		mac, err := ParseMAC(s)
+		if err != nil {
+			return
+		}
+		if !form.MatchString(mac) {
+			t.Errorf("ParseMAC(%q) = %q", s, mac)
+		}
+		if again, err := ParseMAC(mac); err != nil || again != mac {
+			t.Errorf("ParseMAC(%q) = %q, %v", mac, again, err)
+		}
+	})
 }
