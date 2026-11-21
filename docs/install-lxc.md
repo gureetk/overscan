@@ -67,7 +67,7 @@ Run Overscan's commands as its user. Debian containers may not have `sudo`; `run
 
 ## Upgrading and removing
 
-To upgrade, unpack the new archive and run its `install.sh`. It keeps your configuration and data. A copy of the database first (above) lets you go back.
+To upgrade, unpack the new archive and run its `install.sh`. It keeps your configuration and data. Before a new version changes the database's schema, it copies the database into `/var/lib/overscan/backups/`, which lets you go back: [upgrading.md](upgrading.md) says how.
 
 To remove Overscan:
 

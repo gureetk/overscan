@@ -93,6 +93,30 @@ jobs:
       - name: Build and check the image
         run: tools/check-image.sh "$RUNNER_TEMP/image"
 
+  upgrade:
+    name: Upgrades
+    runs-on: ubuntu-latest
+    # Each release's household takes under a minute to set up and upgrade.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      # Every full release from v0.3.0 on, and the newest pre-release when
+      # it is newer than them all (D118).
+      - name: Fetch the releases to upgrade from
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: tools/fetch-releases.sh "$RUNNER_TEMP/releases"
+
+      - name: Upgrade a household from each
+        run: go run ./tools/upgradetest "$RUNNER_TEMP"/releases/overscan-*
+
   mag-page:
     name: MAG page
     runs-on: ubuntu-latest

@@ -13,6 +13,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // The migrations directory holds one SQL file per schema version, named
@@ -69,11 +70,13 @@ func loadMigrations(fsys fs.FS) ([]migration, error) {
 	return ms, nil
 }
 
-// migrate applies the migrations the database lacks, each in its own
-// transaction together with the new schema version, so a failed migration
-// leaves the database as it was. The transactions take the write lock first,
-// so two processes opening the same new database apply each migration once.
-func (s *Store) migrate(ctx context.Context, log *slog.Logger, ms []migration) error {
+// migrate applies the migrations the database at path lacks, each in its
+// own transaction together with the new schema version, so a failed
+// migration leaves the database as it was. The transactions take the write
+// lock first, so two processes opening the same new database apply each
+// migration once. A database that already has a schema is backed up first
+// (backupBeforeUpgrade), and is left as it is if the backup fails.
+func (s *Store) migrate(ctx context.Context, log *slog.Logger, path string, ms []migration) error {
 	latest := ms[len(ms)-1].version
 	v, err := s.SchemaVersion(ctx)
 	if err != nil {
@@ -81,6 +84,14 @@ func (s *Store) migrate(ctx context.Context, log *slog.Logger, ms []migration) e
 	}
 	if v < 0 {
 		return fmt.Errorf("store: the database's schema version %d is not valid", v)
+	}
+	if v > 0 && v < latest {
+		dest, err := backupBeforeUpgrade(ctx, path, v, time.Now(), log)
+		if err != nil {
+			return fmt.Errorf("store: the database has schema %d, which this build upgrades to %d once it has backed the database up, "+
+				"but the backup failed, so the database is as it was: %w", v, latest, err)
+		}
+		log.Info("backed up the database before upgrading its schema", "backup", dest, "schema", v, "to", latest)
 	}
 	if v < latest {
 		for _, m := range ms[v:] {

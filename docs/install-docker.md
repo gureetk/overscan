@@ -51,7 +51,7 @@ To copy the database out of the container, into the current folder:
 
 ## Upgrade and remove
 
-To upgrade, unpack the new archive anywhere and run `docker compose up -d --build` in it. The project's name in `compose.yaml` is fixed, so the new container takes over the same volume, whichever folder it is in. Copy the database first to be able to go back.
+To upgrade, unpack the new archive anywhere and run `docker compose up -d --build` in it. The project's name in `compose.yaml` is fixed, so the new container takes over the same volume, whichever folder it is in. Before a new version changes the database's schema, it copies the database into the volume's `backups` folder, which lets you go back: [upgrading.md](upgrading.md) says how.
 
 To remove the container and its image, but keep the data:
 

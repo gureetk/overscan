@@ -11,6 +11,7 @@ Overscan keeps everything it needs in a few files:
 | `/var/lib/overscan/check/` | The clips of the playback check (D70), which ffmpeg makes again if they are lost. |
 | `/var/lib/overscan/Recordings/` | The recordings that boxes made (D89), if recording is on. They are not in the database's backups: copy the folder apart to keep them. |
 | `/var/lib/overscan/timeshift/` | The timeshift buffers of what boxes watch (D92), while timeshift is on. Nothing to keep: the server empties it as it starts. |
+| `/var/lib/overscan/backups/` | Copies of the database: those that `overscan backup` makes, and those that the server makes itself before an upgrade changes the database's schema, named `before-upgrade-…` (D117), of which it keeps the newest three. |
 
 The paths are those of an installation with `install.sh`; `data_dir`, `key_file` and `recordings_dir` in the configuration can move them. The commands below are run as root, as in [`install-lxc.md`](install-lxc.md): put `sudo` in front of each where it is installed.
 
@@ -28,9 +29,9 @@ A backup of the database is only as private as its key: whoever has both can rea
 
 writes a copy to `/var/lib/overscan/backups/`, named with the date and time in UTC, readable only by the `overscan` user. The copy is consistent even while the server runs. To write it somewhere else, name a file that does not exist yet and that the `overscan` user can write:
 
-    runuser -u overscan -- overscan backup /var/lib/overscan/backups/before-upgrade.db
+    runuser -u overscan -- overscan backup /var/lib/overscan/backups/by-hand.db
 
-Copy the backups off the machine now and then; the backups folder is not cleaned up by itself.
+Copy the backups off the machine now and then. The server cleans up only its own copies, those it makes before an upgrade, named `before-upgrade-…`, of which it keeps the newest three ([upgrading.md](upgrading.md)); it never removes the others.
 
 ## Proxmox
 

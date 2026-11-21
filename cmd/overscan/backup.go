@@ -29,10 +29,6 @@ file, so it is of no use without the key file: keep a copy of that too,
 apart from the backups. docs/backup.md says how to restore one.
 `
 
-// backupsFolder is the folder in the data directory that backups go to
-// when no file is named.
-const backupsFolder = "backups"
-
 // backupCommand copies the database.
 func backupCommand(ctx context.Context, cfg config.Config, args []string, stdout, stderr io.Writer) int {
 	switch {
@@ -62,7 +58,7 @@ func backupCommand(ctx context.Context, cfg config.Config, args []string, stdout
 	if len(args) == 1 {
 		dest = args[0]
 	} else {
-		dir := filepath.Join(cfg.DataDir, backupsFolder)
+		dir := filepath.Join(cfg.DataDir, store.BackupsFolder)
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			fmt.Fprintf(stderr, "overscan: %v\n", err)
 			return 1

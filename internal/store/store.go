@@ -80,9 +80,11 @@ func (s *Store) open(context string, sealed []byte) (string, error) {
 }
 
 // Open opens the database file at path, creating it if it does not exist,
-// and applies the migrations it lacks. A new file is readable and writable by
-// its owner only, and so are its journal and WAL files. Open refuses a
-// database whose schema is newer than this build knows.
+// and applies the migrations it lacks, once it has backed up a database that
+// had a schema already into the backups folder beside it (BackupsFolder). A
+// new file is readable and writable by its owner only, and so are its
+// journal and WAL files. Open refuses a database whose schema is newer than
+// this build knows.
 func Open(ctx context.Context, path string, log *slog.Logger) (*Store, error) {
 	return open(ctx, path, log, migrations)
 }
@@ -110,7 +112,7 @@ func open(ctx context.Context, path string, log *slog.Logger, ms []migration) (*
 		_ = db.Close()
 		return nil, err
 	}
-	if err := s.migrate(ctx, log, ms); err != nil {
+	if err := s.migrate(ctx, log, path, ms); err != nil {
 		_ = db.Close()
 		return nil, err
 	}

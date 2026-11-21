@@ -133,6 +133,7 @@ clients are expected to work and are tracked in a compatibility matrix,
 | [docs/install-lxc.md](docs/install-lxc.md) | Installing Overscan as a service in a Proxmox container |
 | [docs/install-docker.md](docs/install-docker.md) | Running Overscan with Docker Compose, from a release archive |
 | [docs/backup.md](docs/backup.md) | What to back up, the `overscan backup` command, and restoring |
+| [docs/upgrading.md](docs/upgrading.md) | Upgrading: what an upgrade keeps, from which versions, and going back |
 | [docs/security.md](docs/security.md) | The security model, what protects what, and the known limits |
 | [docs/logo/README.md](docs/logo/README.md) | Logo files, palette and usage |
 
