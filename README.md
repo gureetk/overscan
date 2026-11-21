@@ -32,10 +32,9 @@ you are entitled to use.
 
 ## Status
 
-**Early development.** Version 0.4.0 is the newest release. It ends the fifth
-milestone, "Households", and holds everything before it. The sixth, "The
-household IPTV hub", is built in pre-releases of 0.5.0, which wait for tests
-with players.
+**Early development.** Version 0.5.0 is the newest release. It ends the sixth
+milestone, "The household IPTV hub", and holds everything before it. The
+seventh leads to 1.0.
 
 It plays live channels from M3U playlists, Xtream servers and providers' Stalker
 portals, with their programme guides, on a MAG322w1 through Overscan's own
@@ -63,15 +62,17 @@ favourites and resume points. The administrator can set an end date, send
 messages to the boxes and give them a theme, and, where it is turned on, screens
 on one channel share one connection to its source.
 
-In the 0.5.0 pre-releases, players other than the boxes reach Overscan too.
-Accounts get a login and a limit on their streams, and each can serve players an
-M3U playlist and XMLTV guide, or an Xtream-compatible login for players such as
-TiviMate, behind switches that start off, on the home network only. There can be
-several lineups, one for each account to choose, with rules that keep renaming,
-regrouping, numbering, hiding and fixing the guide of channels as sources
-change; a channel can have backups that play when its own stream cannot start;
-live channels can be made H.264 for a device that needs it; and the lineups
-export to one file, and import from it.
+Since 0.5.0, players other than the boxes reach Overscan too. Accounts get a
+login, a limit on their streams and, where the administrator chooses, only some
+of the sources, and each can serve players an M3U playlist and XMLTV guide, or
+an Xtream-compatible login for players such as TiviMate, behind switches that
+start off, on the home network only. There can be several lineups, one for each
+account to choose, with rules that keep renaming, regrouping, numbering, hiding
+and fixing the guide of channels as sources change; a channel can have backups
+that play when its own stream cannot start, and a rule can merge the copies of
+a channel that sources list more than once; live channels can be made H.264 for
+a device that needs it; and the lineups export to one file, and import from
+it.
 
 Much of what the third to sixth milestones added has been tested against test
 servers and in a desktop browser, but not yet on a MAG box or with real
