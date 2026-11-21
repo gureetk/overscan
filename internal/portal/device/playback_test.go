@@ -29,7 +29,7 @@ func TestPlaybackReport(t *testing.T) {
 		{Key: "5001", Name: "The Long Field", Container: "mkv"}}, h.now); err != nil {
 		t.Fatal(err)
 	}
-	found, err := h.store.SearchTitles(ctx, "Long", 5)
+	found, err := h.store.SearchTitles(ctx, "Long", 5, store.EverySource)
 	if err != nil || len(found) != 1 {
 		t.Fatalf("titles %+v, %v", found, err)
 	}

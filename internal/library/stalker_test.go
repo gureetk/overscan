@@ -60,7 +60,7 @@ func portalShelves(t *testing.T, l *Library, st *store.Store, kind string) map[s
 	if err != nil || !state.Ready() {
 		t.Fatalf("want %s: %+v, %v", kind, state, err)
 	}
-	shelves, err := st.Shelves(ctx, kind)
+	shelves, err := st.Shelves(ctx, kind, store.EverySource)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,7 +282,7 @@ func TestPortalPartFailures(t *testing.T) {
 func portalShelvesNoWant(t *testing.T, st *store.Store, kind string) map[string]store.PortalCategory {
 	t.Helper()
 	ctx := context.Background()
-	shelves, err := st.Shelves(ctx, kind)
+	shelves, err := st.Shelves(ctx, kind, store.EverySource)
 	if err != nil {
 		t.Fatal(err)
 	}

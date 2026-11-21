@@ -55,7 +55,7 @@ func TestShelfSettings(t *testing.T) {
 	if err := s.ApplyPortalCategories(ctx, ids["portal"], KindMovie, []LibraryCategory{{Key: "vod:1", Name: "Kids"}}, at); err != nil {
 		t.Fatal(err)
 	}
-	shelves, _ := s.Shelves(ctx, KindMovie)
+	shelves, _ := s.Shelves(ctx, KindMovie, EverySource)
 	kids := shelves[2]
 	if err := s.ApplyPortalPage(ctx, kids.ID, 1, portalItems(1001, 3, -1), 3, at); err != nil {
 		t.Fatal(err)
@@ -76,7 +76,7 @@ func TestShelfSettings(t *testing.T) {
 	if got, want := shelfNames(t, s, KindMovie), []string{"Comedy 1 false", "Kids 3 true"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("shelves with Drama hidden %q, want %q", got, want)
 	}
-	if found, _ := s.SearchTitles(ctx, "drama", 10); len(found) != 0 {
+	if found, _ := s.SearchTitles(ctx, "drama", 10, EverySource); len(found) != 0 {
 		t.Errorf("found on a hidden shelf: %q", names(found))
 	}
 	if _, err := s.Title(ctx, byName["The Long Field"]); !errors.Is(err, ErrNotFound) {
@@ -85,7 +85,7 @@ func TestShelfSettings(t *testing.T) {
 	if _, err := s.PlayableMovie(ctx, byName["Other Drama"]); !errors.Is(err, ErrNotFound) {
 		t.Errorf("playing a title on a hidden shelf: %v", err)
 	}
-	if recent, _ := s.RecentTitles(ctx, KindMovie, 10); reflect.DeepEqual(names(recent), []string{}) ||
+	if recent, _ := s.RecentTitles(ctx, KindMovie, 10, EverySource); reflect.DeepEqual(names(recent), []string{}) ||
 		strings.Contains(strings.Join(names(recent), ","), "Long Field") {
 		t.Errorf("recent %q", names(recent))
 	}
@@ -110,8 +110,8 @@ func TestShelfSettings(t *testing.T) {
 		"Laughs name:Comedy main renamed placed", "Drama name:Drama main+one"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("admin shelves %q, want %q", got, want)
 	}
-	shelves, _ = s.Shelves(ctx, KindMovie)
-	if rows, err := s.ShelfTitles(ctx, KindMovie, shelves[1].ID, ByName); err != nil || !reflect.DeepEqual(names(rows), []string{"quiet harbour"}) {
+	shelves, _ = s.Shelves(ctx, KindMovie, EverySource)
+	if rows, err := s.ShelfTitles(ctx, KindMovie, shelves[1].ID, ByName, EverySource); err != nil || !reflect.DeepEqual(names(rows), []string{"quiet harbour"}) {
 		t.Errorf("the renamed shelf's titles %q, %v", names(rows), err)
 	}
 
@@ -119,7 +119,7 @@ func TestShelfSettings(t *testing.T) {
 	if n, err := s.SetTitlesHidden(ctx, []int64{byName["Around 100% of_it"], 99999}, true); err != nil || n != 1 {
 		t.Fatalf("hid %d, %v", n, err)
 	}
-	if rows, _ := s.ShelfTitles(ctx, KindMovie, shelves[2].ID, ByName); !reflect.DeepEqual(names(rows), []string{"Other Drama", "The Long Field"}) {
+	if rows, _ := s.ShelfTitles(ctx, KindMovie, shelves[2].ID, ByName, EverySource); !reflect.DeepEqual(names(rows), []string{"Other Drama", "The Long Field"}) {
 		t.Errorf("titles with one hidden %q", names(rows))
 	}
 	drama, err := s.LibraryShelf(ctx, KindMovie, shelves[2].ID)

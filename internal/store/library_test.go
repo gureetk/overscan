@@ -73,14 +73,14 @@ func TestApplyLibrary(t *testing.T) {
 	if ch != (LibraryChanges{Added: 4}) {
 		t.Errorf("changes %+v", ch)
 	}
-	shelves, err := s.Shelves(ctx, KindMovie)
+	shelves, err := s.Shelves(ctx, KindMovie, EverySource)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(shelves) != 2 || shelves[0].Name != "Drama" || shelves[0].Count != 2 || shelves[1].Name != "Comedy" || shelves[1].Count != 1 {
 		t.Fatalf("shelves %+v", shelves)
 	}
-	drama, err := s.ShelfTitles(ctx, KindMovie, shelves[0].ID, ByAdded)
+	drama, err := s.ShelfTitles(ctx, KindMovie, shelves[0].ID, ByAdded, EverySource)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,14 +91,14 @@ func TestApplyLibrary(t *testing.T) {
 		!drama[1].AddedAt.Equal(films[0].AddedAt) || drama[1].Kind != KindMovie {
 		t.Errorf("row %+v", drama[1])
 	}
-	byName, err := s.ShelfTitles(ctx, KindMovie, shelves[0].ID, ByName)
+	byName, err := s.ShelfTitles(ctx, KindMovie, shelves[0].ID, ByName, EverySource)
 	if err != nil || !reflect.DeepEqual(names(byName), []string{"Around 100% of_it", "The Long Field"}) {
 		t.Errorf("drama by name %q, %v", names(byName), err)
 	}
-	if _, err := s.ShelfTitles(ctx, KindSeries, shelves[0].ID, ByAdded); !errors.Is(err, ErrNotFound) {
+	if _, err := s.ShelfTitles(ctx, KindSeries, shelves[0].ID, ByAdded, EverySource); !errors.Is(err, ErrNotFound) {
 		t.Errorf("a film shelf as series: %v", err)
 	}
-	recent, err := s.RecentTitles(ctx, KindMovie, 2)
+	recent, err := s.RecentTitles(ctx, KindMovie, 2, EverySource)
 	if err != nil || !reflect.DeepEqual(names(recent), []string{"quiet harbour", "Around 100% of_it"}) {
 		t.Errorf("recent %q, %v", names(recent), err)
 	}
@@ -135,7 +135,7 @@ func TestApplyLibrary(t *testing.T) {
 	if _, err := s.Title(ctx, before["Lost Reel"]); !errors.Is(err, ErrNotFound) {
 		t.Errorf("a missing title: %v", err)
 	}
-	shelves, _ = s.Shelves(ctx, KindMovie)
+	shelves, _ = s.Shelves(ctx, KindMovie, EverySource)
 	if len(shelves) != 1 || shelves[0].Name != "Comedy" || shelves[0].Count != 2 {
 		t.Errorf("shelves %+v", shelves)
 	}
@@ -190,18 +190,18 @@ func TestShelvesAcrossSources(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	shelves, err := s.Shelves(ctx, KindMovie)
+	shelves, err := s.Shelves(ctx, KindMovie, EverySource)
 	if err != nil || len(shelves) != 1 || shelves[0].Count != 2 {
 		t.Fatalf("shelves %+v, %v", shelves, err)
 	}
-	rows, err := s.ShelfTitles(ctx, KindMovie, shelves[0].ID, ByName)
+	rows, err := s.ShelfTitles(ctx, KindMovie, shelves[0].ID, ByName, EverySource)
 	if err != nil || !reflect.DeepEqual(names(rows), []string{"Film from one", "Film from two"}) {
 		t.Errorf("titles %q, %v (an M3U source has no library)", names(rows), err)
 	}
 	if err := s.SetSourceEnabled(ctx, ids["one"], false); err != nil {
 		t.Fatal(err)
 	}
-	rows, _ = s.ShelfTitles(ctx, KindMovie, shelves[0].ID, ByName)
+	rows, _ = s.ShelfTitles(ctx, KindMovie, shelves[0].ID, ByName, EverySource)
 	if !reflect.DeepEqual(names(rows), []string{"Film from two"}) {
 		t.Errorf("with one disabled: %q", names(rows))
 	}
@@ -211,7 +211,7 @@ func TestShelvesAcrossSources(t *testing.T) {
 	if err := s.DeleteSource(ctx, ids["two"]); err != nil {
 		t.Fatal(err)
 	}
-	if shelves, _ := s.Shelves(ctx, KindMovie); len(shelves) != 0 {
+	if shelves, _ := s.Shelves(ctx, KindMovie, EverySource); len(shelves) != 0 {
 		t.Errorf("shelves %+v", shelves)
 	}
 }
@@ -237,12 +237,12 @@ func TestSearchTitles(t *testing.T) {
 		"  ":      {},
 		"nothing": {},
 	} {
-		got, err := s.SearchTitles(ctx, q, 10)
+		got, err := s.SearchTitles(ctx, q, 10, EverySource)
 		if err != nil || !reflect.DeepEqual(names(got), want) {
 			t.Errorf("search %q: %q, %v; want %q", q, names(got), err, want)
 		}
 	}
-	got, _ := s.SearchTitles(ctx, "o", 1)
+	got, _ := s.SearchTitles(ctx, "o", 1, EverySource)
 	if len(got) != 2 || got[0].Kind != KindMovie || got[1].Kind != KindSeries {
 		t.Errorf("one of each kind: %+v", got)
 	}
@@ -273,7 +273,7 @@ func TestTitlePage(t *testing.T) {
 	}
 	page := func(shelf int64, text, order string, offset, limit int) ([]TitleListing, int) {
 		t.Helper()
-		got, total, err := s.TitlePage(ctx, KindMovie, shelf, text, order, offset, limit, false)
+		got, total, err := s.TitlePage(ctx, KindMovie, shelf, text, order, offset, limit, false, EverySource)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -300,7 +300,7 @@ func TestTitlePage(t *testing.T) {
 		t.Errorf("past the end: %d %q", total, listed(got))
 	}
 	// A shelf holds the categories of its name from every source.
-	shelves, err := s.Shelves(ctx, KindMovie)
+	shelves, err := s.Shelves(ctx, KindMovie, EverySource)
 	if err != nil || len(shelves) != 2 || shelves[0].Name != "Drama" {
 		t.Fatalf("shelves %+v, %v", shelves, err)
 	}
@@ -316,13 +316,13 @@ func TestTitlePage(t *testing.T) {
 	if got, total = page(0, "_", ByName, 0, 10); total != 1 || listed(got)[0] != "Around 100% of_it" {
 		t.Errorf("an underscore: %d %q", total, listed(got))
 	}
-	if _, _, err := s.TitlePage(ctx, KindMovie, 999999, "", ByAdded, 0, 10, false); !errors.Is(err, ErrNotFound) {
+	if _, _, err := s.TitlePage(ctx, KindMovie, 999999, "", ByAdded, 0, 10, false, EverySource); !errors.Is(err, ErrNotFound) {
 		t.Errorf("no such shelf: %v", err)
 	}
-	if _, _, err := s.TitlePage(ctx, KindSeries, shelves[0].ID, "", ByAdded, 0, 10, false); !errors.Is(err, ErrNotFound) {
+	if _, _, err := s.TitlePage(ctx, KindSeries, shelves[0].ID, "", ByAdded, 0, 10, false, EverySource); !errors.Is(err, ErrNotFound) {
 		t.Errorf("a film shelf as series: %v", err)
 	}
-	if got, total, err := s.TitlePage(ctx, KindSeries, 0, "", ByAdded, 0, 10, false); err != nil || total != 0 || len(got) != 0 {
+	if got, total, err := s.TitlePage(ctx, KindSeries, 0, "", ByAdded, 0, 10, false, EverySource); err != nil || total != 0 || len(got) != 0 {
 		t.Errorf("no series: %d %+v %v", total, got, err)
 	}
 	// A disabled source's titles are not listed.
@@ -481,7 +481,7 @@ func TestContinueWatching(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	movies, err := s.ContinueWatching(ctx, account, KindMovie, 10)
+	movies, err := s.ContinueWatching(ctx, account, KindMovie, 10, EverySource)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -489,7 +489,7 @@ func TestContinueWatching(t *testing.T) {
 		movies[0].Episode != nil {
 		t.Errorf("films %+v", movies)
 	}
-	series, err := s.ContinueWatching(ctx, account, KindSeries, 10)
+	series, err := s.ContinueWatching(ctx, account, KindSeries, 10, EverySource)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -503,7 +503,7 @@ func TestContinueWatching(t *testing.T) {
 	if err != nil || len(got) != 2 || got[0].Position != 900 || !got[1].Finished || got[1].Position != 0 {
 		t.Errorf("progress %+v, %v", got, err)
 	}
-	if got, _ := s.ContinueWatching(ctx, 2, KindMovie, 10); len(got) != 0 {
+	if got, _ := s.ContinueWatching(ctx, 2, KindMovie, 10, EverySource); len(got) != 0 {
 		t.Errorf("another account's %+v", got)
 	}
 }

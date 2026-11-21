@@ -45,7 +45,9 @@ func (a *API) createArchiveLink(w http.ResponseWriter, r *http.Request, d store.
 		a.internalError(w, "look up account", err)
 		return
 	}
-	if entry.LineupID != acct.LineupID || (entry.Locked && acct.PINHash != "") {
+	// A past programme comes from the channel's own source's archive, which
+	// the account must use (D114).
+	if entry.LineupID != acct.LineupID || (entry.Locked && acct.PINHash != "") || !acct.Sources.Uses(entry.SourceID) {
 		reply("", "nothing_to_play")
 		return
 	}

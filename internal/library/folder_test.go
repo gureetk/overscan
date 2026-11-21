@@ -80,7 +80,7 @@ func TestFolderFilms(t *testing.T) {
 	if got := shelfTitles(t, st, store.KindMovie); !reflect.DeepEqual(got, want) {
 		t.Errorf("shelves %v", got)
 	}
-	recent, err := st.RecentTitles(ctx, store.KindMovie, 5)
+	recent, err := st.RecentTitles(ctx, store.KindMovie, 5, store.EverySource)
 	if err != nil || len(recent) != 2 {
 		t.Fatalf("recent %+v, %v", recent, err)
 	}
@@ -144,7 +144,7 @@ func TestFolderSeries(t *testing.T) {
 	if got := shelfTitles(t, st, store.KindSeries); !reflect.DeepEqual(got, map[string][]string{"Home Films": {"Coastline"}}) {
 		t.Errorf("shelves %v", got)
 	}
-	recent, err := st.RecentTitles(ctx, store.KindSeries, 1)
+	recent, err := st.RecentTitles(ctx, store.KindSeries, 1, store.EverySource)
 	if err != nil || len(recent) != 1 {
 		t.Fatalf("recent %+v, %v", recent, err)
 	}

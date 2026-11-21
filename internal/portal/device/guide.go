@@ -4,6 +4,7 @@ package device
 
 import (
 	"errors"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -122,6 +123,15 @@ func (a *API) guide(w http.ResponseWriter, r *http.Request, d store.Device) {
 		a.internalError(w, "read the guide", err)
 		return
 	}
+	if acct.Sources.Only {
+		// Only the channels of the sources that the account uses (D114).
+		seen, err := a.store.AccountEntries(r.Context(), acct)
+		if err != nil {
+			a.internalError(w, "read the guide", err)
+			return
+		}
+		maps.DeleteFunc(byEntry, func(id int64, _ []store.Programme) bool { return !seen[id] })
+	}
 	resp := guideResponse{From: from.Unix(), To: to.Unix(), Channels: make(map[string][]programme, len(byEntry))}
 	for entryID, ps := range byEntry {
 		items := make([]programme, len(ps))
@@ -157,6 +167,16 @@ func (a *API) channelGuide(w http.ResponseWriter, r *http.Request, d store.Devic
 	if err != nil {
 		a.internalError(w, "look up account", err)
 		return
+	}
+	if acct.Sources.Only {
+		if err := a.store.AccountSees(r.Context(), acct, id); err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				writeError(w, http.StatusNotFound, errNotFound)
+			} else {
+				a.internalError(w, "read the guide", err)
+			}
+			return
+		}
 	}
 	ps, err := a.store.EntryProgrammes(r.Context(), acct.LineupID, id, from, to)
 	if errors.Is(err, store.ErrNotFound) {

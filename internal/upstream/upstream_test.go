@@ -238,7 +238,7 @@ func TestFilmsThroughTheHub(t *testing.T) {
 		if _, err := lib.Want(ctx, kind, 5*time.Second); err != nil {
 			t.Fatal(err)
 		}
-		shelves, err := st.Shelves(ctx, kind)
+		shelves, err := st.Shelves(ctx, kind, store.EverySource)
 		if err != nil {
 			t.Fatal(err)
 		}

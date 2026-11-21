@@ -152,7 +152,7 @@ func TestWantReadsOnce(t *testing.T) {
 	if !state.Ready() || state.Sources != 1 || state.Loading || state.Error != "" {
 		t.Fatalf("state %+v", state)
 	}
-	shelves, err := st.Shelves(ctx, store.KindMovie)
+	shelves, err := st.Shelves(ctx, store.KindMovie, store.EverySource)
 	if err != nil || len(shelves) != 2 {
 		t.Fatalf("shelves %+v, %v", shelves, err)
 	}
@@ -270,8 +270,8 @@ func TestOneRequestAtATime(t *testing.T) {
 	if _, err := l.Want(ctx, store.KindMovie, 5*time.Second); err != nil {
 		t.Fatal(err)
 	}
-	shelves, _ := st.Shelves(ctx, store.KindMovie)
-	titles, _ := st.ShelfTitles(ctx, store.KindMovie, shelves[0].ID, store.ByName)
+	shelves, _ := st.Shelves(ctx, store.KindMovie, store.EverySource)
+	titles, _ := st.ShelfTitles(ctx, store.KindMovie, shelves[0].ID, store.ByName, store.EverySource)
 	hold := make(chan struct{})
 	p.mu.Lock()
 	p.hold = hold
@@ -306,7 +306,7 @@ func TestOpenMovie(t *testing.T) {
 	if _, err := l.Want(ctx, store.KindMovie, 5*time.Second); err != nil {
 		t.Fatal(err)
 	}
-	recent, _ := st.RecentTitles(ctx, store.KindMovie, 1)
+	recent, _ := st.RecentTitles(ctx, store.KindMovie, 1, store.EverySource)
 	o, err := l.Open(ctx, recent[0].ID)
 	if err != nil {
 		t.Fatal(err)
@@ -337,8 +337,8 @@ func TestOpenSeries(t *testing.T) {
 	if _, err := l.Want(ctx, store.KindSeries, 5*time.Second); err != nil {
 		t.Fatal(err)
 	}
-	shelves, _ := st.Shelves(ctx, store.KindSeries)
-	titles, _ := st.ShelfTitles(ctx, store.KindSeries, shelves[0].ID, store.ByAdded)
+	shelves, _ := st.Shelves(ctx, store.KindSeries, store.EverySource)
+	titles, _ := st.ShelfTitles(ctx, store.KindSeries, shelves[0].ID, store.ByAdded, store.EverySource)
 	o, err := l.Open(ctx, titles[0].ID)
 	if err != nil {
 		t.Fatal(err)
@@ -363,7 +363,7 @@ func TestOpenGivesUpWithTheDevice(t *testing.T) {
 	if _, err := l.Want(context.Background(), store.KindMovie, 5*time.Second); err != nil {
 		t.Fatal(err)
 	}
-	recent, _ := st.RecentTitles(context.Background(), store.KindMovie, 1)
+	recent, _ := st.RecentTitles(context.Background(), store.KindMovie, 1, store.EverySource)
 	hold := make(chan struct{})
 	p.mu.Lock()
 	p.hold = hold
@@ -393,7 +393,7 @@ func TestOpenAsAReadEnds(t *testing.T) {
 	if _, err := l.Want(ctx, store.KindMovie, 5*time.Second); err != nil {
 		t.Fatal(err)
 	}
-	recent, _ := st.RecentTitles(ctx, store.KindMovie, 1)
+	recent, _ := st.RecentTitles(ctx, store.KindMovie, 1, store.EverySource)
 	before, err := st.Title(ctx, recent[0].ID)
 	if err != nil || before.Details != nil {
 		t.Fatalf("before %+v, %v", before, err)

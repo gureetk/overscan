@@ -40,7 +40,7 @@
         <span class="tile-icon{{if .IsEnded}} bad{{end}}">{{template "i-user"}}</span>
         <div class="profile-text">
           <strong>{{.Name}}</strong>
-          <span class="muted">{{.Devices}} {{plural .Devices "device"}} · {{.Profiles}} {{plural .Profiles "profile"}} · {{if .MaxStreams}}up to {{.MaxStreams}} {{plural .MaxStreams "stream"}} at once{{else}}any number of streams at once{{end}}{{if gt (len $.Data.Lineups) 1}} · sees {{.LineupName}}{{end}}{{with .LiveText}} · {{.}}{{end}}</span>
+          <span class="muted">{{.Devices}} {{plural .Devices "device"}} · {{.Profiles}} {{plural .Profiles "profile"}} · {{if .MaxStreams}}up to {{.MaxStreams}} {{plural .MaxStreams "stream"}} at once{{else}}any number of streams at once{{end}}{{if gt (len $.Data.Lineups) 1}} · sees {{.LineupName}}{{end}}{{with .SourcesText}} · {{.}}{{end}}{{with .LiveText}} · {{.}}{{end}}</span>
         </div>
         <div class="chips">
           {{- if .Username}}<span class="badge" title="Players sign in as {{.Username}}">Login</span>{{end}}
@@ -68,6 +68,23 @@
             <noscript><button type="submit">Save</button></noscript>
           </form>
           <p class="hint">What its devices and players see of live TV. Its favourites stay, for the channels that the lineup has. Lineups are made and edited on the Live TV page.</p>
+          {{- end}}
+
+          {{- if $.Data.Sources}}
+          <h3>Sources</h3>
+          <form method="post" action="/admin/accounts/{{.ID}}/sources" hx-post="/admin/accounts/{{.ID}}/sources" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="sources-form">
+            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+            <label class="check"><input type="checkbox" name="every" value="1"{{if not .Sources.Only}} checked{{end}}> Every source, and those added later</label>
+            <fieldset class="source-ticks">
+              <legend class="sr">The sources that {{.Name}} uses</legend>
+              {{- $acct := .}}
+              {{- range $.Data.Sources}}
+              <label class="check"><input type="checkbox" name="source" value="{{.ID}}"{{if $acct.Sources.Uses .ID}} checked{{end}}> {{.Name}} <span class="muted">{{.Kind}}</span></label>
+              {{- end}}
+            </fieldset>
+            <button type="submit">Save</button>
+          </form>
+          <p class="hint">Where its devices and players get channels, films and series. With only some sources, a channel shows when its own stream or a backup's comes from one of them, and plays from those alone.{{if and .Sources.Only (not .Sources.IDs)}} The sources it used were removed, so it sees nothing until you tick one.{{end}}</p>
           {{- end}}
 
           <h3>Streams at once</h3>

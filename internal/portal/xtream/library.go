@@ -57,7 +57,7 @@ func (o *Output) ready(ctx context.Context, acct store.Account, kind string) (sh
 	if err != nil || !state.Ready() {
 		return out, false, err
 	}
-	all, err := o.store.Shelves(ctx, kind)
+	all, err := o.store.Shelves(ctx, kind, acct.Sources)
 	if err != nil {
 		return out, false, err
 	}
@@ -327,7 +327,7 @@ func (o *Output) titles(w http.ResponseWriter, r *http.Request, acct store.Accou
 	// The first page is read before anything is sent, so that a failure
 	// can still be answered as one.
 	locks := acct.PINHash != ""
-	page, _, err := o.store.TitlePage(ctx, kind, shelfID, "", store.ByAdded, 0, titlePage, locks)
+	page, _, err := o.store.TitlePage(ctx, kind, shelfID, "", store.ByAdded, 0, titlePage, locks, acct.Sources)
 	if errors.Is(err, store.ErrNotFound) {
 		writeJSON(w, []any{})
 		return
@@ -344,7 +344,7 @@ func (o *Output) titles(w http.ResponseWriter, r *http.Request, acct store.Accou
 	num := 0
 	for offset := 0; ; offset += titlePage {
 		if offset > 0 {
-			if page, _, err = o.store.TitlePage(ctx, kind, shelfID, "", store.ByAdded, offset, titlePage, locks); err != nil {
+			if page, _, err = o.store.TitlePage(ctx, kind, shelfID, "", store.ByAdded, offset, titlePage, locks, acct.Sources); err != nil {
 				if ctx.Err() == nil {
 					// The answer has begun: all that can be done is to
 					// stop it.
@@ -377,8 +377,9 @@ func (o *Output) titles(w http.ResponseWriter, r *http.Request, acct store.Accou
 // and a series with its episodes, read from its source if Overscan has none
 // or they are old, as when a box opens it (D63), or what Overscan has if
 // the source takes longer than openWait. It returns store.ErrNotFound for
-// a title that is not of the kind, that players do not see, or that is
-// locked once the account has a PIN.
+// a title that is not of the kind, that players do not see, that is locked
+// once the account has a PIN, or whose source the account does not use
+// (D114), without reading anything of it.
 func (o *Output) open(ctx context.Context, acct store.Account, idText, kind string) (library.Opened, error) {
 	id, err := strconv.ParseInt(idText, 10, 64)
 	if err != nil || id <= 0 || o.library == nil {
@@ -388,7 +389,7 @@ func (o *Output) open(ctx context.Context, acct store.Account, idText, kind stri
 	if err != nil {
 		return library.Opened{}, err
 	}
-	if t.Kind != kind || t.Locked && acct.PINHash != "" {
+	if t.Kind != kind || t.Locked && acct.PINHash != "" || !acct.Sources.Uses(t.SourceID) {
 		return library.Opened{}, store.ErrNotFound
 	}
 	readCtx, cancel := context.WithTimeout(ctx, openWait)

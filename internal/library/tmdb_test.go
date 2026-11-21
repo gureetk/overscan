@@ -97,7 +97,7 @@ func withTMDBKey(t *testing.T, l *Library, st *store.Store, srv *httptest.Server
 // rowNamed returns the shelf row of the title with the name.
 func rowNamed(t *testing.T, st *store.Store, kind, name string) store.TitleRow {
 	t.Helper()
-	recent, err := st.RecentTitles(context.Background(), kind, 10)
+	recent, err := st.RecentTitles(context.Background(), kind, 10, store.EverySource)
 	if err != nil {
 		t.Fatal(err)
 	}

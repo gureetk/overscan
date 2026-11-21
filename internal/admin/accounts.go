@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -78,6 +79,10 @@ func accountStoreError(err error) error {
 		return badDevice(http.StatusNotFound, "no_such_account", "There is no such account.")
 	case errors.Is(err, store.ErrNoSuchProfile):
 		return badDevice(http.StatusBadRequest, "bad_output_profile", "Choose an output profile: %s.", profileNames())
+	case errors.Is(err, store.ErrNoSources):
+		return badDevice(http.StatusBadRequest, "bad_sources", "Tick one source at least, or choose every source.")
+	case errors.Is(err, store.ErrNoSuchSource):
+		return badDevice(http.StatusBadRequest, "bad_sources", "Choose among this server's sources.")
 	}
 	return err
 }
@@ -269,6 +274,57 @@ func (a *Admin) setOutputProfile(ctx context.Context, id int64, name string) (st
 	return acct, nil
 }
 
+// setAccountSources sets the sources that an account uses (D114). What its
+// devices, players and recordings play from a source that it no longer
+// uses stops.
+func (a *Admin) setAccountSources(ctx context.Context, id int64, u store.Sources) (store.Account, error) {
+	old, err := a.account(ctx, id)
+	if err != nil {
+		return store.Account{}, err
+	}
+	if err := a.store.SetAccountSources(ctx, id, u); err != nil {
+		return store.Account{}, accountStoreError(err)
+	}
+	acct, err := a.account(ctx, id)
+	if err != nil {
+		return store.Account{}, err
+	}
+	if acct.Sources.Only == old.Sources.Only && slices.Equal(acct.Sources.IDs, old.Sources.IDs) {
+		return acct, nil
+	}
+	names, err := a.sourceNames(ctx, acct.Sources)
+	if err != nil {
+		return store.Account{}, err
+	}
+	a.log.Info("an account's sources set in the admin", "account", acct.Name, "sources", names)
+	if a.streams != nil && acct.Sources.Only {
+		a.streams.StopSources(id, acct.Sources, "the account no longer uses the stream's source")
+	}
+	return acct, nil
+}
+
+// sourceNames names the sources that an account uses, as the log and the
+// Accounts page do: every source, or their names.
+func (a *Admin) sourceNames(ctx context.Context, u store.Sources) (string, error) {
+	if !u.Only {
+		return "every source", nil
+	}
+	sources, err := a.store.Sources(ctx)
+	if err != nil {
+		return "", err
+	}
+	var names []string
+	for _, src := range sources {
+		if u.Uses(src.ID) {
+			names = append(names, src.Name)
+		}
+	}
+	if len(names) == 0 {
+		return "no source", nil
+	}
+	return andList(names), nil
+}
+
 // setAccountExpiry sets when an account ends; the zero time means never
 // (D95).
 func (a *Admin) setAccountExpiry(ctx context.Context, id int64, t time.Time) (store.Account, error) {
@@ -454,6 +510,20 @@ type accountRow struct {
 // removed.
 func (r accountRow) Household() bool { return r.ID == householdAccount }
 
+// SourcesText says which sources it uses, if only some (D114), for its
+// card's summary.
+func (r accountRow) SourcesText() string {
+	switch {
+	case !r.Sources.Only:
+		return ""
+	case len(r.Sources.IDs) == 0:
+		return "no source"
+	case len(r.Sources.IDs) == 1:
+		return "1 source"
+	}
+	return strconv.Itoa(len(r.Sources.IDs)) + " sources"
+}
+
 // LiveText says how its devices and players get live channels, if not as
 // their sources send them (D110), for its card's summary.
 func (r accountRow) LiveText() string {
@@ -479,6 +549,9 @@ type accountsData struct {
 	// and TranscodeNote says why they would transcode nothing now.
 	OutputProfiles []profileOption
 	TranscodeNote  string
+	// Sources are the server's sources, which each account may use or not
+	// (D114).
+	Sources []sourceRow
 }
 
 // accountsData returns what the Accounts page shows; base is the portal's
@@ -524,6 +597,13 @@ func (a *Admin) accountsData(ctx context.Context, base string) (accountsData, er
 	}
 	if data.Anywhere, err = a.store.OutputsAnywhere(ctx); err != nil {
 		return accountsData{}, err
+	}
+	sources, err := a.store.Sources(ctx)
+	if err != nil {
+		return accountsData{}, err
+	}
+	for _, src := range sources {
+		data.Sources = append(data.Sources, sourceRow{Source: src})
 	}
 	for _, acct := range accounts {
 		row := accountRow{Account: acct, Devices: approved[acct.ID], ThemeName: themeNames[acct.ThemeID], IsEnded: acct.Ended(now),
@@ -665,6 +745,21 @@ func (a *Admin) accountAction(w http.ResponseWriter, r *http.Request, s store.Ad
 				notice = acct.Name + "'s players can read its playlist and guide at the addresses below."
 			}
 		}
+	case "sources":
+		u, perr := sourcesForm(r)
+		if perr != nil {
+			err = perr
+		} else if acct, err = a.setAccountSources(ctx, id, u); err == nil {
+			names, nerr := a.sourceNames(ctx, acct.Sources)
+			if nerr != nil {
+				err = nerr
+				break
+			}
+			notice = acct.Name + " uses " + names + " now."
+			if acct.Sources.Only {
+				notice += " What its devices and players played from another source has stopped."
+			}
+		}
 	case "live":
 		if acct, err = a.setOutputProfile(ctx, id, r.PostFormValue("output_profile")); err == nil {
 			notice = acct.Name + "'s devices and players get live channels " + profileText(acct.OutputProfile) +
@@ -749,6 +844,9 @@ type accountJSON struct {
 	// OutputProfile names how its devices and players get live channels
 	// (D110).
 	OutputProfile string `json:"output_profile"`
+	// Sources are the IDs of the sources that it uses (D114), null for
+	// every source.
+	Sources []int64 `json:"sources"`
 }
 
 // apiOutputs are the outputs that an account may use.
@@ -762,6 +860,9 @@ func (a *Admin) accountBody(ctx context.Context, acct store.Account) (accountJSO
 	out := accountJSON{ID: acct.ID, Name: acct.Name, LineupID: acct.LineupID, Token: acct.HasToken, MaxStreams: acct.MaxStreams,
 		Outputs: apiOutputs{M3U: acct.Outputs.M3U, Xtream: acct.Outputs.Xtream}, Ended: acct.Ended(a.now()),
 		PIN: acct.PINHash != "", ThemeID: acct.ThemeID, OutputProfile: acct.OutputProfile}
+	if acct.Sources.Only {
+		out.Sources = append([]int64{}, acct.Sources.IDs...)
+	}
 	if acct.Username != "" {
 		u := acct.Username
 		out.Username = &u
@@ -871,15 +972,25 @@ func (a *Admin) apiChangeAccount(w http.ResponseWriter, r *http.Request, _ store
 		ThemeID    *int64      `json:"theme_id"`
 		LineupID   *int64      `json:"lineup_id"`
 		Profile    *string     `json:"output_profile"`
+		// Sources is null for every source, or the IDs of some (D114).
+		Sources json.RawMessage `json:"sources"`
 	}
 	if !readJSON(w, r, &body) {
 		return
 	}
 	if body.Name == nil && body.MaxStreams == nil && body.Outputs == nil && body.ThemeID == nil && body.LineupID == nil &&
-		body.Profile == nil {
+		body.Profile == nil && body.Sources == nil {
 		apiError(w, http.StatusBadRequest, "bad_json",
-			"Say what to change: name, max_streams, outputs, theme_id, lineup_id or output_profile.")
+			"Say what to change: name, max_streams, outputs, theme_id, lineup_id, output_profile or sources.")
 		return
+	}
+	var sources store.Sources
+	if body.Sources != nil && string(body.Sources) != "null" {
+		sources.Only = true
+		if err := json.Unmarshal(body.Sources, &sources.IDs); err != nil {
+			apiError(w, http.StatusBadRequest, "bad_sources", "Give sources as null, for every source, or a list of source IDs.")
+			return
+		}
 	}
 	ctx := r.Context()
 	if _, err := a.account(ctx, id); a.apiFailed(w, err) {
@@ -906,6 +1017,12 @@ func (a *Admin) apiChangeAccount(w http.ResponseWriter, r *http.Request, _ store
 	}
 	if body.Profile != nil {
 		if _, err = a.setOutputProfile(ctx, id, *body.Profile); err != nil {
+			a.accountAnswer(w, r, id, err)
+			return
+		}
+	}
+	if body.Sources != nil {
+		if _, err = a.setAccountSources(ctx, id, sources); err != nil {
 			a.accountAnswer(w, r, id, err)
 			return
 		}
@@ -1049,4 +1166,21 @@ func (a *Admin) apiRemoveAccountPIN(w http.ResponseWriter, r *http.Request, _ st
 	}
 	_, err := a.setAccountPIN(r.Context(), id, "")
 	a.accountAnswer(w, r, id, err)
+}
+
+// sourcesForm reads the sources that an account uses from its card's form:
+// every source, or those ticked.
+func sourcesForm(r *http.Request) (store.Sources, error) {
+	if r.PostFormValue("every") != "" {
+		return store.EverySource, nil
+	}
+	u := store.Sources{Only: true}
+	for _, v := range r.PostForm["source"] {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || id <= 0 {
+			return store.Sources{}, badDevice(http.StatusBadRequest, "bad_sources", "Choose among this server's sources.")
+		}
+		u.IDs = append(u.IDs, id)
+	}
+	return u, nil
 }

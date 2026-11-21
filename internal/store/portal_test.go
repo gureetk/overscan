@@ -37,7 +37,7 @@ func portalItems(first, n, series int) []PortalItem {
 
 func shelfNames(t *testing.T, s *Store, kind string) []string {
 	t.Helper()
-	shelves, err := s.Shelves(context.Background(), kind)
+	shelves, err := s.Shelves(context.Background(), kind, EverySource)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestPortalShelves(t *testing.T) {
 	if got := shelfNames(t, s, KindMovie); !reflect.DeepEqual(got, want) {
 		t.Errorf("shelves %q, want %q", got, want)
 	}
-	shelves, _ := s.Shelves(ctx, KindMovie)
+	shelves, _ := s.Shelves(ctx, KindMovie, EverySource)
 	drama, err := s.PortalCategory(ctx, KindMovie, shelves[2].ID)
 	if err != nil || drama.Key != "vod:1" || drama.SourceID != portal || drama.Total != -1 || drama.Name != "Drama" {
 		t.Fatalf("portal category %+v, %v", drama, err)
@@ -126,10 +126,10 @@ func TestPortalShelves(t *testing.T) {
 
 	// The Xtream source's shelf leaves out the portal's titles of the same
 	// category name, and the portal's titles are among all of them.
-	if titles, _ := s.ShelfTitles(ctx, KindMovie, shelves[0].ID, ByName); len(titles) != 2 {
+	if titles, _ := s.ShelfTitles(ctx, KindMovie, shelves[0].ID, ByName, EverySource); len(titles) != 2 {
 		t.Errorf("the Xtream source's Drama has %d titles", len(titles))
 	}
-	if _, total, _ := s.TitlePage(ctx, KindMovie, 0, "", ByAdded, 0, 5, false); total != 4+19 {
+	if _, total, _ := s.TitlePage(ctx, KindMovie, 0, "", ByAdded, 0, 5, false, EverySource); total != 4+19 {
 		t.Errorf("%d films in all", total)
 	}
 

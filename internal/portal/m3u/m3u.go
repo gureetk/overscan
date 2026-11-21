@@ -338,7 +338,12 @@ func (o *Output) entryOf(w http.ResponseWriter, r *http.Request, acct store.Acco
 		http.NotFound(w, r)
 		return store.PlayableEntry{}, false
 	}
-	return entry, true
+	// Only its streams from the sources that the account uses (D114).
+	entry, ok = acct.Sources.For(entry)
+	if !ok {
+		http.NotFound(w, r)
+	}
+	return entry, ok
 }
 
 // entryFile reads a stream's file name, such as 123.ts.
@@ -391,7 +396,8 @@ func (o *Output) archive(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		o.failed(w, "look up a channel's archive", err)
 		return
-	case entry.LineupID != acct.LineupID, entry.Locked && acct.PINHash != "":
+	case entry.LineupID != acct.LineupID, entry.Locked && acct.PINHash != "", !acct.Sources.Uses(entry.SourceID):
+		// A past programme comes from the channel's own source (D114).
 		http.NotFound(w, r)
 		return
 	}

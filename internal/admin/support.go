@@ -325,8 +325,11 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	logins, limited, playlists, xtreams, otherLineup := 0, 0, 0, 0, 0
+	logins, limited, someSources, playlists, xtreams, otherLineup := 0, 0, 0, 0, 0, 0
 	for _, acct := range accounts {
+		if acct.Sources.Only {
+			someSources++
+		}
 		if acct.LineupID != lineup {
 			otherLineup++
 		}
@@ -405,7 +408,8 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 	fmt.Fprintf(&b, "Timeshift: keeps %d minutes of a box's channel (0 is off)\n", timeshift)
 	fmt.Fprintf(&b, "Shared tuner: %v\n", sharedTuner)
 	fmt.Fprintf(&b, "The household's end date: %s\n", ends)
-	fmt.Fprintf(&b, "Accounts: %d; with a login: %d; with a limit on streams: %d\n", len(accounts), logins, limited)
+	fmt.Fprintf(&b, "Accounts: %d; with a login: %d; with a limit on streams: %d; with only some sources: %d\n",
+		len(accounts), logins, limited, someSources)
 	allRules, householdRules := 0, 0
 	for _, l := range lineups {
 		allRules += l.Rules

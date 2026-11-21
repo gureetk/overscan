@@ -101,10 +101,10 @@ func Player(h *hub.Hub, accountID int64, output string, r *http.Request) int64 {
 }
 
 // Channels returns the channels that an account's players see: those its
-// lineup shows, without the locked ones once it has a parental PIN, since
-// a player cannot ask for one (D55).
+// lineup shows, of the sources it uses (D114), without the locked ones once
+// it has a parental PIN, since a player cannot ask for one (D55).
 func Channels(ctx context.Context, st *store.Store, acct store.Account) ([]store.LineupChannel, error) {
-	all, err := st.LineupChannels(ctx, acct.LineupID)
+	all, err := st.AccountChannels(ctx, acct)
 	if err != nil {
 		return nil, err
 	}

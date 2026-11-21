@@ -76,7 +76,7 @@ func TestLibraryPages(t *testing.T) {
 	rec := ta.do("POST", shelf+"hide", lineupForm(csrf, back), c, hx...)
 	mustContain(t, "hidden", rec.Body.String(), "Hid Drama: devices no longer see it, nor anything on it.",
 		"<strong>1</strong> of 3 films shown", `<span class="badge">`, "Show the shelf")
-	if shelves, _ := ta.st.Shelves(context.Background(), store.KindMovie); len(shelves) != 1 || shelves[0].Name != "Comedy" {
+	if shelves, _ := ta.st.Shelves(context.Background(), store.KindMovie, store.EverySource); len(shelves) != 1 || shelves[0].Name != "Comedy" {
 		t.Errorf("devices' shelves %+v", shelves)
 	}
 	rec = ta.do("POST", shelf+"rename", lineupForm(csrf, back, "name", "Serious Films"), c, hx...)
@@ -85,7 +85,7 @@ func TestLibraryPages(t *testing.T) {
 	mustContain(t, "shown", rec.Body.String(), "Showed Serious Films.")
 	rec = ta.do("POST", fmt.Sprintf("/admin/movies/shelves/%d/up", comedy), lineupForm(csrf, ""), c, hx...)
 	mustContain(t, "moved", rec.Body.String(), "Moved Comedy up.", "Sources' order")
-	if shelves, _ := ta.st.Shelves(context.Background(), store.KindMovie); len(shelves) != 2 || shelves[0].Name != "Comedy" ||
+	if shelves, _ := ta.st.Shelves(context.Background(), store.KindMovie, store.EverySource); len(shelves) != 2 || shelves[0].Name != "Comedy" ||
 		shelves[1].Name != "Serious Films" {
 		t.Errorf("devices' shelves %+v", shelves)
 	}
@@ -177,7 +177,7 @@ func TestLibraryAPI(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &ti); err != nil || !ti.Hidden || ti.Name != "The Long Field" {
 		t.Errorf("hidden: status %d, %s", rec.Code, rec.Body)
 	}
-	if found, _ := ta.st.SearchTitles(context.Background(), "long", 5); len(found) != 0 {
+	if found, _ := ta.st.SearchTitles(context.Background(), "long", 5, store.EverySource); len(found) != 0 {
 		t.Errorf("devices find a hidden title: %+v", found)
 	}
 
@@ -224,7 +224,7 @@ func TestLibraryLocks(t *testing.T) {
 	mustContain(t, "a shelf locked", rec.Body.String(), "Locked Drama: devices need the parental PIN for anything on it.",
 		"Unlock the shelf", `<span class="badge locked">`,
 		"The lock on a shelf or a title does nothing until there is a parental PIN.")
-	if shelves, _ := ta.st.Shelves(ctx, store.KindMovie); !shelves[0].Locked {
+	if shelves, _ := ta.st.Shelves(ctx, store.KindMovie, store.EverySource); !shelves[0].Locked {
 		t.Errorf("devices' shelves %+v", shelves)
 	}
 	byName := map[string]int64{}

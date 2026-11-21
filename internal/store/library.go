@@ -416,11 +416,15 @@ type Shelf struct {
 // Shelves returns the shelves of films or of series that devices see, by
 // the names and in the order that the administrator set, or else their
 // sources' (D79), leaving out those with nothing on them; a portal's
-// categories are on it until a page of them shows them empty.
-func (s *Store) Shelves(ctx context.Context, kind string) ([]Shelf, error) {
+// categories are on it until a page of them shows them empty. Only the
+// given sources' titles and categories count (D114).
+func (s *Store) Shelves(ctx context.Context, kind string, u Sources) ([]Shelf, error) {
 	if err := checkKind(kind); err != nil {
 		return nil, err
 	}
+	titlesFrom, titlesArgs := u.where("t.source_id")
+	portalFrom, portalArgs := u.where("c.source_id")
+	args := append(append(append([]any{kind}, titlesArgs...), kind), portalArgs...)
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, name, n, portal, locked FROM (
 			SELECT min(c.id) AS id, COALESCE(max(ss.name), c.name) AS name, count(t.id) AS n, 0 AS portal,
@@ -430,15 +434,15 @@ func (s *Store) Shelves(ctx context.Context, kind string) ([]Shelf, error) {
 				JOIN titles t ON t.category_id = c.id
 				JOIN sources s ON s.id = t.source_id
 				LEFT JOIN shelf_settings ss ON ss.kind = c.kind AND ss.shelf = 'name:' || c.name
-			WHERE c.kind = ? AND `+libraryShown+` AND `+mergedShelf+`
+			WHERE c.kind = ? AND `+libraryShown+` AND `+mergedShelf+` AND `+titlesFrom+`
 			GROUP BY c.name
 			UNION ALL
 			SELECT c.id, COALESCE(ss.name, c.name), COALESCE(c.total, -1), 1, c.source_id, c.position, ss.position, c.name,
 				COALESCE(ss.locked, 0)
 			FROM library_categories c JOIN sources s ON s.id = c.source_id
 				LEFT JOIN shelf_settings ss ON ss.kind = c.kind AND ss.shelf = 'category:' || c.id
-			WHERE c.kind = ? AND `+portalCategoryShown+` AND COALESCE(c.total, -1) <> 0)
-		ORDER BY place IS NULL, place, src, pos, own`, kind, kind)
+			WHERE c.kind = ? AND `+portalCategoryShown+` AND COALESCE(c.total, -1) <> 0 AND `+portalFrom+`)
+		ORDER BY place IS NULL, place, src, pos, own`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("store: %s shelves: %w", kind, err)
 	}
@@ -510,9 +514,10 @@ const (
 	ByName  = "name"  // A to Z
 )
 
-// ShelfTitles returns the titles on a shelf that devices see, the latest
-// added first or by name, and ErrNotFound for a shelf that does not exist.
-func (s *Store) ShelfTitles(ctx context.Context, kind string, shelfID int64, order string) ([]TitleRow, error) {
+// ShelfTitles returns the titles on a shelf that devices see, of the given
+// sources (D114), the latest added first or by name, and ErrNotFound for a
+// shelf that does not exist.
+func (s *Store) ShelfTitles(ctx context.Context, kind string, shelfID int64, order string, u Sources) ([]TitleRow, error) {
 	if err := checkKind(kind); err != nil {
 		return nil, err
 	}
@@ -528,46 +533,49 @@ func (s *Store) ShelfTitles(ctx context.Context, kind string, shelfID int64, ord
 	if order == ByName {
 		sort = "t.name COLLATE NOCASE, t.id"
 	}
+	bySource, args := u.where("t.source_id")
 	return s.titleRows(ctx, "shelf "+strconv.FormatInt(shelfID, 10), `
 		SELECT `+titleRowColumns+`
 		FROM library_categories c
 			JOIN titles t ON t.category_id = c.id
 			JOIN sources s ON s.id = t.source_id
-		WHERE c.kind = ? AND c.name = ? AND `+libraryShown+` AND `+mergedShelf+`
-		ORDER BY `+sort, kind, name)
+		WHERE c.kind = ? AND c.name = ? AND `+libraryShown+` AND `+mergedShelf+` AND `+bySource+`
+		ORDER BY `+sort, append([]any{kind, name}, args...)...)
 }
 
-// RecentTitles returns the films or series that their sources added last,
-// at most limit of them, the latest first. Titles whose source gives no
-// time are left out.
-func (s *Store) RecentTitles(ctx context.Context, kind string, limit int) ([]TitleRow, error) {
+// RecentTitles returns the films or series that the given sources added
+// last (D114), at most limit of them, the latest first. Titles whose source
+// gives no time are left out.
+func (s *Store) RecentTitles(ctx context.Context, kind string, limit int, u Sources) ([]TitleRow, error) {
 	if err := checkKind(kind); err != nil {
 		return nil, err
 	}
+	bySource, args := u.where("t.source_id")
 	return s.titleRows(ctx, "recent "+kind, `
 		SELECT `+titleRowColumns+`
 		FROM titles t JOIN sources s ON s.id = t.source_id
-		WHERE t.kind = ? AND t.added_at > 0 AND `+libraryShown+`
+		WHERE t.kind = ? AND t.added_at > 0 AND `+libraryShown+` AND `+bySource+`
 		ORDER BY t.added_at DESC, t.source_id, t.position
-		LIMIT ?`, kind, limit)
+		LIMIT ?`, append(append([]any{kind}, args...), limit)...)
 }
 
-// SearchTitles returns the films and series whose names hold text,
-// ignoring the case of letters A to Z, by name, at most limit of each
-// kind.
-func (s *Store) SearchTitles(ctx context.Context, text string, limit int) ([]TitleRow, error) {
+// SearchTitles returns the films and series of the given sources (D114)
+// whose names hold text, ignoring the case of letters A to Z, by name, at
+// most limit of each kind.
+func (s *Store) SearchTitles(ctx context.Context, text string, limit int, u Sources) ([]TitleRow, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return []TitleRow{}, nil
 	}
 	pattern := "%" + likeEscaper.Replace(text) + "%"
+	bySource, args := u.where("t.source_id")
 	return s.titleRows(ctx, "search titles", `
 		SELECT `+titleRowColumns+` FROM (
 			SELECT t.*, row_number() OVER (PARTITION BY t.kind ORDER BY t.name COLLATE NOCASE, t.id) AS n
 			FROM titles t JOIN sources s ON s.id = t.source_id
-			WHERE t.name LIKE ? ESCAPE '\' AND `+libraryShown+`) t
+			WHERE t.name LIKE ? ESCAPE '\' AND `+libraryShown+` AND `+bySource+`) t
 		WHERE t.n <= ?
-		ORDER BY t.kind, t.name COLLATE NOCASE, t.id`, pattern, limit)
+		ORDER BY t.kind, t.name COLLATE NOCASE, t.id`, append(append([]any{pattern}, args...), limit)...)
 }
 
 // TitleListing is a film or a series as a list of the Stalker API shows it:
@@ -581,23 +589,25 @@ type TitleListing struct {
 	Container  string        // a film's file extension, "" if not known
 }
 
-// TitlePage returns a page of the films or of the series that devices see:
-// those on a shelf, or all of them for shelf 0, whose names hold text if it
-// is not "" (ignoring the case of letters A to Z), in an order (ByAdded or
-// ByName), from offset, at most limit of them; and how many there are in
-// all. With unlocked, it leaves out the titles that are locked (D85). It
-// returns ErrNotFound for a shelf that does not exist.
+// TitlePage returns a page of the films or of the series that devices see,
+// of the given sources (D114): those on a shelf, or all of them for shelf
+// 0, whose names hold text if it is not "" (ignoring the case of letters A
+// to Z), in an order (ByAdded or ByName), from offset, at most limit of
+// them; and how many there are in all. With unlocked, it leaves out the
+// titles that are locked (D85). It returns ErrNotFound for a shelf that
+// does not exist.
 func (s *Store) TitlePage(ctx context.Context, kind string, shelfID int64, text, order string, offset, limit int,
-	unlocked bool) ([]TitleListing, int, error) {
+	unlocked bool, u Sources) ([]TitleListing, int, error) {
 	if err := checkKind(kind); err != nil {
 		return nil, 0, err
 	}
 	what := "page of " + kind
-	where := `t.kind = ? AND ` + libraryShown
+	bySource, args := u.where("t.source_id")
+	where := `t.kind = ? AND ` + libraryShown + ` AND ` + bySource
 	if unlocked {
 		where += ` AND NOT ` + titleLocked
 	}
-	args := []any{kind}
+	args = append([]any{kind}, args...)
 	if shelfID != 0 {
 		var name string
 		err := s.db.QueryRowContext(ctx, "SELECT name FROM library_categories WHERE id = ? AND kind = ?", shelfID, kind).Scan(&name)
@@ -1053,18 +1063,20 @@ type Watching struct {
 // ContinueWatching returns, the latest first and at most limit of them,
 // the films that a profile is part way through, or the series whose
 // latest episode it is part way through or has an episode after it, with
-// that episode if the profile finished the latest.
-func (s *Store) ContinueWatching(ctx context.Context, profileID int64, kind string, limit int) ([]Watching, error) {
+// that episode if the profile finished the latest; of the given sources
+// (D114).
+func (s *Store) ContinueWatching(ctx context.Context, profileID int64, kind string, limit int, u Sources) ([]Watching, error) {
 	if err := checkKind(kind); err != nil {
 		return nil, err
 	}
+	bySource, args := u.where("t.source_id")
 	var query string
 	if kind == KindMovie {
 		query = `
 			SELECT ` + titleRowColumns + `, ` + progressColumns + `
 			FROM progress p JOIN titles t ON t.id = p.title_id JOIN sources s ON s.id = t.source_id
 			WHERE p.profile_id = ? AND p.episode_id = 0 AND t.kind = 'movie' AND p.finished = 0 AND p.position > 0
-				AND ` + libraryShown + `
+				AND ` + libraryShown + ` AND ` + bySource + `
 			ORDER BY p.watched_at DESC LIMIT ?`
 	} else {
 		query = `
@@ -1079,11 +1091,11 @@ func (s *Store) ContinueWatching(ctx context.Context, profileID int64, kind stri
 					SELECT later.id FROM episodes later WHERE later.title_id = t.id AND later.missing_since IS NULL
 						AND (later.season, later.number) > (e.season, e.number)
 					ORDER BY later.season, later.number LIMIT 1)
-			WHERE p.n = 1 AND t.kind = 'series' AND ` + libraryShown + ` AND e.missing_since IS NULL
+			WHERE p.n = 1 AND t.kind = 'series' AND ` + libraryShown + ` AND ` + bySource + ` AND e.missing_since IS NULL
 				AND ((p.finished = 0 AND p.position > 0) OR n.id IS NOT NULL)
 			ORDER BY p.watched_at DESC LIMIT ?`
 	}
-	rows, err := s.db.QueryContext(ctx, query, profileID, limit)
+	rows, err := s.db.QueryContext(ctx, query, append(append([]any{profileID}, args...), limit)...)
 	if err != nil {
 		return nil, fmt.Errorf("store: continue watching %s: %w", kind, err)
 	}

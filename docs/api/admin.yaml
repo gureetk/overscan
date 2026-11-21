@@ -818,14 +818,16 @@ paths:
     patch:
       tags: [accounts]
       operationId: changeAccount
-      summary: Rename an account, or change its limit, outputs, theme or lineup
+      summary: Rename an account, or change its limit, outputs, theme, lineup or sources
       description: >-
         `max_streams` is the most streams that its devices and players play at once, 1 to 100, or 0 for any number;
         a device that starts another stream at the limit replaces its own oldest, and another device's is refused
         (`account_limit` in the device API, `limit` in the Stalker API). `outputs` says which outputs it may use, all
         off at first; `theme_id` is the theme of its boxes, 0 for Overscan's own (D97). `lineup_id` is the lineup it
         sees (D106): the favourites of its profiles and the lists of what its devices watched move to the same
-        channels in it, and those that it lacks are forgotten.
+        channels in it, and those that it lacks are forgotten. `sources` are the IDs of the sources that it uses
+        (D114), one at least, or null for every source; what its devices, players and recordings play from
+        another source stops.
       security:
         - session: []
           csrf: []
@@ -855,6 +857,12 @@ paths:
                   minimum: 1
                 output_profile:
                   $ref: "#/components/schemas/OutputProfile"
+                sources:
+                  type: ["array", "null"]
+                  minItems: 1
+                  items:
+                    type: integer
+                    minimum: 1
       responses:
         "200":
           $ref: "#/components/responses/OverscanAccount"
@@ -3243,7 +3251,7 @@ components:
           description: How many of them read it.
     OverscanAccount:
       type: object
-      required: [id, name, lineup_id, username, token, max_streams, outputs, expires_at, ended, pin, theme_id, devices, profiles, output_profile]
+      required: [id, name, lineup_id, username, token, max_streams, outputs, expires_at, ended, pin, theme_id, devices, profiles, output_profile, sources]
       properties:
         id:
           type: integer
@@ -3281,6 +3289,17 @@ components:
           $ref: "#/components/schemas/OutputProfile"
         profiles:
           type: integer
+        sources:
+          type: ["array", "null"]
+          items:
+            type: integer
+          description: >-
+            The IDs of the sources that it uses (D114), in order, or null for
+            every source, those added later too. Its devices and players list
+            and play only what comes from them: a channel shows when its own
+            stream or a backup's does, and plays from those streams alone; its
+            past programmes come from its own source. A list is empty only
+            when the sources it used were removed.
     AccountOutputs:
       type: object
       additionalProperties: false
@@ -4525,10 +4544,11 @@ components:
             $ref: "#/components/schemas/OverscanAccount"
     AccountMistake:
       description: >-
-        A name, username, password, PIN, date or limit that the account
-        cannot have (`bad_name`, `bad_username`, `bad_password`,
-        `password_in_use`, `bad_pin`, `bad_date`, `bad_streams`), or a body
-        that is not the JSON the path takes (`bad_json`).
+        A name, username, password, PIN, date, limit or sources that the
+        account cannot have (`bad_name`, `bad_username`, `bad_password`,
+        `password_in_use`, `bad_pin`, `bad_date`, `bad_streams`,
+        `bad_sources`), or a body that is not the JSON the path takes
+        (`bad_json`).
       content:
         application/json:
           schema:

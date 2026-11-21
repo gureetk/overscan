@@ -103,18 +103,18 @@ func (a *API) getCategories(w http.ResponseWriter, r *http.Request, d store.Devi
 	}
 	out = append(out, genre{ID: "*", Title: "All", Censored: "0"})
 	if state.Ready() {
-		shelves, err := a.store.Shelves(r.Context(), kind)
-		if err != nil {
-			a.internalError(w, "list the shelves", err)
-			return
-		}
-		locks, err := a.locksApply(r.Context(), d)
+		acct, err := a.store.Account(r.Context(), d.AccountID)
 		if err != nil {
 			a.internalError(w, "look up account", err)
 			return
 		}
+		shelves, err := a.store.Shelves(r.Context(), kind, acct.Sources)
+		if err != nil {
+			a.internalError(w, "list the shelves", err)
+			return
+		}
 		for _, s := range shelves {
-			if s.Locked && locks {
+			if s.Locked && locks(acct) {
 				continue
 			}
 			out = append(out, genre{ID: strconv.FormatInt(s.ID, 10), Title: s.Name, Censored: "0"})
@@ -123,13 +123,10 @@ func (a *API) getCategories(w http.ResponseWriter, r *http.Request, d store.Devi
 	writeJS(w, out)
 }
 
-// locksApply reports whether d's account has a parental PIN, so that what
-// is locked is left out, since Stalker clients have no way to ask for it
-// (D55, D85).
-func (a *API) locksApply(ctx context.Context, d store.Device) (bool, error) {
-	acct, err := a.store.Account(ctx, d.AccountID)
-	return acct.PINHash != "", err
-}
+// locks reports whether an account has a parental PIN, so that what is
+// locked is left out, since Stalker clients have no way to ask for it (D55,
+// D85).
+func locks(acct store.Account) bool { return acct.PINHash != "" }
 
 // getTitles answers vod/get_ordered_list and series/get_ordered_list: a page
 // of the films or series in a category ("*" for all of them), the latest
@@ -143,7 +140,7 @@ func (a *API) getTitles(w http.ResponseWriter, r *http.Request, d store.Device, 
 	if err != nil || p < 1 {
 		p = 1
 	}
-	locks, err := a.locksApply(ctx, d)
+	acct, err := a.store.Account(ctx, d.AccountID)
 	if err != nil {
 		a.internalError(w, "look up account", err)
 		return
@@ -151,7 +148,7 @@ func (a *API) getTitles(w http.ResponseWriter, r *http.Request, d store.Device, 
 	empty := titlePage[vodItem]{MaxPageItems: pageSize, Data: []vodItem{}}
 	if id := r.Form.Get("movie_id"); id != "" && id != "0" {
 		if kind == store.KindSeries {
-			a.getSeasons(w, r, id, p, locks)
+			a.getSeasons(w, r, id, p, acct)
 			return
 		}
 		writeJS(w, empty)
@@ -180,8 +177,12 @@ func (a *API) getTitles(w http.ResponseWriter, r *http.Request, d store.Device, 
 	if shelf != 0 {
 		cat, err := a.store.PortalCategory(ctx, kind, shelf)
 		switch {
+		case err == nil && !acct.Sources.Uses(cat.SourceID):
+			// A shelf of a source that the account does not use (D114).
+			writeJS(w, empty)
+			return
 		case err == nil && search == "":
-			a.getPortalTitles(w, r, kind, cat, p, locks)
+			a.getPortalTitles(w, r, kind, cat, p, locks(acct))
 			return
 		case err == nil:
 			// A portal is not searched: what was read of it is, with all
@@ -192,7 +193,7 @@ func (a *API) getTitles(w http.ResponseWriter, r *http.Request, d store.Device, 
 			return
 		}
 	}
-	titles, total, err := a.store.TitlePage(ctx, kind, shelf, search, order, (p-1)*pageSize, pageSize, locks)
+	titles, total, err := a.store.TitlePage(ctx, kind, shelf, search, order, (p-1)*pageSize, pageSize, locks(acct), acct.Sources)
 	if errors.Is(err, store.ErrNotFound) {
 		writeJS(w, empty)
 		return
@@ -201,7 +202,7 @@ func (a *API) getTitles(w http.ResponseWriter, r *http.Request, d store.Device, 
 		a.internalError(w, "list titles", err)
 		return
 	}
-	shelves, err := a.shelfIDs(ctx, kind)
+	shelves, err := a.shelfIDs(ctx, kind, acct.Sources)
 	if err != nil {
 		a.internalError(w, "list the shelves", err)
 		return
@@ -256,9 +257,9 @@ func (s shelfIDs) of(t store.TitleListing) string {
 	return s.byName[t.Shelf]
 }
 
-// shelfIDs returns the IDs of the shelves of a kind.
-func (a *API) shelfIDs(ctx context.Context, kind string) (shelfIDs, error) {
-	shelves, err := a.store.Shelves(ctx, kind)
+// shelfIDs returns the IDs of the shelves of a kind, of the given sources.
+func (a *API) shelfIDs(ctx context.Context, kind string, u store.Sources) (shelfIDs, error) {
+	shelves, err := a.store.Shelves(ctx, kind, u)
 	if err != nil {
 		return shelfIDs{}, err
 	}
@@ -323,15 +324,15 @@ func listedItem(r *http.Request, t store.TitleListing, category string) vodItem 
 // the series' details and episodes from its source, if it has none or they
 // are old, as when a box opens it (D63); if the source is slow, it lists
 // what it has.
-func (a *API) getSeasons(w http.ResponseWriter, r *http.Request, movieID string, p int, locks bool) {
+func (a *API) getSeasons(w http.ResponseWriter, r *http.Request, movieID string, p int, acct store.Account) {
 	empty := titlePage[seasonItem]{MaxPageItems: pageSize, Data: []seasonItem{}}
 	id, err := strconv.ParseInt(movieID, 10, 64)
 	if err != nil || id <= 0 || a.library == nil {
 		writeJS(w, empty)
 		return
 	}
-	o, err := a.openSeries(r.Context(), id)
-	if errors.Is(err, store.ErrNotFound) || err == nil && o.Locked && locks {
+	o, err := a.openSeries(r.Context(), id, acct.Sources)
+	if errors.Is(err, store.ErrNotFound) || err == nil && o.Locked && locks(acct) {
 		writeJS(w, empty)
 		return
 	}
@@ -339,7 +340,7 @@ func (a *API) getSeasons(w http.ResponseWriter, r *http.Request, movieID string,
 		a.libraryError(w, r, "open a series", err)
 		return
 	}
-	shelves, err := a.shelfIDs(r.Context(), store.KindSeries)
+	shelves, err := a.shelfIDs(r.Context(), store.KindSeries, acct.Sources)
 	if err != nil {
 		a.internalError(w, "list the shelves", err)
 		return
@@ -370,13 +371,14 @@ func (a *API) getSeasons(w http.ResponseWriter, r *http.Request, movieID string,
 // openSeries returns a series with its episodes, read from its source if
 // Overscan has none or they are old, or what Overscan has if the source
 // takes longer than openWait. It returns store.ErrNotFound for a title that
-// is not a series that devices see, without reading anything of it.
-func (a *API) openSeries(ctx context.Context, id int64) (library.Opened, error) {
+// is not a series that devices see, or whose source is not one of the
+// given sources (D114), without reading anything of it.
+func (a *API) openSeries(ctx context.Context, id int64, u store.Sources) (library.Opened, error) {
 	t, err := a.store.Title(ctx, id)
 	if err != nil {
 		return library.Opened{}, err
 	}
-	if t.Kind != store.KindSeries {
+	if t.Kind != store.KindSeries || !u.Uses(t.SourceID) {
 		return library.Opened{}, store.ErrNotFound
 	}
 	readCtx, cancel := context.WithTimeout(ctx, openWait)
@@ -470,13 +472,20 @@ func (a *API) createTitleLink(w http.ResponseWriter, r *http.Request, d store.De
 		reply("", "nothing_to_play")
 		return
 	}
+	acct, err := a.store.Account(ctx, d.AccountID)
+	if err != nil {
+		a.internalError(w, "look up account", err)
+		return
+	}
 	var item store.PlayableItem
-	var err error
 	if seasonNumber < 0 {
 		item, err = a.store.PlayableMovie(ctx, id)
 	} else {
 		n, _ := strconv.Atoi(r.Form.Get("series"))
-		item, err = a.episodeOf(ctx, id, seasonNumber, n)
+		item, err = a.episodeOf(ctx, id, seasonNumber, n, acct.Sources)
+	}
+	if err == nil && !acct.Sources.Uses(item.SourceID) {
+		err = store.ErrNotFound // a source that the account does not use (D114)
 	}
 	if errors.Is(err, store.ErrNotFound) {
 		reply("", "nothing_to_play")
@@ -486,16 +495,9 @@ func (a *API) createTitleLink(w http.ResponseWriter, r *http.Request, d store.De
 		a.libraryError(w, r, "look up a title to play", err)
 		return
 	}
-	if item.Locked {
-		locks, err := a.locksApply(ctx, d)
-		if err != nil {
-			a.internalError(w, "look up account", err)
-			return
-		}
-		if locks {
-			reply("", "nothing_to_play")
-			return
-		}
+	if item.Locked && locks(acct) {
+		reply("", "nothing_to_play")
+		return
 	}
 	if a.hub.Room(r.Context(), item.SourceID, d.ID) != nil {
 		reply("", "limit")
@@ -506,15 +508,23 @@ func (a *API) createTitleLink(w http.ResponseWriter, r *http.Request, d store.De
 
 // episodeOf returns the episode of a series that a season's number and an
 // episode's number in it name (see numberedSeasons), or the season's first
-// for a number below 1. A series whose episodes Overscan has not read yet
-// is opened first.
-func (a *API) episodeOf(ctx context.Context, seriesID int64, seasonNumber, n int) (store.PlayableItem, error) {
+// for a number below 1, if the series' source is one of the given sources
+// (D114). A series whose episodes Overscan has not read yet is opened
+// first.
+func (a *API) episodeOf(ctx context.Context, seriesID int64, seasonNumber, n int, u store.Sources) (store.PlayableItem, error) {
+	t, err := a.store.Title(ctx, seriesID)
+	if err != nil {
+		return store.PlayableItem{}, err
+	}
+	if !u.Uses(t.SourceID) {
+		return store.PlayableItem{}, store.ErrNotFound
+	}
 	episodes, err := a.store.Episodes(ctx, seriesID)
 	if err != nil {
 		return store.PlayableItem{}, err
 	}
 	if len(episodes) == 0 {
-		o, err := a.openSeries(ctx, seriesID)
+		o, err := a.openSeries(ctx, seriesID, u)
 		if err != nil {
 			return store.PlayableItem{}, err
 		}
