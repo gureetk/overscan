@@ -95,6 +95,11 @@ type Settings struct {
 	// (D81): "" for the one that an Xtream server gives, or else UTC; or an
 	// IANA name, such as UTC or Europe/London.
 	CatchupZone string
+	// PublicOnly keeps every request that Overscan makes for the source off
+	// the server's own networks (D121): its address, guide, streams and
+	// pictures, and every address they lead to, may be public ones only.
+	// A folder is on the server itself, so it never is.
+	PublicOnly bool
 }
 
 // Device is a box as a provider registered it with a Stalker portal: its MAC
@@ -119,6 +124,9 @@ func (s Settings) WithDefaults() Settings {
 	}
 	if s.Numbers == "" {
 		s.Numbers = NumbersPlaylist
+	}
+	if s.Type == TypeFolder {
+		s.PublicOnly = false
 	}
 	return s
 }

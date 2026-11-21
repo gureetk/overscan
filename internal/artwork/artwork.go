@@ -34,6 +34,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"overscan.gureet.ca/internal/netguard"
 )
 
 // Limits.
@@ -166,7 +168,7 @@ func (c *Cache) Logo(ctx context.Context, address, userAgent string) (string, st
 // source's, "" for Overscan's own. A fetch that failed is not tried again
 // for an hour.
 func (c *Cache) Get(ctx context.Context, kind Kind, address, userAgent string) (string, string, error) {
-	return c.GetWith(ctx, kind, address, func() ([]byte, error) { return c.get(address, userAgent) })
+	return c.GetWith(ctx, kind, address, func() ([]byte, error) { return c.get(address, userAgent, false) })
 }
 
 // GetWith is Get for a picture that read gives, such as one in a folder of
@@ -278,8 +280,9 @@ func (c *Cache) store(kind Kind, key string, read func() ([]byte, error)) error 
 	return ErrUnusable
 }
 
-// get fetches an image, at most maxFetchBytes of it.
-func (c *Cache) get(address, userAgent string) ([]byte, error) {
+// get fetches an image, at most maxFetchBytes of it, from a public address
+// only if publicOnly (D121).
+func (c *Cache) get(address, userAgent string, publicOnly bool) ([]byte, error) {
 	u, err := url.Parse(address)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return nil, ErrUnusable
@@ -292,7 +295,7 @@ func (c *Cache) get(address, userAgent string) ([]byte, error) {
 		userAgent = c.userAgent
 	}
 	req.Header.Set("User-Agent", userAgent)
-	resp, err := c.client.Do(req)
+	resp, err := netguard.Client(c.client, publicOnly).Do(req)
 	if err != nil {
 		var uerr *url.Error
 		if errors.As(err, &uerr) {

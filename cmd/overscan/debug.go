@@ -24,6 +24,7 @@ import (
 	"overscan.gureet.ca/internal/config"
 	"overscan.gureet.ca/internal/diagnose"
 	"overscan.gureet.ca/internal/hub"
+	"overscan.gureet.ca/internal/netguard"
 	"overscan.gureet.ca/internal/store"
 	"overscan.gureet.ca/internal/upstream"
 )
@@ -192,6 +193,9 @@ func debugChannel(ctx context.Context, cfg config.Config, args []string, stdout,
 	}))
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.ResponseHeaderTimeout = 15 * time.Second
+	// As the hub would fetch it: from a public address only, if the source
+	// says so (D121).
+	client := netguard.Client(&http.Client{Transport: transport}, known[entry.SourceID].PublicOnly)
 	report := diagnose.Report{Number: number, Name: entry.Name, Source: sourceName, For: *length}
 	streams := hub.New(st, hubLog, version, known)
 	if known[entry.SourceID].Resolves {
@@ -203,10 +207,10 @@ func debugChannel(ctx context.Context, cfg config.Config, args []string, stdout,
 		if res, err := links.Resolve(ctx, entry.SourceID, hub.PlaysChannel, entry.StreamURL); err != nil {
 			report.Upstream = diagnose.SourceReport{Err: "the portal gave no address: " + err.Error()}
 		} else {
-			report.Upstream = diagnose.Source(ctx, &http.Client{Transport: transport}, res.Address, userAgent)
+			report.Upstream = diagnose.Source(ctx, client, res.Address, userAgent)
 		}
 	} else {
-		report.Upstream = diagnose.Source(ctx, &http.Client{Transport: transport}, entry.StreamURL, userAgent)
+		report.Upstream = diagnose.Source(ctx, client, entry.StreamURL, userAgent)
 	}
 	repaired := which == hub.RepairAll || (which == hub.RepairSet && entry.Repair)
 	switch {

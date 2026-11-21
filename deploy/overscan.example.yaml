@@ -104,6 +104,11 @@ ffmpeg: ffmpeg
 #     # channels' archives, for past programmes (D81): UTC if not set for a
 #     # playlist, and the server's own for an Xtream server. Optional.
 #     # catchup_zone: Europe/London
+#     # Keep every request for the source to public addresses (D121): its
+#     # playlist, guide, streams and logos, and every address they lead to,
+#     # may not be on the server's own networks. For a provider on the
+#     # internet. Optional; false if not set.
+#     # public_only: true
 #
 #   # A server that answers the Xtream API (D50). Its address is only the
 #   # server's, without a page; the login has its own fields. Overscan asks

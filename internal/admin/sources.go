@@ -244,6 +244,7 @@ type apiSource struct {
 	Numbers             string  `json:"numbers"`
 	CatchupZone         string  `json:"catchup_zone"`
 	NewCategoriesHidden bool    `json:"new_categories_hidden"`
+	PublicOnly          bool    `json:"public_only"`
 	Channels            int     `json:"channels"`
 	RefreshedAt         *string `json:"refreshed_at"`
 	RefreshError        string  `json:"refresh_error"`
@@ -317,7 +318,8 @@ var addressNames = map[store.AddressState]string{
 func sourceBody(s store.Source, reads libraryReads) apiSource {
 	out := apiSource{ID: s.ID, Name: s.Name, Type: s.Type, Host: s.Host, Address: addressNames[s.Address], Enabled: s.Enabled,
 		MaxConnections: s.MaxConnections, RefreshSeconds: int64(s.Refresh / time.Second), UserAgent: s.UserAgent,
-		Numbers: s.Numbers, CatchupZone: s.CatchupZone, NewCategoriesHidden: s.NewCategoriesHidden, Channels: s.Channels,
+		Numbers: s.Numbers, CatchupZone: s.CatchupZone, NewCategoriesHidden: s.NewCategoriesHidden, PublicOnly: s.PublicOnly,
+		Channels:     s.Channels,
 		RefreshError: s.RefreshError,
 		StreamLimit:  s.StreamLimit(), Account: accountBody(s.Account),
 		Guide: apiGuide{Listed: s.Guide.Listed, Error: s.Guide.Error, Channels: s.Guide.Channels, Programmes: s.Guide.Programmes}}
@@ -401,6 +403,7 @@ type apiSourceChange struct {
 	CatchupZone         *string `json:"catchup_zone"`
 	Enabled             *bool   `json:"enabled"`
 	NewCategoriesHidden *bool   `json:"new_categories_hidden"`
+	PublicOnly          *bool   `json:"public_only"`
 	// A Stalker portal's box (D76).
 	MAC       *string `json:"mac"`
 	Serial    *string `json:"serial"`
@@ -415,7 +418,7 @@ type apiSourceChange struct {
 func (c apiSourceChange) changesSettings() bool {
 	return c.Name != nil || c.Type != nil || c.URL != nil || c.Username != nil || c.Password != nil ||
 		c.UserAgent != nil || c.MaxConnections != nil || c.RefreshSeconds != nil || c.Numbers != nil || c.CatchupZone != nil ||
-		c.MAC != nil || c.Serial != nil || c.DeviceID != nil || c.DeviceID2 != nil || c.Signature != nil || c.Model != nil
+		c.PublicOnly != nil || c.MAC != nil || c.Serial != nil || c.DeviceID != nil || c.DeviceID2 != nil || c.Signature != nil || c.Model != nil
 }
 
 // newSettings returns the settings of a new source that the body describes:
@@ -466,6 +469,9 @@ func (c apiSourceChange) apply(s source.Settings) source.Settings {
 	}
 	if c.RefreshSeconds != nil {
 		s.Refresh = time.Duration(*c.RefreshSeconds) * time.Second
+	}
+	if c.PublicOnly != nil {
+		s.PublicOnly = *c.PublicOnly
 	}
 	return s
 }
@@ -1127,6 +1133,9 @@ func formSettings(r *http.Request) (source.Settings, error) {
 	}
 	if settings.Type == source.TypeXtream || settings.Type == source.TypeM3U {
 		settings.CatchupZone = strings.TrimSpace(r.PostFormValue("catchup_zone"))
+	}
+	if settings.Type != source.TypeFolder {
+		settings.PublicOnly = r.PostFormValue("public_only") == "1"
 	}
 	n, present, ok := formInt(r, limit)
 	if !ok {

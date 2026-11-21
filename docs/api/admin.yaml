@@ -3728,7 +3728,7 @@ components:
     Source:
       type: object
       required: [id, name, type, host, address, enabled, max_connections, refresh_seconds, user_agent, numbers,
-        new_categories_hidden, channels, refreshed_at, refresh_error, stream_limit, account, guide, films, series]
+        new_categories_hidden, public_only, channels, refreshed_at, refresh_error, stream_limit, account, guide, films, series]
       properties:
         id:
           type: integer
@@ -3784,6 +3784,12 @@ components:
         new_categories_hidden:
           type: boolean
           description: Whether the categories that it adds later start hidden in the lineup (D47).
+        public_only:
+          type: boolean
+          description: >-
+            Whether every request for the source may reach public addresses
+            only (D121): none on the server's own networks. Always false for
+            a folder.
         channels:
           type: integer
           description: The channels it lists now; 0 for a Jellyfin or a Plex source or a folder.
@@ -4152,6 +4158,11 @@ components:
           type: boolean
         new_categories_hidden:
           type: boolean
+        public_only:
+          type: boolean
+          description: >-
+            Keep every request for the source to public addresses (D121);
+            ignored for a folder.
     Error:
       type: object
       required: [error, message]

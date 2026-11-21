@@ -173,17 +173,18 @@ func (s *Store) SearchProgrammes(ctx context.Context, lineupID int64, query stri
 }
 
 // EntryLogo returns the logo address of a lineup entry that devices see,
-// "" if its channel has none, with the user agent its source asks for, ""
-// for Overscan's own. It returns ErrNotFound for an entry that devices do
-// not see.
-func (s *Store) EntryLogo(ctx context.Context, entryID int64) (logo, userAgent string, err error) {
-	err = s.db.QueryRowContext(ctx, "SELECT "+entryLogo+", s.user_agent"+lineupEntryJoins+" WHERE e.id = ? AND "+shownEntry,
-		entryID).Scan(&logo, &userAgent)
+// "" if its channel has none, with its channel's source: the user agent it
+// asks for, "" for Overscan's own, and whether it may reach public
+// addresses only (D121). It returns ErrNotFound for an entry that devices
+// do not see.
+func (s *Store) EntryLogo(ctx context.Context, entryID int64) (logo string, src ArtSource, err error) {
+	err = s.db.QueryRowContext(ctx, "SELECT "+entryLogo+", s.id, s.type, s.user_agent, s.public_only"+lineupEntryJoins+
+		" WHERE e.id = ? AND "+shownEntry, entryID).Scan(&logo, &src.ID, &src.Type, &src.UserAgent, &src.PublicOnly)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", "", ErrNotFound
+		return "", ArtSource{}, ErrNotFound
 	}
 	if err != nil {
-		return "", "", fmt.Errorf("store: logo of lineup entry %d: %w", entryID, err)
+		return "", ArtSource{}, fmt.Errorf("store: logo of lineup entry %d: %w", entryID, err)
 	}
-	return logo, userAgent, nil
+	return logo, src, nil
 }

@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"overscan.gureet.ca/internal/netguard"
 	"overscan.gureet.ca/internal/source"
 )
 
@@ -49,7 +50,7 @@ func New(settings source.Settings, client *http.Client, userAgent string) *Clien
 		userAgent = settings.UserAgent
 	}
 	return &Client{
-		http:         client,
+		http:         netguard.Client(client, settings.PublicOnly),
 		server:       strings.TrimRight(settings.URL, "/"),
 		username:     settings.Username,
 		password:     settings.Password,

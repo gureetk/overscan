@@ -14,6 +14,7 @@ import (
 
 	"overscan.gureet.ca/internal/adapters/jellyfin"
 	"overscan.gureet.ca/internal/media"
+	"overscan.gureet.ca/internal/netguard"
 )
 
 // Films and episodes whose video a box cannot play, from a source whose
@@ -103,7 +104,7 @@ func (h *Hub) serveTranscoded(w http.ResponseWriter, r *http.Request, s *session
 	req.Header.Set("User-Agent", ua)
 	h.log.Info("a title's source transcodes it", append(about, "from", clockTime(from), "track", track)...)
 	started := h.now()
-	resp, err := h.transcodes.Do(req)
+	resp, err := netguard.Client(h.transcodes, h.source(s.sourceID).PublicOnly).Do(req)
 	if err != nil {
 		if ctx.Err() == nil {
 			h.log.Warn("cannot reach a title's source to transcode it", append(about, "error", fetchError(err))...)
@@ -166,7 +167,7 @@ func (h *Hub) stopTranscode(s *session, device, playSession string) {
 			return
 		}
 		req.Header.Set("User-Agent", ua)
-		resp, err := h.client.Do(req)
+		resp, err := h.clientFor(s).Do(req)
 		if err != nil {
 			if !errors.Is(err, context.Canceled) {
 				h.log.Debug("cannot ask a title's source to stop transcoding it", "title", s.channel, "error", fetchError(err))

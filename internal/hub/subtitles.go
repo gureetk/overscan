@@ -107,7 +107,7 @@ func (h *Hub) fetchSubtitles(ctx context.Context, s *session, address string) ([
 		ua = h.userAgent
 	}
 	req.Header.Set("User-Agent", ua)
-	resp, err := h.client.Do(req)
+	resp, err := h.clientFor(s).Do(req)
 	if err != nil {
 		return nil, fetchError(err)
 	}

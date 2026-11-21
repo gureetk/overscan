@@ -88,17 +88,18 @@ func (p *Pool) Forget(keep func(id int64) bool) {
 // gives it; New makes it UTC where the server's zone has no such name.
 func FromSettings(s source.Settings) Config {
 	return Config{
-		Portal:    s.URL,
-		MAC:       s.Device.MAC,
-		Serial:    s.Device.Serial,
-		DeviceID:  s.Device.DeviceID,
-		DeviceID2: s.Device.DeviceID2,
-		Signature: s.Device.Signature,
-		Model:     s.Device.Model,
-		Login:     s.Username,
-		Password:  s.Password,
-		UserAgent: s.UserAgent,
-		TimeZone:  localZone(),
+		Portal:     s.URL,
+		MAC:        s.Device.MAC,
+		Serial:     s.Device.Serial,
+		DeviceID:   s.Device.DeviceID,
+		DeviceID2:  s.Device.DeviceID2,
+		Signature:  s.Device.Signature,
+		Model:      s.Device.Model,
+		Login:      s.Username,
+		Password:   s.Password,
+		UserAgent:  s.UserAgent,
+		TimeZone:   localZone(),
+		PublicOnly: s.PublicOnly,
 	}
 }
 
