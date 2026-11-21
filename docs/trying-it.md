@@ -1,6 +1,6 @@
 # Trying Overscan
 
-Overscan is in early development. This page says how to try what works so far with the channels of an M3U playlist, an Xtream server or a provider's Stalker portal: a MAG box with the first version of Overscan's own page, a Stalker client, such as a TV app with a Stalker portal option, and a player such as VLC with a debug playlist.
+This page walks through Overscan in the order you are likely to set it up: the server, the admin and its sources, a MAG box with Overscan's own page, a Stalker client such as a TV app with a Stalker portal option, players, and a check of a channel. [guide.md](guide.md) lists the same tasks with where each is done, and [troubleshooting.md](troubleshooting.md) starts from what goes wrong.
 
 ## 1. Run the server
 

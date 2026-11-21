@@ -107,6 +107,8 @@ clients are expected to work and are tracked in a compatibility matrix,
 
 | Document | What is in it |
 | --- | --- |
+| [docs/guide.md](docs/guide.md) | Running Overscan, task by task: where each is done, and which page says more |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | What to check when something goes wrong, by what you see |
 | [docs/plan.md](docs/plan.md) | The full project plan: goals, architecture, milestones, risks |
 | [docs/protocol/stalker-protocol-notes.md](docs/protocol/stalker-protocol-notes.md) | What the Stalker client protocol looks like on the wire |
 | [docs/protocol/xtream-api-notes.md](docs/protocol/xtream-api-notes.md) | What a client sees when it reads a provider through the Xtream API |
@@ -128,7 +130,7 @@ clients are expected to work and are tracked in a compatibility matrix,
 | [docs/clean-room.md](docs/clean-room.md) | How the protocol is documented without copying proprietary code |
 | [docs/decisions.md](docs/decisions.md) | Decision log: what was chosen and why |
 | [docs/probe.md](docs/probe.md) | The probe page: running it on a box, and what its report contains |
-| [docs/trying-it.md](docs/trying-it.md) | How to try what works so far: the admin and its sources, a MAG box, a Stalker client, a debug playlist and a channel check |
+| [docs/trying-it.md](docs/trying-it.md) | A walk through Overscan in the order you set it up: the admin and its sources, a MAG box, a Stalker client, players and a channel check |
 | [docs/testing.md](docs/testing.md) | How Overscan is tested: CI, conformance, the soak test, and checklists for the box and the admin |
 | [docs/install-lxc.md](docs/install-lxc.md) | Installing Overscan as a service in a Proxmox container |
 | [docs/install-docker.md](docs/install-docker.md) | Running Overscan with Docker Compose, from a release archive |
