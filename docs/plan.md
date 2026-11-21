@@ -398,9 +398,9 @@ Until the admin exists (M2), sources are declared in the config file and devices
 - **Media:** `ffmpeg` and `ffprobe` as subprocesses; VAAPI optional.
 - **Admin:** Go templates + htmx, embedded with `go:embed`.
 - **MAG UI build:** TypeScript for type checks, Babel or SWC for ES5 output, an ES5-output bundler, terser, an ES5 parse guard and Autoprefixer, with no polyfills (section 9).
-- **Logging and metrics:** `log/slog`, Prometheus-format `/metrics`, `/healthz`.
+- **Logging and metrics:** `log/slog` and `/healthz`. A Prometheus-format `/metrics` waits until after 1.0 (D116).
 - **Config:** YAML file plus environment overrides for infrastructure (addresses, paths, key file, log level). Everything the admin edits lives in the database. Sources declared in YAML are imported once, at start, and from then on edited in the admin (D46).
-- **Release:** GoReleaser for `linux/amd64` and `linux/arm64`, a Docker image, a `.deb`, and a Proxmox LXC setup script.
+- **Release:** archives for `linux/amd64` and `linux/arm64` built by `tools/build-release.sh`, a Debian package of each, and a `Dockerfile` that builds an image from the archive's binary (D116). A published image, a package repository, signed releases and a script for the Proxmox host wait until after 1.0.
 - **CI:** GitHub Actions, kept lean while the repository is private, because free minutes run out quickly.
 - **Keeping a Rust option open:** core logic behind interfaces, a documented schema, black-box conformance tests, UI and admin assets separate from the server. These seams pay for themselves anyway (tests, other implementers); add an interface where there is a second implementation or a test double, not by default.
 
@@ -517,7 +517,16 @@ The all-in-one stage: every player in the house gets a curated lineup through th
 *Status:* built, and released in v0.5.0 on 21 November 2026, before tests with players. Its pre-releases: accounts with logins and limits (v0.5.0-alpha.1), each account's playlist and guide (alpha.2), the Xtream login (alpha.3), several lineups (alpha.4), rules (alpha.5), rules for the guide (alpha.6), backups (alpha.7), output profiles (alpha.8), the hardening with lineup files (alpha.9), copies of a channel merged by a rule (alpha.10), the sources each account uses, with the admin's menus kept on the screen (alpha.11), and the candidate v0.5.0-rc.1, which added that a recording stops once its account no longer uses the channel's source. v0.5.0 is rc.1's code. Each pre-release is upgrade-tested from the one before, and v0.5.0 from v0.4.0 too. The compatibility matrix's entries for players wait for tests with them.
 
 ### M7: 1.0 (M)
-Security review (an outside one if possible), complete docs, a promise that upgrades from here on keep data, packaging polish, the public name and trademark check if still open, v1.0.0.
+Security review (an outside one if possible), complete docs, a promise that upgrades from here on keep data, packaging polish, the public name and trademark check if still open, v1.0.0. M7 adds no feature for households: what 1.0 promises is that what is there is safe, documented, installable and kept across upgrades (D115). Each phase ends with a pre-release of v1.0.0 (`v1.0.0-alpha.N`, then `-rc.N`), as M6's did with v0.5.0. In this order:
+- M7's order and *Done when*, and what 1.0 ships and what waits until after it (D115, D116).
+- Upgrades that keep data. [`upgrading.md`](upgrading.md) says what an upgrade keeps, from which versions it goes directly, and how to go back. The server backs up its database itself before it changes the schema. CI upgrades a database from every full release since v0.3.0: the old release makes a household's settings through its own APIs, and the new build must keep each of them, and must give the database the same schema as a new one. From then on, every migration comes with its own upgrade test, and none drops or rewrites what a household set up without carrying it over.
+- The security review of the whole codebase, written up in [`security.md`](security.md): a threat model, who can reach what; section 11 point by point, and each earlier review's claims checked again; the known limits (refusing private addresses for a source, the admin's cookie behind a TLS proxy, the probe page's reports, local files as playlists) fixed, or kept with their reasons; every route checked by who may call it, by a test that walks the routers, with path traversal; a fuzz test for every parser of outside input; limits on what a request or a source can make Overscan hold or do; the dependencies and their licences; and a short pack for an outside reviewer.
+- Complete docs: every doc read against the code; what a household needs to run Overscan without its developers, a guide by task and troubleshooting by symptom; the README for 1.0, `SECURITY.md`'s supported versions, `CONTRIBUTING.md`, and a code of conduct.
+- Packaging polish: what 1.0 ships (D116); `install.sh` that upgrades, uninstalls and says clearly what it did; the systemd unit's sandbox reviewed; the commands' help, and messages for a configuration file that is wrong.
+- Performance: the budgets of section 15 measured in a long soak with a large fictional catalogue; what misses one is fixed, or the budget changed with its reasons.
+- The name: the trademark check (D1) and the short consultation of section 17, prepared for the maintainer, who does them or waives them.
+- The release: v1.0.0-rc.N, upgrade-tested from v0.5.0, v0.4.0 and v0.3.0, then v1.0.0.
+*Done when:* the review's findings are fixed, or written up in [`security.md`](security.md) as known limits; every doc says what the code does; CI shows that a database from every full release since v0.3.0 upgrades to 1.0 and keeps what the household set up; what 1.0 ships installs, upgrades and uninstalls cleanly on a fresh Debian system; the performance budgets hold in a long soak; the name's check is done, or waived by the maintainer; and v1.0.0 is published.
 
 ---
 
@@ -580,7 +589,7 @@ Security review (an outside one if possible), complete docs, a promise that upgr
 ## 18. Observability and diagnostics
 
 - Structured, redacted logs; levels per component.
-- `/healthz` and `/metrics` (active streams, upstream errors, memory).
+- `/healthz`. A Prometheus-format `/metrics` (active streams, upstream errors, memory) waits until after 1.0, with the backlog's dashboards (D116).
 - Per-device request log in the admin.
 - Per-account activity: who is watching what, on which device, from which source.
 - Capture log of unknown requests.
@@ -678,6 +687,8 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 - Lineups export to one versioned YAML file, of what was changed by hand and the rules, and import as new lineups (D112).
 - A rule merges the copies of a channel that sources list more than once into one channel, whose backups they become (D113).
 - Each account uses every source, or only those ticked on its card, and its devices and players get only what comes from them (D114).
+- 1.0 adds no feature: it brings the security review of the whole, docs that say what the code does, upgrades that keep what a household set up, packaging and the name's check (D115).
+- 1.0 ships archives for amd64 and arm64, a Debian package of each and their checksums; a published image, a package repository, signed releases and `/metrics` wait until after it (D116).
 - The reference client reads Overscan through the Xtream output, without a source type of Overscan's own (open question 2).
 - HDHomeRun emulation waits in the backlog (open question 6).
 
@@ -690,6 +701,7 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 5. Answered: v0.1 was a private release (D49), and the repository is public since (D80).
 6. Answered: HDHomeRun emulation waits in the backlog (section 22); M6 ships without it.
 7. Answered: the MAG UI keeps its device secret in a cookie, with a copy in a `SaveUserData` file (D38).
+8. Publishing under the project's name: a container image on a registry, a package repository, signed releases. Until this is decided, a release holds its archives, its Debian packages and their checksums (D116).
 
 ---
 
@@ -746,7 +758,7 @@ Dispatcharr and m3u-editor already import M3U and Xtream and publish M3U, XMLTV,
 
 ## 22. Backlog (after 1.0)
 
-Radio and audio clubs · weather and widgets · app launcher · DVB tuner sources · HDHomeRun emulation, if it misses M6 · pseudo-channels from libraries (or via ErsatzTV or Tunarr) · multi-room resume · recordings sharing · Prometheus dashboards · plugin system · translations · a native integration with the reference client · Ministra-style management REST (moved from M5) · a web player in the admin for previewing streams · Schedules Direct as a guide source, with the user's own subscription.
+Radio and audio clubs · weather and widgets · app launcher · DVB tuner sources · HDHomeRun emulation, if it misses M6 · pseudo-channels from libraries (or via ErsatzTV or Tunarr) · multi-room resume · recordings sharing · `/metrics` and Prometheus dashboards · a script for the Proxmox host that makes the container · plugin system · translations · a native integration with the reference client · Ministra-style management REST (moved from M5) · a web player in the admin for previewing streams · Schedules Direct as a guide source, with the user's own subscription.
 
 ---
 
