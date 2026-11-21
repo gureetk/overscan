@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -150,6 +151,11 @@ func TestOldUpgradeBackupsAreRemoved(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
 			t.Fatal(err)
 		}
+		// Copies are removed only once they have settled.
+		hourAgo := time.Now().Add(-time.Hour)
+		if err := os.Chtimes(filepath.Join(dir, name), hourAgo, hourAgo); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	dest, err := backupBeforeUpgrade(ctx, path, 41, at, quiet())
@@ -166,7 +172,9 @@ func TestOldUpgradeBackupsAreRemoved(t *testing.T) {
 		t.Errorf("backups %v, want %v", got, want)
 	}
 
-	// A second copy in the same second gets a name of its own.
+	// A second copy in the same second gets a name of its own, and a copy
+	// written in the last minute is never removed, since another process
+	// may be writing it.
 	again, err := backupBeforeUpgrade(ctx, path, 41, at, quiet())
 	if err != nil {
 		t.Fatal(err)
@@ -174,7 +182,41 @@ func TestOldUpgradeBackupsAreRemoved(t *testing.T) {
 	if again == dest || !strings.HasSuffix(again, "-schema41-2.db") {
 		t.Errorf("second copy %s, first %s", again, dest)
 	}
-	if got := oldUpgradeBackups(dir, KeepUpgradeBackups); len(got) != 0 {
-		t.Errorf("left beyond the newest %d: %v", KeepUpgradeBackups, got)
+	want = append(slices.DeleteFunc(want, func(n string) bool { return n == upgradeBackupName(at.Add(-48*time.Hour), 35) }), filepath.Base(again))
+	slices.Sort(want)
+	if got := backupNames(t, dir); !slices.Equal(got, want) {
+		t.Errorf("backups %v, want %v", got, want)
+	}
+}
+
+// Processes that upgrade one database at once each make a copy of their
+// own, even in the same second.
+func TestConcurrentUpgradeBackups(t *testing.T) {
+	ctx := context.Background()
+	path := newPath(t)
+	oldDatabase(t, path, 41)
+	at := time.Date(2026, 12, 4, 10, 0, 0, 0, time.UTC)
+	errs := make([]error, 4)
+	dests := make([]string, 4)
+	var wg sync.WaitGroup
+	for i := range errs {
+		wg.Go(func() { dests[i], errs[i] = backupBeforeUpgrade(ctx, path, 41, at, quiet()) })
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("copy %d: %v", i, err)
+		}
+	}
+	slices.Sort(dests)
+	if len(slices.Compact(dests)) != len(errs) {
+		t.Errorf("copies %v share names", dests)
+	}
+	// None was removed, though they are more than the three kept: each was
+	// written in the last minute, maybe while another process wrote its own.
+	for _, d := range dests {
+		if _, err := os.Stat(d); err != nil {
+			t.Error(err)
+		}
 	}
 }

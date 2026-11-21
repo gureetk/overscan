@@ -53,16 +53,17 @@ func backupBeforeUpgrade(ctx context.Context, path string, from int, now time.Ti
 	}
 	name := upgradeBackupName(now, from)
 	dest := filepath.Join(dir, name)
-	// Two processes upgrading the same database in the same second each
-	// keep a copy of their own.
+	// Processes upgrading the same database in the same second each keep a
+	// copy of their own: Backup makes its file only if it is not there.
 	for i := 2; ; i++ {
-		if _, err := os.Lstat(dest); errors.Is(err, fs.ErrNotExist) {
+		_, err := Backup(ctx, path, dest)
+		if err == nil {
 			break
 		}
+		if !errors.Is(err, fs.ErrExist) || i > 100 {
+			return "", err
+		}
 		dest = filepath.Join(dir, strings.TrimSuffix(name, ".db")+fmt.Sprintf("-%d.db", i))
-	}
-	if _, err := Backup(ctx, path, dest); err != nil {
-		return "", err
 	}
 	for _, old := range oldUpgradeBackups(dir, KeepUpgradeBackups) {
 		if err := os.Remove(filepath.Join(dir, old)); err != nil {
@@ -74,8 +75,13 @@ func backupBeforeUpgrade(ctx context.Context, path string, from int, now time.Ti
 	return dest, nil
 }
 
+// settle is how long a copy is left alone after it was last written: one
+// that another process is still writing is never removed.
+const settle = time.Minute
+
 // oldUpgradeBackups returns the names of the copies made before upgrades in
-// dir beyond the newest keep, oldest first.
+// dir beyond the newest keep, oldest first, leaving out those written in
+// the last minute.
 func oldUpgradeBackups(dir string, keep int) []string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -92,5 +98,11 @@ func oldUpgradeBackups(dir string, keep int) []string {
 	if len(names) <= keep {
 		return nil
 	}
-	return names[:len(names)-keep]
+	var old []string
+	for _, name := range names[:len(names)-keep] {
+		if fi, err := os.Stat(filepath.Join(dir, name)); err == nil && time.Since(fi.ModTime()) >= settle {
+			old = append(old, name)
+		}
+	}
+	return old
 }
