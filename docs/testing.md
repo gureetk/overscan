@@ -8,7 +8,14 @@ CI checks formatting, module tidiness and vet, runs the Go tests with the race d
 
 ## Fuzzing
 
-The parsers of what sources send have fuzz tests: M3U playlists, XMLTV guides, HLS playlists, the stream analyser and the repeat filter. Their seeds run with every test run; to fuzz one for a while:
+Every parser of what comes from outside has a fuzz test, which checks that it never fails on what it is given and that what it keeps makes sense:
+
+- what sources send: M3U playlists and their catch-up attributes, XMLTV guides, HLS playlists, MPEG-TS streams (their packets and tables, the stream analyser, the repeat filter and timeshift's places to start), Xtream servers' answers (the account, categories, live streams, films and series), Stalker portals' answers (genres, channels, links, pages of films and series, guides and dates), Jellyfin's and Plex's items, the names and `.nfo` files in folders, subtitles, ffprobe's reports, and the text of a source's answers that goes into the log;
+- what devices and players send: MAC addresses, the references of what Stalker clients play, and the names of streams in the outputs' addresses;
+- what the administrator gives: lineup files, theme files and rules' patterns;
+- and what Overscan makes from all of it: the names of recordings' files.
+
+Their seeds run with every test run; to fuzz one for a while:
 
     go test ./internal/hls -run '^$' -fuzz '^FuzzParse$' -fuzztime 1m
 

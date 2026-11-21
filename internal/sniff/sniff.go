@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // lookBytes caps how much of a body Describe looks at.
@@ -61,11 +62,12 @@ func isText(data []byte) bool {
 var addressPattern = regexp.MustCompile(`(?i)[a-z][a-z0-9+.-]*://\S*|\S+@\S+|\S*[?&][a-z_]+=\S*`)
 
 // Scrub makes text from a source fit to show: one line of at most 80
-// printable characters, without anything that looks like an address.
+// printable characters, without anything that looks like an address, and
+// without the marks that change the direction of the text around it.
 func Scrub(s string) string {
 	s = addressPattern.ReplaceAllString(s, "[address]")
 	s = strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7F {
+		if unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) {
 			return ' '
 		}
 		return r

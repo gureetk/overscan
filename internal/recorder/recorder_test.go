@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"overscan.gureet.ca/internal/secrets"
 	"overscan.gureet.ca/internal/source"
@@ -656,4 +658,26 @@ func TestRecordingByTime(t *testing.T) {
 	if done.Size == 0 || !done.Timed {
 		t.Errorf("done %+v", done)
 	}
+}
+
+// FuzzFileName makes recordings' file names from titles and channel names
+// as sources give them: a name that stays in the recordings folder, of
+// letters, digits and a few marks, that no file system refuses.
+func FuzzFileName(f *testing.F) {
+	f.Add("News Hour", "Example News")
+	f.Add("../../etc/passwd", "..")
+	f.Add("a\x00b/c\\d:e*f?g\"h<i>j|k", "‮Weiv‬")
+	f.Add("", "")
+	at := time.Date(2026, 12, 4, 21, 0, 0, 0, time.UTC)
+	f.Fuzz(func(t *testing.T, title, channel string) {
+		name := FileName(store.Recording{ID: 7, Title: title, Channel: channel, Start: at})
+		if filepath.Base(name) != name || strings.HasPrefix(name, ".") || !strings.HasSuffix(name, " [7].ts") || !utf8.ValidString(name) {
+			t.Errorf("FileName(%q, %q) = %q", title, channel, name)
+		}
+		for _, r := range name {
+			if strings.ContainsRune("/\\:*?\"<>|", r) || unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) {
+				t.Errorf("FileName(%q, %q) = %q, which holds %U", title, channel, name, r)
+			}
+		}
+	})
 }
