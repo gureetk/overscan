@@ -301,10 +301,10 @@ func (r *Recorder) resume(ctx context.Context, rec store.Recording, limit int64)
 }
 
 // ready checks that a recording can be made: that its account has not
-// ended (D95), that its channel is still in the lineup, and that the folder
-// has room. It returns the channel, the room the folder's files take, and
-// why the recording cannot be made, or an error that a later look may not
-// have.
+// ended (D95), that its channel is still in the lineup, that its account
+// uses one of the channel's sources (D114), and that the folder has room.
+// It returns the channel, the room the folder's files take, and why the
+// recording cannot be made, or an error that a later look may not have.
 func (r *Recorder) ready(ctx context.Context, rec store.Recording, limit int64) (store.PlayableEntry, int64, string, error) {
 	acct, err := r.store.Account(ctx, rec.AccountID)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
@@ -319,6 +319,9 @@ func (r *Recorder) ready(ctx context.Context, rec store.Recording, limit int64) 
 	}
 	if err != nil {
 		return entry, 0, "", err
+	}
+	if _, ok := acct.Sources.For(entry); !ok {
+		return entry, 0, errSources, nil
 	}
 	if err := os.MkdirAll(r.dir, 0o750); err != nil {
 		return entry, 0, "the recordings folder cannot be made: " + err.Error(), nil
@@ -336,6 +339,25 @@ func (r *Recorder) ready(ctx context.Context, rec store.Recording, limit int64) 
 // errAccountEnded is why a recording of an account past its end date is
 // not made (D95).
 const errAccountEnded = "its account has ended"
+
+// errSources is why a recording is not made, or stops, once its account no
+// longer uses any source that its channel plays from (D114).
+const errSources = "its account no longer uses the channel's source"
+
+// usesSource reports whether a recording's account still uses a source
+// that its channel plays from, its own or a backup's, as the lineup has
+// them now (D114). A recording whose account cannot be read goes on.
+func (r *Recorder) usesSource(ctx context.Context, rec store.Recording, entry store.PlayableEntry) bool {
+	acct, err := r.store.Account(ctx, rec.AccountID)
+	if err != nil || !acct.Sources.Only {
+		return true
+	}
+	if now, err := r.store.PlayableEntry(ctx, rec.EntryID); err == nil {
+		entry = now
+	}
+	_, ok := acct.Sources.For(entry)
+	return ok
+}
 
 // begin returns when a recording begins: a minute before its programme,
 // or, for one that runs until it is stopped or was set by time, at its
@@ -439,6 +461,11 @@ func (r *Recorder) record(ctx context.Context, rec store.Recording, entry store.
 			return "the recordings folder is full"
 		case out.err != nil:
 			return "its file cannot be written: " + out.err.Error()
+		case ctx.Err() == nil && !r.usesSource(ctx, rec, entry):
+			// The administrator took the channel's sources from its
+			// account, and the hub ended its stream: playing it again
+			// would only be refused until its end.
+			return errSources
 		case w.status != 0 && w.status != http.StatusOK && out.n == 0 && attempt == 0:
 			// Its source would not play it, most often because it plays
 			// as many streams as it may.
