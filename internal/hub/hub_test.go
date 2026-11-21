@@ -519,3 +519,26 @@ func TestStreamsListsTheSessions(t *testing.T) {
 		t.Errorf("after the grace: %+v", got)
 	}
 }
+
+// A source kept to public addresses (D121) plays nothing from the server's
+// own networks, such as the fixture's upstream on the loopback address: a
+// stream, an HLS playlist or a film.
+func TestPublicOnlySourceStaysOffTheHomeNetwork(t *testing.T) {
+	h := newHarness(t, 2)
+	srcID := h.entries["live/1"].SourceID
+	h.hub.SetSources(map[int64]Source{srcID: {Name: "main", MaxConnections: 2, PublicOnly: true}})
+	for _, name := range []string{"live/1", "hls/master.m3u8"} {
+		resp := get(t, h.link(1, name))
+		if b := body(t, resp); resp.StatusCode == http.StatusOK {
+			t.Errorf("%s played from the loopback address: %.40q", name, b)
+		}
+	}
+	if logs := h.logs.String(); !strings.Contains(logs, "the source may reach public addresses only") {
+		t.Errorf("the log does not say why: %s", logs)
+	}
+
+	// Without the setting, the same channel plays.
+	h.hub.SetSources(map[int64]Source{srcID: {Name: "main", MaxConnections: 2}})
+	resp := h.play(h.link(2, "live/1"))
+	resp.Body.Close()
+}

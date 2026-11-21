@@ -37,6 +37,7 @@ import (
 	"overscan.gureet.ca/internal/adapters/xtream"
 	"overscan.gureet.ca/internal/catchup"
 	"overscan.gureet.ca/internal/guide"
+	"overscan.gureet.ca/internal/netguard"
 	"overscan.gureet.ca/internal/source"
 	"overscan.gureet.ca/internal/store"
 )
@@ -783,7 +784,7 @@ func (r *Refresher) open(ctx context.Context, src source.Settings) (io.ReadClose
 		ua = r.userAgent
 	}
 	req.Header.Set("User-Agent", ua)
-	resp, err := r.client.Do(req)
+	resp, err := netguard.Client(r.client, src.PublicOnly).Do(req)
 	if err != nil {
 		// A url.Error quotes the address; keep only what went wrong.
 		var uerr *url.Error

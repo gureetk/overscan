@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"overscan.gureet.ca/internal/hls"
+	"overscan.gureet.ca/internal/netguard"
 )
 
 const (
@@ -212,7 +213,7 @@ func (h *Hub) get(ctx context.Context, s *session, target string) (*http.Respons
 		ua = h.userAgent
 	}
 	req.Header.Set("User-Agent", ua)
-	resp, err := h.client.Do(req)
+	resp, err := h.clientFor(s).Do(req)
 	if err != nil {
 		return nil, fetchError(err)
 	}
@@ -221,6 +222,12 @@ func (h *Hub) get(ctx context.Context, s *session, target string) (*http.Respons
 		return nil, &statusError{code: resp.StatusCode, status: resp.Status}
 	}
 	return resp, nil
+}
+
+// clientFor returns the client for s's upstream requests: one that reaches
+// public addresses only for a source that says so (D121).
+func (h *Hub) clientFor(s *session) *http.Client {
+	return netguard.Client(h.client, h.source(s.sourceID).PublicOnly)
 }
 
 // isPlaylist reports whether an upstream response is an HLS playlist: by its

@@ -121,6 +121,9 @@ type Source struct {
 	// as UTC or Europe/London; if not set, the one that an Xtream server
 	// gives, or else UTC.
 	CatchupZone string `yaml:"catchup_zone"`
+	// PublicOnly keeps every request that Overscan makes for the source off
+	// the server's own networks (D121): public addresses only.
+	PublicOnly bool `yaml:"public_only"`
 }
 
 // Ways of numbering a source's channels.
@@ -191,6 +194,7 @@ func (s Source) Settings() source.Settings {
 		Refresh:        s.Refresh,
 		Numbers:        s.Numbers,
 		CatchupZone:    s.CatchupZone,
+		PublicOnly:     s.PublicOnly,
 		Device: source.Device{MAC: s.MAC, Serial: s.Serial, DeviceID: s.DeviceID, DeviceID2: s.DeviceID2,
 			Signature: s.Signature, Model: s.Model},
 	}

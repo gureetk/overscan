@@ -22,6 +22,7 @@ import (
 
 	"overscan.gureet.ca/internal/adapters/m3u"
 	"overscan.gureet.ca/internal/catchup"
+	"overscan.gureet.ca/internal/netguard"
 	"overscan.gureet.ca/internal/secrets"
 	"overscan.gureet.ca/internal/source"
 	"overscan.gureet.ca/internal/store"
@@ -262,6 +263,24 @@ func TestPlaylistFileMustBeRegular(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatalf("%s: the refresh did not end", path)
 		}
+	}
+}
+
+// A source kept to public addresses (D121) does not read a playlist on the
+// server's own networks, such as the test's on the loopback address.
+func TestPublicOnlySource(t *testing.T) {
+	h := newHarness(t)
+	src := h.source()
+	src.PublicOnly = true
+	if _, err := h.r.Refresh(context.Background(), src, h.srcID); !errors.Is(err, netguard.ErrNotPublic) {
+		t.Fatalf("refresh: %v, want ErrNotPublic", err)
+	}
+	if len(h.channelNames()) != 0 {
+		t.Errorf("channels %v", h.channelNames())
+	}
+	src.PublicOnly = false
+	if _, err := h.r.Refresh(context.Background(), src, h.srcID); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -236,6 +236,52 @@ func TestChangeASource(t *testing.T) {
 	}
 }
 
+// A source can be kept to public addresses (D121), from the form and the
+// API; a folder never is.
+func TestPublicOnlySource(t *testing.T) {
+	ta := newTestAdmin(t)
+	c, csrf, _ := ta.withSources()
+	h := []string{csrfHeader, csrf}
+	ctx := context.Background()
+	id := ta.sourceID("main")
+	path := fmt.Sprintf("/admin/sources/%d", id)
+
+	mustContain(t, "the page", ta.do("GET", path, nil, c).Body.String(), `name="public_only" value="1">`, "Public addresses only")
+	if rec := ta.do("POST", path, sourceFormValues(csrf, "name", "main", "public_only", "1"), c); rec.Code != http.StatusSeeOther {
+		t.Fatalf("save: status %d, %s", rec.Code, rec.Body)
+	}
+	if got, _ := ta.st.SourceSettings(ctx, id); !got.PublicOnly {
+		t.Errorf("after ticking it: %+v", got)
+	}
+	mustContain(t, "the page", ta.do("GET", path, nil, c).Body.String(), `name="public_only" value="1" checked>`)
+	var list struct{ Sources []apiSource }
+	rec := ta.apiDo("GET", "sources", "", c)
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil || len(list.Sources) != 1 || !list.Sources[0].PublicOnly {
+		t.Errorf("the API: %d %s", rec.Code, rec.Body)
+	}
+	var src apiSource
+	// A change that leaves it out keeps it; the form without the tick
+	// turns it off.
+	ta.apiDo("PATCH", fmt.Sprintf("sources/%d", id), `{"refresh_seconds": 3600}`, c, h...)
+	if got, _ := ta.st.SourceSettings(ctx, id); !got.PublicOnly {
+		t.Errorf("after a change that leaves it out: %+v", got)
+	}
+	ta.do("POST", path, sourceFormValues(csrf, "name", "main"), c)
+	if got, _ := ta.st.SourceSettings(ctx, id); got.PublicOnly {
+		t.Errorf("after unticking it: %+v", got)
+	}
+	rec = ta.apiDo("PATCH", fmt.Sprintf("sources/%d", id), `{"public_only": true}`, c, h...)
+	if err := json.Unmarshal(rec.Body.Bytes(), &src); err != nil || !src.PublicOnly {
+		t.Errorf("the API's change: %d %s", rec.Code, rec.Body)
+	}
+
+	dir := t.TempDir()
+	rec = ta.apiDo("POST", "sources", `{"name": "films", "type": "folder", "url": "`+dir+`", "public_only": true}`, c, h...)
+	if err := json.Unmarshal(rec.Body.Bytes(), &src); err != nil || rec.Code != http.StatusCreated || src.PublicOnly {
+		t.Errorf("a folder: %d %s", rec.Code, rec.Body)
+	}
+}
+
 func TestNewCategoriesForm(t *testing.T) {
 	ta := newTestAdmin(t)
 	c, csrf, _ := ta.withSources()

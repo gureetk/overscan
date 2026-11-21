@@ -26,6 +26,7 @@ import (
 	"unicode"
 
 	"overscan.gureet.ca/internal/adapters/stalker"
+	"overscan.gureet.ca/internal/netguard"
 	"overscan.gureet.ca/internal/source"
 	"overscan.gureet.ca/internal/store"
 	"overscan.gureet.ca/internal/xmltv"
@@ -316,7 +317,7 @@ func (g *Reader) open(ctx context.Context, src source.Settings, address string) 
 		ua = g.userAgent
 	}
 	req.Header.Set("User-Agent", ua)
-	resp, err := g.client.Do(req)
+	resp, err := netguard.Client(g.client, src.PublicOnly).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch: %w", withoutAddress(err))
 	}

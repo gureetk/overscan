@@ -194,12 +194,27 @@ func (h *household) setUpSources(a *admin, since time.Time) error {
 	if h.sources["main"] == 0 {
 		return errors.New("the configuration file's source main is not there")
 	}
+	publicOnly := false
 	for _, s := range []map[string]any{
 		{"name": "two", "type": "m3u", "url": h.p.url + "/two.m3u", "max_connections": 2, "numbers": "provider"},
 		{"name": "films", "type": "folder", "url": h.media},
 	} {
-		var added idName
+		var added struct {
+			ID         int64 `json:"id"`
+			PublicOnly *bool `json:"public_only"` // from schema 43
+		}
 		if err := a.call("POST", "sources", s, &added); err != nil {
+			return err
+		}
+		h.sources[s["name"].(string)] = added.ID
+		publicOnly = publicOnly || added.PublicOnly != nil
+	}
+	if publicOnly {
+		// A source kept to public addresses (D121), turned off, since
+		// nothing on the internet answers the test.
+		var added idName
+		if err := a.call("POST", "sources", map[string]any{"name": "kept", "type": "m3u",
+			"url": "http://provider.example/kept.m3u", "enabled": false, "public_only": true}, &added); err != nil {
 			return err
 		}
 		h.sources[added.Name] = added.ID

@@ -98,6 +98,42 @@ func TestHandler(t *testing.T) {
 	}
 }
 
+// A source kept to public addresses (D121) has no logo fetched from the
+// server's own networks, such as the fixture's provider on the loopback
+// address.
+func TestPublicOnlySourceLogos(t *testing.T) {
+	p := newProvider(t)
+	ctx := context.Background()
+	st, err := store.Open(ctx, filepath.Join(t.TempDir(), store.FileName), quiet())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	st.UseKey(secrets.NewRandomBox())
+	src, err := st.AddSource(ctx, source.Settings{Name: "main", URL: "http://provider.example/main.m3u", PublicOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	channels := []store.CatalogChannel{{IdentityKey: "a", Name: "With a logo", Logo: p.URL + "/logo.png", StreamURL: "http://streams.example/a"}}
+	if _, err := st.ApplyCatalog(ctx, src, channels, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	lineup, err := st.LineupChannels(ctx, store.DefaultLineupID)
+	if err != nil || len(lineup) != 1 {
+		t.Fatalf("lineup %+v, %v", lineup, err)
+	}
+	srv := httptest.NewServer(Handler(st, New(t.TempDir(), quiet(), "test"), quiet()))
+	t.Cleanup(srv.Close)
+	resp, err := http.Get(srv.URL + LogoPath(lineup[0].EntryID, lineup[0].Logo))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound || p.count("/logo.png") != 0 {
+		t.Errorf("a public-only source's logo at home: %d, fetched %d times", resp.StatusCode, p.count("/logo.png"))
+	}
+}
+
 func TestTitlePictures(t *testing.T) {
 	p := newProvider(t)
 	ctx := context.Background()

@@ -380,7 +380,7 @@ Until the admin exists (M2), sources are declared in the config file and devices
 | Stream tokens | HMAC-signed, bound to device and item, valid for about a minute to start a session; sessions end on disconnect or idle. |
 | Outputs (M6) | M3U and Xtream clients send credentials in URLs by design, so outputs are LAN-only by default. Playlist tokens can be rotated; per-account connection limits. |
 | Artwork | Fetched and served by Overscan, so upstream hosts and media-server tokens never reach devices. |
-| SSRF | Overscan only fetches configured source URLs and the upstream addresses they resolve to. Optionally block private and link-local ranges for sources that should be public. |
+| SSRF | Overscan only fetches configured source URLs and the upstream addresses they resolve to. A source can be kept to public addresses, which refuses private, loopback, link-local and reserved ones for everything fetched for it (D121). |
 | Local files | Allowlisted roots, symlink handling, no path traversal. |
 | ffmpeg | Argument arrays only (no shell), protocol allowlist, resource limits, sandboxing via systemd where possible. |
 | Parsers | Fuzz M3U, XMLTV and JSON parsers. Size and time limits. |

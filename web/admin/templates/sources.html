@@ -312,6 +312,11 @@
       <input id="source-catchup-zone" name="catchup_zone" value="{{$f.Settings.CatchupZone}}" maxlength="64" spellcheck="false" autocomplete="off" placeholder="The server's own">
       <p class="hint">The time zone of the times in the addresses of past programmes, such as UTC or Europe/London. Leave it empty for the one an Xtream server gives, or UTC for a playlist. Change it if past programmes start at the wrong time.</p>
     </div>
+
+    <div class="field for-network wide">
+      <label class="check"><input type="checkbox" name="public_only" value="1"{{if $f.Settings.PublicOnly}} checked{{end}}> Public addresses only</label>
+      <p class="hint">Overscan then refuses every address of this source that is on your own networks: private, loopback and link-local ones, for its playlist or server, its guide, streams and pictures, and wherever they lead. For a provider on the internet; leave it off for a server in your home.</p>
+    </div>
   </div>
 
   {{- with $f.Found}}<p class="alert notice" role="status">{{.}}</p>{{end}}

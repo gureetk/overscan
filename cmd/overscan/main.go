@@ -333,7 +333,7 @@ func importSources(ctx context.Context, st *store.Store, sources []config.Source
 func hubSources(sources []store.Source) map[int64]hub.Source {
 	out := make(map[int64]hub.Source, len(sources))
 	for _, src := range sources {
-		hs := hub.Source{Name: src.Name, MaxConnections: src.StreamLimit(), UserAgent: src.UserAgent}
+		hs := hub.Source{Name: src.Name, MaxConnections: src.StreamLimit(), UserAgent: src.UserAgent, PublicOnly: src.PublicOnly}
 		if src.Type == source.TypeStalker {
 			hs.Resolves = true
 			if hs.UserAgent == "" {

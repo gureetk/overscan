@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -19,6 +20,7 @@ import (
 
 	"overscan.gureet.ca/internal/adapters/stalker"
 	"overscan.gureet.ca/internal/adapters/stalker/stalkertest"
+	"overscan.gureet.ca/internal/netguard"
 	"overscan.gureet.ca/internal/secrets"
 	"overscan.gureet.ca/internal/source"
 	"overscan.gureet.ca/internal/store"
@@ -199,6 +201,23 @@ func TestReadXtreamGuide(t *testing.T) {
 // by its name, also from a guide channel that another channel's ID matched:
 // the same channel in another quality, say. A channel that its ID matched
 // keeps to that.
+// A source kept to public addresses (D121) does not read a guide on the
+// server's own networks.
+func TestPublicOnlyGuide(t *testing.T) {
+	h := newHarness(t, source.TypeXtream)
+	settings := h.settings(source.TypeXtream)
+	settings.PublicOnly = true
+	if _, err := h.g.Read(context.Background(), settings, h.id); !errors.Is(err, netguard.ErrNotPublic) {
+		t.Fatalf("read: %v, want ErrNotPublic", err)
+	}
+	h.mu.Lock()
+	hits := h.hits
+	h.mu.Unlock()
+	if hits != 0 {
+		t.Errorf("the guide's server heard %d requests", hits)
+	}
+}
+
 func TestNamesBesideGuideIDs(t *testing.T) {
 	h := newHarness(t, source.TypeXtream)
 	ctx := context.Background()

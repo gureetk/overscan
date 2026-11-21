@@ -358,7 +358,7 @@ func (h *Hub) fetchFile(ctx context.Context, s *session, address, rangeAsked, if
 			req.Header.Set("If-Range", ifRange)
 		}
 	}
-	resp, err := h.client.Do(req)
+	resp, err := h.clientFor(s).Do(req)
 	if err != nil {
 		return nil, fetchError(err)
 	}

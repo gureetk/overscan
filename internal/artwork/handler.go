@@ -71,10 +71,12 @@ func Handler(st *store.Store, c *Cache, log *slog.Logger) http.Handler {
 				if fetch == "" {
 					return nil, ErrUnusable
 				}
-				return c.get(fetch, src.UserAgent)
+				return c.get(fetch, src.UserAgent, src.PublicOnly)
 			})
 		case !folder.IsPicture(address):
-			file, contentType, err = c.Get(r.Context(), kind, address, src.UserAgent)
+			file, contentType, err = c.GetWith(r.Context(), kind, address, func() ([]byte, error) {
+				return c.get(address, src.UserAgent, src.PublicOnly)
+			})
 		case src.Type == source.TypeFolder:
 			// A picture in a folder of films is read from the folder, which
 			// it cannot leave (D67).
@@ -113,8 +115,8 @@ func Handler(st *store.Store, c *Cache, log *slog.Logger) http.Handler {
 	}
 	mux.HandleFunc("GET /artwork/logo/{id}/{key}", func(w http.ResponseWriter, r *http.Request) {
 		serve(w, r, LogoKind, func(id int64) ([]string, store.ArtSource, error) {
-			logo, userAgent, err := st.EntryLogo(r.Context(), id)
-			return []string{logo}, store.ArtSource{UserAgent: userAgent}, err
+			logo, src, err := st.EntryLogo(r.Context(), id)
+			return []string{logo}, store.ArtSource{UserAgent: src.UserAgent, PublicOnly: src.PublicOnly}, err
 		})
 	})
 	titleArt := func(r *http.Request, backdrop bool) func(id int64) ([]string, store.ArtSource, error) {

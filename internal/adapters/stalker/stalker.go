@@ -35,6 +35,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"overscan.gureet.ca/internal/netguard"
 )
 
 // DefaultModel is the model a client says it is when none is given: the
@@ -73,6 +75,9 @@ type Config struct {
 	UserAgent string
 	// TimeZone is the IANA zone that the box's cookie names, UTC if "".
 	TimeZone string
+	// PublicOnly keeps every request to the portal, and wherever it leads,
+	// off the server's own networks (D121).
+	PublicOnly bool
 }
 
 // Errors that say why a portal cannot be read.
@@ -168,8 +173,8 @@ func New(config Config, client *http.Client) (*Client, error) {
 	if config.TimeZone == "" {
 		config.TimeZone = "UTC"
 	}
-	return &Client{http: client, config: config, portal: u, now: time.Now, MaxBytes: DefaultMaxBytes,
-		signing: make(chan struct{}, 1)}, nil
+	return &Client{http: netguard.Client(client, config.PublicOnly), config: config, portal: u, now: time.Now,
+		MaxBytes: DefaultMaxBytes, signing: make(chan struct{}, 1)}, nil
 }
 
 // normalMAC returns a MAC address in capitals with colons, if s is one.
@@ -396,6 +401,7 @@ func signInError(step string, err error) error {
 // handshake works. It returns that address and the token.
 func (c *Client) find(ctx context.Context) (string, string, error) {
 	refused := false
+	var notPublic error
 	for _, api := range candidates(c.portal) {
 		token, err := c.handshake(ctx, api)
 		if err == nil {
@@ -408,10 +414,18 @@ func (c *Client) find(ctx context.Context) (string, string, error) {
 			return "", "", ctx.Err()
 		}
 		refused = refused || errors.Is(err, errAuth)
+		if notPublic == nil && errors.Is(err, netguard.ErrNotPublic) {
+			notPublic = err
+		}
 	}
-	if refused {
+	switch {
+	case refused:
 		// A portal answered, and refused the box.
 		return "", "", ErrRefused
+	case notPublic != nil:
+		// The portal is on the server's own networks, which the source
+		// may not reach (D121).
+		return "", "", notPublic
 	}
 	return "", "", ErrNotPortal
 }

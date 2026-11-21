@@ -80,6 +80,9 @@ type Source struct {
 	// starts, as a Stalker portal does (D76): what the store keeps for its
 	// channels is what the hub's Resolver turns into an address.
 	Resolves bool
+	// PublicOnly keeps the source's streams, and every address they lead
+	// to, off the server's own networks (D121).
+	PublicOnly bool
 }
 
 // Resolver gives the addresses of the streams of sources that give a link

@@ -1136,6 +1136,9 @@ type ArtSource struct {
 	ID        int64
 	Type      string
 	UserAgent string
+	// PublicOnly keeps the fetch of its pictures off the server's own
+	// networks (D121).
+	PublicOnly bool
 }
 
 // TitleArt returns the addresses of a title's pictures that devices may ask
@@ -1145,9 +1148,10 @@ func (s *Store) TitleArt(ctx context.Context, id int64) (posters, backdrops []st
 	var poster, summary string
 	var details sql.NullString
 	err = s.db.QueryRowContext(ctx, `
-		SELECT t.poster, t.summary, t.details, s.id, s.type, s.user_agent
+		SELECT t.poster, t.summary, t.details, s.id, s.type, s.user_agent, s.public_only
 		FROM titles t JOIN sources s ON s.id = t.source_id
-		WHERE t.id = ? AND `+libraryShown, id).Scan(&poster, &summary, &details, &src.ID, &src.Type, &src.UserAgent)
+		WHERE t.id = ? AND `+libraryShown, id).Scan(&poster, &summary, &details, &src.ID, &src.Type, &src.UserAgent,
+		&src.PublicOnly)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil, ArtSource{}, ErrNotFound
 	}
@@ -1177,9 +1181,10 @@ func (s *Store) TitleArt(ctx context.Context, id int64) (posters, backdrops []st
 // it, with its source.
 func (s *Store) EpisodeArt(ctx context.Context, id int64) (picture string, src ArtSource, err error) {
 	err = s.db.QueryRowContext(ctx, `
-		SELECT e.picture, s.id, s.type, s.user_agent
+		SELECT e.picture, s.id, s.type, s.user_agent, s.public_only
 		FROM episodes e JOIN titles t ON t.id = e.title_id JOIN sources s ON s.id = t.source_id
-		WHERE e.id = ? AND e.missing_since IS NULL AND `+libraryShown, id).Scan(&picture, &src.ID, &src.Type, &src.UserAgent)
+		WHERE e.id = ? AND e.missing_since IS NULL AND `+libraryShown, id).Scan(&picture, &src.ID, &src.Type, &src.UserAgent,
+		&src.PublicOnly)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", ArtSource{}, ErrNotFound
 	}
