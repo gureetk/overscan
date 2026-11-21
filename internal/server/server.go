@@ -25,6 +25,7 @@ import (
 	"overscan.gureet.ca/internal/portal/stalker"
 	"overscan.gureet.ca/internal/portal/xtream"
 	"overscan.gureet.ca/internal/recorder"
+	"overscan.gureet.ca/internal/routes"
 	"overscan.gureet.ca/internal/store"
 )
 
@@ -43,9 +44,12 @@ type Server struct {
 	// adminHandler serves the admin on admin_listen; nil when the admin
 	// shares handler (D44).
 	adminHandler http.Handler
-	pages        pageLog
-	admin        *admin.Admin
-	themes       themeSheets // the stylesheets of installed themes (D97)
+	// routes and adminRoutes are handler's and adminHandler's routes, for
+	// the test that checks who may call each.
+	routes, adminRoutes *routes.Mux
+	pages               pageLog
+	admin               *admin.Admin
+	themes              themeSheets // the stylesheets of installed themes (D97)
 }
 
 // Services are what the server's handlers work with.
@@ -76,7 +80,7 @@ var stalkerPaths = []string{"/portal.php", "/server/load.php", "/stalker_portal/
 // New returns a server for cfg. The health check reports version.
 func New(cfg config.Config, log *slog.Logger, version string, svc Services) *Server {
 	s := &Server{cfg: cfg, log: log, version: version, services: svc}
-	mux := http.NewServeMux()
+	mux := routes.NewMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.Handle("GET /probe/", probeFiles())
 	mux.HandleFunc("POST /probe/report", s.handleProbeReport)
@@ -119,6 +123,7 @@ func New(cfg config.Config, log *slog.Logger, version string, svc Services) *Ser
 	mux.HandleFunc("GET /debug/lineup.m3u", s.handleDebugLineup)
 	mux.HandleFunc("GET /debug/play/{entry}", s.handleDebugPlay)
 	s.handler = mux
+	s.routes = mux
 
 	// The admin shares the main address unless admin_listen names one of
 	// its own, which then serves it alone (D44).
@@ -140,13 +145,24 @@ func New(cfg config.Config, log *slog.Logger, version string, svc Services) *Ser
 	adm := a.Handler()
 	amux := mux
 	if cfg.AdminListen != "" {
-		amux = http.NewServeMux()
+		amux = routes.NewMux()
 		amux.Handle("GET /{$}", http.RedirectHandler("/admin/", http.StatusFound))
 		s.adminHandler = amux
+		s.adminRoutes = amux
 	}
 	amux.Handle("/admin/", adm)
 	amux.Handle(admin.APIPrefix, adm)
 	return s
+}
+
+// Patterns returns the patterns of the routes on the main address, and of
+// those on the admin's own address, if it has one.
+func (s *Server) Patterns() (main, admin []string) {
+	main = s.routes.Patterns()
+	if s.adminRoutes != nil {
+		admin = s.adminRoutes.Patterns()
+	}
+	return main, admin
 }
 
 // Handler returns the server's HTTP handler.

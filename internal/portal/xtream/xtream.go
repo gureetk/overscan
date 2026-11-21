@@ -25,6 +25,7 @@ import (
 	"overscan.gureet.ca/internal/hub"
 	"overscan.gureet.ca/internal/library"
 	"overscan.gureet.ca/internal/portal/output"
+	"overscan.gureet.ca/internal/routes"
 	"overscan.gureet.ca/internal/store"
 )
 
@@ -61,7 +62,7 @@ func (o *Output) UseLibrary(l *library.Library) { o.library = l }
 // the hub's: a path of three parts below /live/ whose second part is "r"
 // and whose first is one of the hub's tokens is an HLS resource of a
 // session, which goes to the hub.
-func (o *Output) Register(mux *http.ServeMux) {
+func (o *Output) Register(mux *routes.Mux) {
 	mux.HandleFunc("GET /player_api.php", o.api)
 	mux.HandleFunc("POST /player_api.php", o.api)
 	mux.HandleFunc("GET /get.php", o.playlist)

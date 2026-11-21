@@ -26,6 +26,7 @@ import (
 	"overscan.gureet.ca/internal/artwork"
 	"overscan.gureet.ca/internal/hub"
 	"overscan.gureet.ca/internal/portal/output"
+	"overscan.gureet.ca/internal/routes"
 	"overscan.gureet.ca/internal/store"
 )
 
@@ -53,7 +54,7 @@ func New(st *store.Store, h *hub.Hub, logins *admin.Logins, log *slog.Logger) *O
 }
 
 // Register adds the output's paths to mux.
-func (o *Output) Register(mux *http.ServeMux) {
+func (o *Output) Register(mux *routes.Mux) {
 	mux.HandleFunc("GET /playlist/{file}", o.playlist)
 	mux.HandleFunc("GET /epg/{file}", o.guide)
 	mux.HandleFunc("GET /playlist/{token}/{file}", o.live)

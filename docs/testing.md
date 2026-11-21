@@ -20,6 +20,20 @@ Black-box tests of what Stalker clients see, over HTTP, against a running Oversc
 
     go test ./conformance/...
 
+## Who may call each route
+
+`internal/server`'s route tests walk every route that the server serves, as its routers list them (`internal/routes`), and check each one by who may call it: anyone, the signed-in administrator, a box with a session, a Stalker client that the administrator approved, a player with a signed link, an account's token or login, or the admin token. A new route fails the tests until its author says who may call it, in `routeAccess`.
+
+- Without what a route asks for, it refuses: the admin's pages send the browser to the sign-in page, and the APIs, the outputs, the links and the debug routes answer 401, 403 or 404. The outputs refuse players from outside the server's own networks before they read a token or a login.
+- Every admin route that changes something refuses a request without the session's CSRF token, and one from another site.
+- Every call of the Stalker API but the handshake needs the token that the handshake gave, from a device that the administrator approved.
+- With the admin on an address of its own, the main address serves none of it.
+- Every route that takes a name in its path is sent names that try to climb out of what it serves: escaped slashes and dots, and the absolute path of the key file. No answer may hold the key file, or the system's list of users.
+
+They run with the other tests:
+
+    go test ./internal/server -run 'Route|CSRF|Stalker'
+
 ## Soak test
 
 `tools/soak` runs Overscan under load and records its memory and CPU use:

@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"overscan.gureet.ca/internal/routes"
 	"overscan.gureet.ca/internal/store"
 	"overscan.gureet.ca/internal/tmdb"
 	"overscan.gureet.ca/web"
@@ -85,7 +86,7 @@ func New(st *store.Store, log *slog.Logger, version string) *Admin {
 // Handler serves the admin's pages under /admin/ and its API under
 // APIPrefix.
 func (a *Admin) Handler() http.Handler {
-	mux := http.NewServeMux()
+	mux := routes.NewMux()
 	mux.Handle(APIPrefix, a.apiMux())
 	mux.HandleFunc("GET /admin/static/{name...}", a.serveStatic)
 	mux.HandleFunc("GET /admin/sign-in", a.signInPage)
@@ -159,7 +160,7 @@ func (a *Admin) Handler() http.Handler {
 	mux.HandleFunc("/admin/", a.notFound)
 	// Browsers say where a request comes from; a form or script on another
 	// site cannot change anything here, whatever its cookies.
-	return securityHeaders(http.NewCrossOriginProtection().Handler(mux))
+	return routes.With(securityHeaders(http.NewCrossOriginProtection().Handler(mux)), mux)
 }
 
 // securityHeaders keeps the admin's pages from being framed, sniffed or

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"overscan.gureet.ca/internal/routes"
 	"overscan.gureet.ca/internal/store"
 )
 
@@ -128,7 +129,7 @@ func (a *Admin) apiRoutes() []apiRoute {
 // apiMux serves the API's routes, with JSON answers for paths and methods
 // that it does not have.
 func (a *Admin) apiMux() http.Handler {
-	mux := http.NewServeMux()
+	mux := routes.NewMux()
 	for _, rt := range a.apiRoutes() {
 		pattern := rt.method + " " + APIPrefix + rt.path
 		if rt.open {
@@ -137,7 +138,7 @@ func (a *Admin) apiMux() http.Handler {
 			mux.Handle(pattern, a.api(rt.fn))
 		}
 	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return routes.With(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, pattern := mux.Handler(r); pattern != "" {
 			mux.ServeHTTP(w, r) // which also fills in the path's wildcards
 			return
@@ -151,7 +152,7 @@ func (a *Admin) apiMux() http.Handler {
 			return
 		}
 		apiError(w, http.StatusNotFound, "not_found", "There is no such path in the API.")
-	})
+	}), mux)
 }
 
 // statusProbe keeps the status and headers that a handler writes.
