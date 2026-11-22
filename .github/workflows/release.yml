@@ -10,6 +10,11 @@
 #   archives are added to that release.
 #
 # Versions v0.0.x and versions with a hyphen (v0.1.0-rc.1) are pre-releases.
+#
+# The container image is then built from the release's own archives, for
+# amd64 and arm64, and checked as CI checks it. A full release pushes it to
+# ghcr.io with the tags X.Y.Z, X.Y, X and latest (D131); a pre-release builds
+# it without pushing.
 name: Release
 
 on:
@@ -37,8 +42,11 @@ jobs:
       contents: write # create the tag and the release, and upload files
     env:
       VERSION: ${{ inputs.version || github.ref_name }}
+    outputs:
+      full: ${{ steps.version.outputs.full }}
     steps:
       - name: Check the version
+        id: version
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -46,6 +54,9 @@ jobs:
             echo "::error::'$VERSION' is not a version such as v0.1.0 or v0.1.0-rc.1"
             exit 1
           fi
+          full=true
+          case "$VERSION" in v0.0.* | *-*) full=false ;; esac
+          echo "full=$full" >>"$GITHUB_OUTPUT"
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
             if [ "$GITHUB_REF" != refs/heads/main ]; then
               echo "::error::Run releases from main, not $GITHUB_REF"
@@ -118,3 +129,110 @@ jobs:
 
           gh release create "$VERSION" "${files[@]}" --repo "$GITHUB_REPOSITORY" "${tag[@]}" \
             --title "$VERSION" --notes-file notes.md "${prerelease[@]}"
+
+  # The image for each machine, built from the release's archive for it on a
+  # runner of that machine, so that it holds the very binary that the archive
+  # does. A full release pushes it as X.Y.Z-<arch>.
+  image:
+    needs: release
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write # push the image, for a full release
+    env:
+      VERSION: ${{ inputs.version || github.ref_name }}
+      FULL: ${{ needs.release.outputs.full }}
+      ARCH: ${{ matrix.arch }}
+      IMAGE: ghcr.io/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Fetch and unpack the release's archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          name="overscan_${VERSION#v}_linux_${ARCH}"
+          dir="$RUNNER_TEMP/release"
+          mkdir -p "$dir"
+          gh release download "$VERSION" --repo "$GITHUB_REPOSITORY" --dir "$dir" --pattern "$name.tar.gz" --pattern SHA256SUMS
+          (cd "$dir" && sha256sum -c SHA256SUMS --ignore-missing)
+          tar -C "$dir" -xzf "$dir/$name.tar.gz"
+          echo "ARCHIVE=$dir/$name" >>"$GITHUB_ENV"
+
+      - name: Check the image as CI does
+        run: tools/check-image.sh "$ARCHIVE"
+
+      - name: Build the image
+        run: |
+          docker build --platform "linux/$ARCH" --tag "$IMAGE:${VERSION#v}-$ARCH" \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.version=${VERSION#v}" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.licenses=AGPL-3.0-or-later" \
+            --label "org.opencontainers.image.title=Overscan" \
+            "$ARCHIVE"
+          # It holds the release's own binary.
+          got=$(docker run --rm "$IMAGE:${VERSION#v}-$ARCH" -version)
+          if [ "$got" != "$VERSION" ]; then
+            echo "::error::The image says it is $got, not $VERSION"
+            exit 1
+          fi
+
+      - name: Push the image
+        if: env.FULL == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin <<<"$GH_TOKEN"
+          docker push "$IMAGE:${VERSION#v}-$ARCH"
+
+  # One name for both machines: a full release's tags each point at the
+  # images of both, and its notes say where the image is.
+  image-tags:
+    needs: [release, image]
+    if: needs.release.outputs.full == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # the release's notes
+      packages: write # tag the image
+    env:
+      VERSION: ${{ inputs.version || github.ref_name }}
+      IMAGE: ghcr.io/${{ github.repository }}
+    steps:
+      - name: Tag the image for both machines
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin <<<"$GH_TOKEN"
+          v=${VERSION#v}
+          docker buildx imagetools create \
+            --tag "$IMAGE:$v" --tag "$IMAGE:${v%.*}" --tag "$IMAGE:${v%%.*}" --tag "$IMAGE:latest" \
+            --annotation "index:org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --annotation "index:org.opencontainers.image.version=$v" \
+            --annotation "index:org.opencontainers.image.licenses=AGPL-3.0-or-later" \
+            --annotation "index:org.opencontainers.image.description=Portal server for Stalker-compatible set-top boxes and apps, and for players, on a home network" \
+            "$IMAGE:$v-amd64" "$IMAGE:$v-arm64"
+          docker buildx imagetools inspect "$IMAGE:$v"
+
+      - name: Name the image in the release's notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=${VERSION#v}
+          gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json body --jq .body >notes.md
+          {
+            echo
+            echo "The container image, for amd64 and arm64: \`docker pull $IMAGE:$v\`, also tagged \`${v%.*}\`, \`${v%%.*}\` and \`latest\` ([install-docker.md](https://github.com/$GITHUB_REPOSITORY/blob/$VERSION/docs/install-docker.md))."
+          } >>notes.md
+          gh release edit "$VERSION" --repo "$GITHUB_REPOSITORY" --notes-file notes.md

@@ -146,7 +146,7 @@ clients are expected to work and are tracked in a compatibility matrix,
 | [docs/trying-it.md](docs/trying-it.md) | A walk through Overscan in the order you set it up: the admin and its sources, a MAG box, a Stalker client, players and a channel check |
 | [docs/testing.md](docs/testing.md) | How Overscan is tested: CI, conformance, the soak test, and checklists for the box and the admin |
 | [docs/install-lxc.md](docs/install-lxc.md) | Installing Overscan as a service in a Proxmox container or on another Debian system, from an archive or the Debian package |
-| [docs/install-docker.md](docs/install-docker.md) | Running Overscan with Docker Compose, from a release archive |
+| [docs/install-docker.md](docs/install-docker.md) | Running Overscan with Docker Compose, from a release archive or, from v1.0.0, the published image |
 | [docs/backup.md](docs/backup.md) | What to back up, the `overscan backup` command, and restoring |
 | [docs/upgrading.md](docs/upgrading.md) | Upgrading: what an upgrade keeps, from which versions, and going back |
 | [docs/security.md](docs/security.md) | The security model, what protects what, and the known limits |

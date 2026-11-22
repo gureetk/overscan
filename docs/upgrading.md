@@ -46,7 +46,7 @@ The copy holds the database only. Keep a copy of the key file apart from it, onc
 ## Upgrading
 
 - **A Proxmox container or another Debian system:** unpack the new release's archive and run its `install.sh` as root ([install-lxc.md](install-lxc.md)). It replaces the binary and the systemd unit, keeps the configuration and the data, and restarts the server. With the Debian package, install the new one: `apt install ./overscan_<version>_<arch>.deb` does the same.
-- **Docker:** unpack the new archive anywhere and run `docker compose up -d --build` in it ([install-docker.md](install-docker.md)). The new container takes over the same volume.
+- **Docker:** unpack the new archive anywhere and run `docker compose up -d --build` in it, or, with the published image, change its tag in `compose.yaml` to the new release's and run `docker compose up -d` ([install-docker.md](install-docker.md)). The new container takes over the same volume.
 
 Then check the log for the version and the database:
 
@@ -63,7 +63,7 @@ To go back to the version you had, in a Proxmox container or another Debian syst
 3. Restore the copy made before the upgrade, the one whose name has the older version's schema, as [backup.md](backup.md) says under *Restoring*: put it in place of `overscan.db`, and remove `overscan.db-wal` and `overscan.db-shm`.
 4. Start the server: `systemctl start overscan`.
 
-With Docker, restore the copy into the volume as [install-docker.md](install-docker.md) says, then run `docker compose up -d --build` in the older archive's folder.
+With Docker, restore the copy into the volume as [install-docker.md](install-docker.md) says, then run `docker compose up -d --build` in the older archive's folder, or set the older release's tag of the published image and run `docker compose up -d`.
 
 What changed after the upgrade, such as a channel renamed or a recording made, is not in the copy. Recordings made after the upgrade stay in the recordings folder, but the restored database does not list them.
 
