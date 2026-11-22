@@ -324,11 +324,20 @@ func TestPausedFilmGoesOn(t *testing.T) {
 
 func TestFilmsKeepTheLimit(t *testing.T) {
 	h := newItemHarness(t, 1)
+	// The film's source sends a first part and then waits, so that the film
+	// still holds the source's connection when the episodes ask, however
+	// slowly the test runs; the episodes' requests get their whole file.
+	h.files.mu.Lock()
+	h.files.stall = true
+	h.files.mu.Unlock()
 	film := ask(t, http.MethodGet, h.itemLink(1, h.film), "")
 	if _, err := io.ReadFull(film.Body, make([]byte, 1024)); err != nil {
 		t.Fatal(err)
 	}
 	defer film.Body.Close()
+	h.files.mu.Lock()
+	h.files.stall = false
+	h.files.mu.Unlock()
 	if h.hub.Available(h.film.SourceID, 2) {
 		t.Error("another device may play while a film plays")
 	}
