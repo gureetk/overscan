@@ -17,7 +17,12 @@
 //	go run ./tools/upgradetest overscan-0.3.0 overscan-0.4.0 overscan-0.5.0
 //
 // Each argument is an older release's binary. It needs nothing else, and
-// runs on Linux and macOS.
+// runs on Linux and macOS. With -chain, the household that the first sets
+// up goes through each of the others in turn, in the order given, and then
+// to this build, as the recommended path from an old release does: one
+// release at a time.
+//
+//	go run ./tools/upgradetest -chain overscan-0.3.0 overscan-0.4.0 overscan-0.5.0
 package main
 
 import (
@@ -40,10 +45,12 @@ func main() {
 	newBin := flag.String("new", "", "the Overscan binary to upgrade to (default: build it from this repository)")
 	keep := flag.Bool("keep", false, "keep each upgrade's folder, with the servers' logs and databases")
 	flag.BoolVar(&verbose, "v", false, "also list the values left out because they change by themselves across a restart")
+	chain := flag.Bool("chain", false, "upgrade the household that the first older release sets up through each of the others in turn, then to this build")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage: upgradetest [-new BINARY] [-keep] OLD_BINARY...\n\n"+
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: upgradetest [-new BINARY] [-keep] [-chain] OLD_BINARY...\n\n"+
 			"Upgrades a household that each older release sets up to this build, and checks that it keeps\n"+
-			"what the household set up.\n\n")
+			"what the household set up. With -chain, one household goes through the older releases in the\n"+
+			"order given, then to this build.\n\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -74,16 +81,29 @@ func main() {
 		fail(err)
 	}
 
-	failed := false
+	var versions []string
 	for _, old := range flag.Args() {
 		version, err := versionOf(old)
 		if err != nil {
 			fail(err)
 		}
-		fmt.Printf("upgrading from %s to %s\n", version, newVersion)
-		report, err := upgrade(ctx, old, version, bin, *keep)
+		versions = append(versions, version)
+	}
+	if *chain {
+		fmt.Printf("upgrading from %s to %s\n", strings.Join(versions, ", then "), newVersion)
+		report, err := upgrade(ctx, flag.Args(), versions, bin, *keep)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "upgradetest: from %s: %v\n", version, err)
+			fail(fmt.Errorf("from %s: %w", versions[0], err))
+		}
+		fmt.Print(report)
+		return
+	}
+	failed := false
+	for i, old := range flag.Args() {
+		fmt.Printf("upgrading from %s to %s\n", versions[i], newVersion)
+		report, err := upgrade(ctx, []string{old}, versions[i:i+1], bin, *keep)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "upgradetest: from %s: %v\n", versions[i], err)
 			failed = true
 			continue
 		}
@@ -124,9 +144,11 @@ func writeConfig(path, listen, data string, p *provider) error {
 // early in a list moves the rest of it, which would report every element.
 const maxProblems = 40
 
-// upgrade runs one older release's household through the upgrade, and
-// returns what it checked.
-func upgrade(ctx context.Context, oldBin, oldVersion, newBin string, keep bool) (string, error) {
+// upgrade sets up a household with the first of the older releases in
+// path, whose versions are versions, upgrades it through the others in
+// turn, then to newBin, and returns what it checked.
+func upgrade(ctx context.Context, path, versions []string, newBin string, keep bool) (string, error) {
+	oldBin, oldVersion := path[0], versions[0]
 	dir, err := os.MkdirTemp("", "overscan-upgrade-")
 	if err != nil {
 		return "", err
@@ -206,6 +228,19 @@ func upgrade(ctx context.Context, oldBin, oldVersion, newBin string, keep bool) 
 		return "", err
 	}
 
+	// The releases on the way, each started once on the household's data,
+	// which migrates it as that release's upgrade would.
+	lastSchema := oldSchema
+	for i := 1; i < len(path); i++ {
+		logPath := filepath.Join(dir, fmt.Sprintf("step%d.log", i))
+		if err := restartAndWait(ctx, path[i], cfg, base, logPath); err != nil {
+			return "", fmt.Errorf("upgrading to %s on the way: %w (its log: %s)", versions[i], err, logPath)
+		}
+		if lastSchema, err = userVersion(filepath.Join(data, "overscan.db")); err != nil {
+			return "", err
+		}
+	}
+
 	// The upgrade.
 	now, err := restartAndLook(ctx, h, newBin, cfg, base, filepath.Join(dir, "new.log"))
 	if err != nil {
@@ -241,27 +276,28 @@ func upgrade(ctx context.Context, oldBin, oldVersion, newBin string, keep bool) 
 		return "", err
 	}
 
-	// The backup made before the schema changed.
+	// The backup that this build made before it changed the schema.
 	backup := "none was needed"
-	backups, _ := filepath.Glob(filepath.Join(data, "backups", fmt.Sprintf("before-upgrade-*-schema%d.db", oldSchema)))
+	backups, _ := filepath.Glob(filepath.Join(data, "backups", fmt.Sprintf("before-upgrade-*-schema%d.db", lastSchema)))
 	switch {
-	case oldSchema == newSchema && len(backups) != 0:
-		problems = append(problems, fmt.Sprintf("the schema stayed at %d, yet the database was backed up as if it had changed: %v", oldSchema, backups))
-	case oldSchema != newSchema && len(backups) != 1:
-		problems = append(problems, fmt.Sprintf("the schema went from %d to %d, and the backups folder holds %d copies made before it, not one", oldSchema, newSchema, len(backups)))
-	case oldSchema != newSchema:
+	case lastSchema == newSchema && len(backups) != 0:
+		problems = append(problems, fmt.Sprintf("the schema stayed at %d, yet the database was backed up as if it had changed: %v", lastSchema, backups))
+	case lastSchema != newSchema && len(backups) != 1:
+		problems = append(problems, fmt.Sprintf("the schema went from %d to %d, and the backups folder holds %d copies made before it, not one", lastSchema, newSchema, len(backups)))
+	case lastSchema != newSchema:
 		v, err := userVersion(backups[0])
 		if err != nil {
 			return "", err
 		}
-		if v != oldSchema {
-			problems = append(problems, fmt.Sprintf("the backup %s has schema %d, not %d", filepath.Base(backups[0]), v, oldSchema))
+		if v != lastSchema {
+			problems = append(problems, fmt.Sprintf("the backup %s has schema %d, not %d", filepath.Base(backups[0]), v, lastSchema))
 		}
 		backup = filepath.Base(backups[0])
 	}
 
-	// Every row the old database held, in a copy upgraded by this build
-	// alone, before a server changes anything in it.
+	// Every row the old database held, in a copy upgraded by the releases
+	// on the way and this build alone, before a server changes anything in
+	// it.
 	copyData := filepath.Join(dir, "copy")
 	if err := os.MkdirAll(copyData, 0o700); err != nil {
 		return "", err
@@ -274,8 +310,10 @@ func upgrade(ctx context.Context, oldBin, oldVersion, newBin string, keep bool) 
 	if err := writeConfig(copyCfg, "127.0.0.1:0", copyData, nil); err != nil {
 		return "", err
 	}
-	if _, err := command(newBin, copyCfg, "", "devices", "list"); err != nil {
-		return "", err
+	for _, bin := range append(slices.Clone(path[1:]), newBin) {
+		if _, err := command(bin, copyCfg, "", "devices", "list"); err != nil {
+			return "", err
+		}
 	}
 	lost, err := keptRows(oldDB, upgraded)
 	if err != nil {
@@ -313,6 +351,21 @@ func upgrade(ctx context.Context, oldBin, oldVersion, newBin string, keep bool) 
 	return fmt.Sprintf("  kept everything: %d answers the same (%d values left out that change by themselves across a restart),\n"+
 		"  %d rows of %d tables, schema %d to %d, the same as a new database's; backup before the upgrade: %s\n",
 		len(order), len(skip), rows, len(old.columns), oldSchema, newSchema, backup), nil
+}
+
+// restartAndWait starts bin on the household's data directory, waits for
+// its sources and stops it, as a release on the way of an upgrade.
+func restartAndWait(ctx context.Context, bin, cfg, base, logPath string) error {
+	srv, err := start(ctx, bin, cfg, base, logPath)
+	if err != nil {
+		return err
+	}
+	defer srv.stop()
+	a, err := signIn(base, "admin", adminPassword)
+	if err != nil {
+		return fmt.Errorf("the administrator's password: %w", err)
+	}
+	return waitForSources(a, srv.started)
 }
 
 // restartAndLook starts bin on the household's data directory, waits for
