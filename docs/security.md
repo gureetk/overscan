@@ -149,6 +149,7 @@ The whole server was checked against the plan's section 11 and the model above, 
 - **The probe page's reports** (D120) were saved from anyone who reached the server; they are now saved only while the configuration says so, and from the server's own networks only.
 - **Playlist files** must be regular files: a named pipe held a refresh up until something wrote to it, and a device gave data until the size limit stopped it. Errors no longer carry the file's path.
 - **Public addresses only** (D121), which the review before v0.1.0 left for later, keeps a source's requests off the home network.
+- **Mistakes in the configuration file** were reported with the lines around them, which can hold a source's password, and so reached the journal. The message now names the file, the line and the key, and no value (D125).
 - **Claims checked again.**
   - Before v0.1.0: the *ffmpeg* row said that ffmpeg reads and writes pipes only, which has not been so since films are converted (D68); it now says what each use reads. The system call filter for the systemd unit is part of 1.0's packaging.
   - M5: the marks that change the direction of text are taken out of what sources send, but not of what the administrator writes (*Known limits*). Themes still have no cap on how many may be installed; each is at most 16 KB, and only the administrator installs them.

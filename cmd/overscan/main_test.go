@@ -243,3 +243,50 @@ func TestHubSources(t *testing.T) {
 		t.Errorf("hub sources %+v, want %+v", got, want)
 	}
 }
+
+// Help answers on stdout, before the configuration is read, so that it
+// shows whatever the file holds and whoever runs it.
+func TestHelp(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "absent.yaml")
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"-h"}, "overscan help [COMMAND]"},
+		{[]string{"--help"}, "overscan [-config FILE] debug COMMAND"},
+		{[]string{"help"}, "-config string"},
+		{[]string{"help", "devices"}, "overscan devices approve"},
+		{[]string{"help", "nothing"}, "overscan [-config FILE] backup [FILE]"},
+		{[]string{"-config", missing, "devices", "-h"}, "overscan devices list"},
+		{[]string{"-config", missing, "devices", "help"}, "overscan devices list"},
+		{[]string{"-config", missing, "devices", "approve", "--help"}, "overscan devices approve"},
+		{[]string{"-config", missing, "admin", "password", "-h"}, "overscan admin password"},
+		{[]string{"-config", missing, "debug", "channel", "-help"}, "overscan debug channel"},
+		{[]string{"-config", missing, "backup", "-h"}, "overscan backup [FILE]"},
+	} {
+		var stdout, stderr bytes.Buffer
+		code := run(context.Background(), tc.args, nil, &stdout, &stderr, noEnv)
+		if code != 0 || !strings.Contains(stdout.String(), tc.want) || stderr.Len() != 0 {
+			t.Errorf("%q: exit %d, stdout %q, stderr %q", tc.args, code, stdout.String(), stderr.String())
+		}
+	}
+
+	// backup's argument is a file, which may be called help.
+	if _, ok := helpFor([]string{"backup", "help"}); ok {
+		t.Error("backup help asks for help")
+	}
+
+	// A mistake gives the help on stderr.
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"-nope"}, nil, &stdout, &stderr, noEnv); code != 2 || stdout.Len() != 0 ||
+		!strings.Contains(stderr.String(), "Usage:") {
+		t.Errorf("-nope: exit %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
+	}
+	// An unknown command is named before the configuration is read.
+	stdout.Reset()
+	stderr.Reset()
+	if code := run(context.Background(), []string{"-config", missing, "halp"}, nil, &stdout, &stderr, noEnv); code != 2 ||
+		!strings.Contains(stderr.String(), `unknown command "halp"`) || !strings.Contains(stderr.String(), "Usage:") {
+		t.Errorf("halp: exit %d, stderr %q", code, stderr.String())
+	}
+}

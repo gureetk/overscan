@@ -10,7 +10,7 @@ What to check when something goes wrong, by what you see. [guide.md](guide.md) s
 
 - *the backup failed, so the database is as it was*: before it changes the schema, the server copies the database into `backups` beside it, and could not (D117). The disk is usually full: free some room, and start it again.
 - *the database's schema version is N, newer than the M this build knows*: a newer version upgraded the database, and an older one cannot open it. Install the newer version again, or go back as [upgrading.md](upgrading.md) says, with the copy made before the upgrade.
-- *config: …*: the configuration file has a mistake, which the line names, such as a key that does not exist or an address that is not one. [`deploy/overscan.example.yaml`](../deploy/overscan.example.yaml) explains every setting.
+- *config /etc/overscan/overscan.yaml, line N: …*: the configuration file has a mistake on that line, such as a setting that does not exist (the message names the nearest one), a value of the wrong kind, or indentation with tabs. *config: listen …* means an address without its port. The message never shows the file's values. [`deploy/overscan.example.yaml`](../deploy/overscan.example.yaml) explains every setting.
 
 **The admin's page does not open.** Check that the server runs (`systemctl status overscan`), and the address: `http://<server>:8080/admin/`, unless `admin_listen` gives the admin an address of its own, which the log's `admin listening` line names.
 
