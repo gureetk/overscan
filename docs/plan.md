@@ -43,7 +43,7 @@ Overscan is the server. It ingests content from the sources people already have,
 5. **Prefer not transcoding.** Redirect, proxy or remux first; transcode only when a device cannot play the source.
 6. **Light enough for an LXC.** Budgets for RAM and CPU are part of the design (section 15).
 7. **Clean room.** See section 17.
-8. **Interoperate before rebuilding.** Where a mature tool already does a job well (pseudo-channels, heavy stream management), Overscan reads its M3U, XMLTV or Xtream output instead of reimplementing it.
+8. **Interoperate, and grow where households need it.** Overscan reads the M3U, XMLTV and Xtream output of other tools, so a household can keep one it likes, or manage its sources in Overscan alone (D133). Jobs outside a household's needs, such as pseudo-channels from libraries, stay with tools made for them.
 
 ---
 
@@ -57,6 +57,7 @@ Overscan is the server. It ingests content from the sources people already have,
 | S4 | Give every device at home its own favorites, PIN and resume points. | Profiles, per-device state. |
 | S5 | Feed the reference client (or another app) from the same server. | Stalker API conformance. |
 | S6 | Give every player in the house (TiviMate, Kodi, VLC, Plex or Jellyfin Live TV) the same curated lineup, each person with their own login. | Accounts, M3U/XMLTV and Xtream output, lineup rules (the hub stage, M6). |
+| S7 | Manage several providers in Overscan alone, without a playlist manager in front of it. | Choosing what each source brings, lineups of the household's own groups, guides of their own, pictures where sources leave gaps (M8, M9). |
 
 **Order.** Live TV (S2, S3) comes before libraries (S1) because it needs no transcoding and exercises the whole path from source to box. If S1 matters more, M2 and M3 can swap; nothing in the architecture depends on the order.
 
@@ -529,6 +530,41 @@ Security review (an outside one if possible), complete docs, a promise that upgr
 *Done when:* the review's findings are fixed, or written up in [`security.md`](security.md) as known limits; every doc says what the code does; CI shows that a database from every full release since v0.3.0 upgrades to 1.0 and keeps what the household set up; what 1.0 ships installs, upgrades and uninstalls cleanly on a fresh Debian system; the performance budgets hold in a long soak; the name's check is done, or waived by the maintainer; and v1.0.0 is published.
 *Status:* done, and released in v1.0.0 on 22 November 2026. Its pre-releases: M7's plan (v1.0.0-alpha.1), upgrades that keep data (alpha.2), the security review (alpha.3), the docs (alpha.4) and the packaging (alpha.5); then the candidates: rc.1, which adds the long soak's results, and rc.2, which fits the admin's pages to wide screens, gives each account a page of its own, and builds the container image that v1.0.0 is the first to publish.
 
+### M8: Playlists (M)
+A household that runs several sources can make Overscan its only playlist manager (D133): it chooses what each source brings, and makes lineups of its own groups from any of them. Each phase ends with a pre-release of v1.1.0 (`v1.1.0-alpha.N`, then `-rc.N`), as M7's did with v1.0.0. What is new starts as Overscan behaved before, so an upgrade changes nothing a household sees (D115). In this order:
+- M8's order and *Done when*, and the milestones after 1.0 (D132 to D134).
+- What a source brings. A source reads every category, as before, or only the categories that the administrator ticks, live, films and series alike, with a choice for the categories that it adds later. The channels and titles of the other categories are not kept: no rows, no guide programmes and nothing to match. The source is read with the same requests as before and what it lists is filtered, so its provider sees no difference.
+- Lineups of the household's own groups. A lineup can start empty, and then holds only what its groups take. A group takes categories of any source, picked from one list of every source's categories, and keeps up with them as sources change; channels can still be moved, renamed and hidden one at a time, and rules still apply (D47, D107). Merging the copies of a channel (D113) can be on from the start. Lineups that exist keep taking every category. A lineup's page says which accounts see it, and through which outputs.
+- Numbers and order. A group can have a first number: its channels are numbered from it, and a channel that a source adds takes the next free number in its group. Numbers stay unique in a lineup, and numbers set by hand stay (D47). A group's channels can be sorted by name in natural order, so that 2 comes before 10. Find and replace for the names of groups, and of the shelves of films and series. A merged channel prefers the copies of the sources that the administrator puts first.
+- Channel health, from what happens (D134). Channels whose streams failed to start when someone played them are listed, and can be hidden until one plays again. Each stream's resolution, codecs and dynamic range are noted as it passes through the hub and shown in the admin, and a merge can prefer the best copy. The *Overview* can stop a stream.
+- The milestone's hardening: the security checklist on what is new, docs, and upgrade tests (D118).
+*Done when:* with fictional sources, a source set to three of its categories keeps only their channels and their programmes; a lineup started empty, with a group that takes categories of three sources, holds exactly their channels, and a channel that a source adds to one of them appears after a refresh, numbered after its group's last; numbers stay unique across the lineup; a merged channel plays the copy of the source put first, or the best copy seen; a lineup's page names the accounts and outputs that serve it, and its playlist and guide, its Xtream login, a box and a Stalker client show the same; and an upgrade changes nothing a household set up, as lineups keep taking every category and sources keep reading every category.
+*Status:* planned (D132); not started.
+
+### M9: Guides and pictures (M)
+Each phase ends with a pre-release of v1.2.0. In this order:
+- Guides of their own: an XMLTV address or file, read on a schedule and streamed as a source's guide is (D51), keeping only the programmes of the channels that use it. A channel without programmes from its own source is matched by guide ID, then by name, a country tag choosing between names that tie; no looser likeness matches on its own.
+- A channel's guide chosen by hand, from a list to search, with close names offered as suggestions to accept, a list of the channels still without a guide, and what is on now and next, to check a match. A choice by hand belongs to the source's channel, holds in every lineup and wins over rules, as hand edits do (D107).
+- Logos: one set by hand or by a rule; else the source's, if it loads; else the guide's, if it loads; else the channel's name. A guide can be set to give its logos first.
+- Placeholder programmes for channels without a guide, off at first.
+- Pictures for films and series from TMDB, with the administrator's own key (D88), for sources other than media servers and folders: where a title's picture is missing, does not load, or is a placeholder that many titles share. A title is found by the TMDB ID that its source gives, else by name and year.
+- Moving to other sources: a source's channels matched to those of other sources, by guide ID and then by name, for the administrator to confirm, after which the lineups' channels play from the new sources with their names, numbers, groups, backups, favourites, locks, repair and guides. For a household that changes provider, or that stops reading another manager's output.
+- The milestone's hardening, with a soak that reads a large guide.
+*Done when:* an added guide fills the channels whose sources give none, by ID and by name, with no wrong match among fictional guides; a guide chosen by hand survives refreshes; logos follow the order above; placeholders show only where set; titles whose pictures are missing, broken or placeholders show TMDB's; a lineup moved from one source to two others keeps its numbers, groups and favourites; memory stays within the budgets of section 15 with a large guide; and an upgrade changes nothing.
+*Status:* planned (D132).
+
+### M10: Transcoding (L)
+Planned in detail once M9 ends. In outline:
+- What is transcoded: *as needed*, as before, *always* with a profile, or *never*, for all of live TV, a group or a channel, and for all films and series, a shelf or a title, beside the profiles of accounts and devices (D110). Nothing changes until the administrator sets something.
+- How: profiles that the administrator makes, of a codec (H.264 or HEVC), a largest size, a quality and a highest bit rate, the frame rate, deinterlacing, the dynamic range and the sound, beside the profiles there are today.
+- Hardware: VA-API on Intel and AMD graphics, for decoding, filters and encoding, with a test of what the GPU does when the server starts, a fallback to software, and a number of transcodes at a time of its own. NVIDIA comes later.
+- Packaging: a choice that lets the service reach the GPU, which the unit's sandbox hides today (`PrivateDevices`), in `install.sh`, the Debian package, the image and the LXC guide's device passthrough, tested in CI as ffmpeg is in the sandbox (D126). A server without a GPU keeps today's sandbox.
+*Status:* planned (D132).
+
+### M11: HLS output (M)
+Planned in detail once M10 ends. HLS from the hub for players that ask for it: films and episodes that ffmpeg makes, so that players that seek by byte ranges can seek in them, and live channels as HLS. It replaces D110's line that HLS output waits in the backlog.
+*Status:* planned (D132).
+
 ---
 
 ## 15. Testing and quality
@@ -614,7 +650,7 @@ Security review (an outside one if possible), complete docs, a promise that upgr
 | Plex or Jellyfin APIs change. | Isolated adapters, version checks, adapter tests. |
 | Legal or trademark objections. | Clean-room policy, nominative use of names, review before public release. |
 | Scope creep. | Milestone gates, a release at the end of M2, the hub stage after households, the backlog below. |
-| The hub stage overlaps mature tools (Dispatcharr, m3u-editor). | Keep the MAG and Stalker side as the core; read their output instead of competing feature for feature (principle 8). |
+| The hub stage overlaps mature tools (Dispatcharr, m3u-editor). | Keep the MAG and Stalker side as the core; grow the hub only where households need it, within the budgets (D133); keep reading other tools' output (principle 8). |
 | The hub stage drifts toward a reseller panel. | Household scope and the non-goals hold; no credits or reseller features. |
 | Firmware updates for the box stop (2.20.16 was built in August 2026). | Generic protocol, other Stalker clients on other devices. |
 | Long-running memory growth. | Soak tests, memory limit, streaming parsers. |
@@ -697,6 +733,9 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 - Upgrade one release at a time: the path from an older version goes through each full release in turn, and CI follows it too (D129).
 - Each account has a page of its own, opened from the list on *Accounts*, in place of a card that opened below it (D130).
 - Full releases publish a container image, built from their own archives, for amd64 and arm64 (D131).
+- After 1.0: M8 playlists, M9 guides and pictures, M10 transcoding and M11 HLS output, each ending in a minor release (D132).
+- A household can manage its sources in Overscan alone, which still reads other managers' output (D133).
+- Overscan learns which channels work only from what happens as people watch; it never opens a channel to test it (D134).
 - The reference client reads Overscan through the Xtream output, without a source type of Overscan's own (open question 2).
 - HDHomeRun emulation waits in the backlog (open question 6).
 
@@ -761,15 +800,15 @@ Once boxes and Stalker clients are served well, Overscan can become the one IPTV
 
 ### 21.6 Where it sits among other tools
 
-Dispatcharr and m3u-editor already import M3U and Xtream and publish M3U, XMLTV, an Xtream-compatible API and HDHomeRun emulation, with per-user access (section 23). Overscan should not race them feature for feature. Its own ground is the MAG UI, the Stalker API and the library sources; the hub stage makes that ground reachable from every other player in the house. A household that prefers Dispatcharr for stream management can keep it and feed Overscan through its Xtream output (principle 8).
+Dispatcharr and m3u-editor already import M3U and Xtream and publish M3U, XMLTV, an Xtream-compatible API and HDHomeRun emulation, with per-user access (section 23). Overscan's own ground is the MAG UI, the Stalker API and the library sources; the hub stage makes that ground reachable from every other player in the house. After 1.0 the hub also covers what a household would otherwise run such a manager for (D133): choosing what each source brings, lineups of the household's own groups, guides of their own, and logos and pictures where sources leave gaps (M8, M9). It grows only where a household needs it, within the budgets of section 15, and leaves the rest to tools made for it. A household that prefers Dispatcharr or m3u-editor for stream management can keep it and feed Overscan through its Xtream output (principle 8).
 
 ---
 
 ## 22. Backlog (after 1.0)
 
-**First: finer control over transcoding.** The first milestone after 1.0 lets the administrator choose what is transcoded and how: live TV, films and series as a whole, and single channels and titles; the codec and the quality; and hardware encoders and decoders. The unit's sandbox and the container must then let ffmpeg reach the GPU, which both hide today.
+**First: M8 to M11** (section 14, D132): playlists, then guides and pictures, then finer control over transcoding with hardware encoders and decoders, then HLS output.
 
-Then, in no set order: radio and audio clubs · weather and widgets · app launcher · DVB tuner sources · HDHomeRun emulation, if it misses M6 · pseudo-channels from libraries (or via ErsatzTV or Tunarr) · multi-room resume · recordings sharing · `/metrics` and Prometheus dashboards · a script for the Proxmox host that makes the container · plugin system · translations · a native integration with the reference client · Ministra-style management REST (moved from M5) · a web player in the admin for previewing streams · Schedules Direct as a guide source, with the user's own subscription.
+Then, in no set order: radio and audio clubs · weather and widgets · app launcher · DVB tuner sources · HDHomeRun emulation · pseudo-channels from libraries (or via ErsatzTV or Tunarr) · multi-room resume · recordings sharing · `/metrics` and Prometheus dashboards · a script for the Proxmox host that makes the container · plugin system · translations · a native integration with the reference client · Ministra-style management REST (moved from M5) · a web player in the admin for previewing streams · Schedules Direct as a guide source, with the user's own subscription · NVIDIA graphics for transcoding · moving a stream that plays to a backup without the player asking again.
 
 ---
 
