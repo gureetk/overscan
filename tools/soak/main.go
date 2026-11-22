@@ -2,10 +2,11 @@
 
 // Command soak runs Overscan under load for a while and records its memory
 // and CPU use: the soak test of the plan (section 15). It serves a fake
-// provider with a large lineup of endless streams, runs Overscan against it,
-// and simulates boxes that sign in, load the channel list, watch channels
-// and switch between them, half through the Stalker API and half through
-// the device API.
+// provider with a large lineup of endless streams and its guide, writes a
+// folder of films and series, runs Overscan against them, and simulates
+// boxes that sign in, load the channel list, watch channels and switch
+// between them, half through the Stalker API and half through the device
+// API, which also browse the films.
 //
 //	go run ./tools/soak -duration 10m -boxes 4
 //
@@ -47,6 +48,9 @@ type options struct {
 	duration  time.Duration
 	boxes     int
 	channels  int
+	guide     int // hours of programmes for each channel
+	films     int
+	series    int
 	bitrate   int
 	zap       time.Duration
 	settle    time.Duration
@@ -63,6 +67,9 @@ func main() {
 	flag.DurationVar(&o.duration, "duration", 10*time.Minute, "how long the boxes run")
 	flag.IntVar(&o.boxes, "boxes", 4, "how many boxes to simulate, each watching one stream")
 	flag.IntVar(&o.channels, "channels", 20000, "how many channels the fake provider lists")
+	flag.IntVar(&o.guide, "guide", 24, "how many hours of one-hour programmes the guide has for each channel (0: no guide)")
+	flag.IntVar(&o.films, "films", 10000, "how many films the folder of films holds")
+	flag.IntVar(&o.series, "series", 500, "how many series the folder holds, each of two seasons of ten episodes")
 	flag.IntVar(&o.bitrate, "bitrate", 5_000_000, "each stream's rate, in bits per second")
 	flag.DurationVar(&o.zap, "zap", 2*time.Minute, "how long a box stays on a channel, on average")
 	flag.DurationVar(&o.settle, "settle", 30*time.Second, "how long the server idles with the lineup loaded before the boxes start")
@@ -100,17 +107,56 @@ func run(ctx context.Context, o options) error {
 		}
 	}
 
-	provider, err := startProvider(o.channels, o.bitrate)
+	provider, err := startProvider(o.channels, o.guide, o.bitrate)
 	if err != nil {
 		return err
 	}
 	defer provider.Close()
+	media := filepath.Join(dir, "media")
+	if err := makeLibrary(media, o.films, o.series); err != nil {
+		return err
+	}
 
-	srv, err := startServer(ctx, dir, bin, provider.URL)
+	srv, err := startServer(dir, bin, provider.URL, media)
 	if err != nil {
 		return err
 	}
 	defer srv.stop()
+
+	// Memory is sampled from the start, so that the peak takes in reading
+	// the lineup, its guide and the films, as well as the boxes.
+	m := &meter{pid: srv.cmd.Process.Pid}
+	first, err := m.read()
+	if err != nil {
+		return fmt.Errorf("reading the server's use from /proc: %w", err)
+	}
+	var loadMu sync.Mutex
+	loading := []sample{first}
+	loaded := make(chan struct{})
+	var loadWG sync.WaitGroup
+	loadWG.Add(1)
+	go func() {
+		defer loadWG.Done()
+		t := time.NewTicker(time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-loaded:
+				return
+			case <-t.C:
+				if s, err := m.read(); err == nil {
+					loadMu.Lock()
+					loading = append(loading, s)
+					loadMu.Unlock()
+				}
+			}
+		}
+	}()
+	if err := srv.waitReady(ctx, o.guide > 0); err != nil {
+		close(loaded)
+		loadWG.Wait()
+		return err
+	}
 
 	macs := make([]string, o.boxes)
 	for i := range macs {
@@ -120,12 +166,12 @@ func run(ctx context.Context, o options) error {
 		}
 	}
 
-	m := &meter{pid: srv.cmd.Process.Pid}
-	if _, err := m.read(); err != nil {
-		return fmt.Errorf("reading the server's use from /proc: %w", err)
-	}
-	fmt.Printf("lineup of %d channels loaded; idling for %s\n", o.channels, o.settle)
-	if err := sleep(ctx, o.settle); err != nil {
+	fmt.Printf("lineup of %d channels loaded, with %d hours of guide, %d films and %d series; idling for %s\n",
+		o.channels, o.guide, o.films, o.series, o.settle)
+	err = sleep(ctx, o.settle)
+	close(loaded)
+	loadWG.Wait()
+	if err != nil {
 		return err
 	}
 	idle, err := m.read()
@@ -151,7 +197,7 @@ func run(ctx context.Context, o options) error {
 		}()
 	}
 
-	samples := []sample{idle}
+	samples := append(loading, idle)
 	ticker := time.NewTicker(o.sample)
 	for runCtx.Err() == nil {
 		select {
@@ -196,16 +242,41 @@ func sleep(ctx context.Context, d time.Duration) error {
 // The fake provider.
 
 // startProvider serves a lineup of n channels in 200 groups at
-// /playlist.m3u, and each channel as an endless MPEG-TS stream at bitrate.
-func startProvider(n, bitrate int) (*httpServer, error) {
+// /playlist.m3u, each channel as an endless MPEG-TS stream at bitrate, and,
+// unless guideHours is 0, their guide at /guide.xml: a programme an hour,
+// from the hour before it was asked for.
+func startProvider(n, guideHours, bitrate int) (*httpServer, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /playlist.m3u", func(w http.ResponseWriter, r *http.Request) {
 		bw := bufio.NewWriter(w)
-		bw.WriteString("#EXTM3U\n")
+		if guideHours > 0 {
+			fmt.Fprintf(bw, "#EXTM3U x-tvg-url=\"http://%s/guide.xml\"\n", r.Host)
+		} else {
+			bw.WriteString("#EXTM3U\n")
+		}
 		for i := 1; i <= n; i++ {
 			fmt.Fprintf(bw, "#EXTINF:-1 tvg-id=\"ch%d.example\" group-title=\"Group %d\",Soak channel %d\n", i, i%200, i)
 			fmt.Fprintf(bw, "http://%s/live/%d.ts\n", r.Host, i)
 		}
+		bw.Flush()
+	})
+	mux.HandleFunc("GET /guide.xml", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		bw := bufio.NewWriter(w)
+		bw.WriteString("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<tv>\n")
+		for i := 1; i <= n; i++ {
+			fmt.Fprintf(bw, "<channel id=\"ch%d.example\"><display-name>Soak channel %d</display-name></channel>\n", i, i)
+		}
+		start := time.Now().UTC().Truncate(time.Hour).Add(-time.Hour)
+		for i := 1; i <= n; i++ {
+			for h := range guideHours {
+				from := start.Add(time.Duration(h) * time.Hour)
+				fmt.Fprintf(bw, "<programme start=\"%s\" stop=\"%s\" channel=\"ch%d.example\"><title>Programme %d of channel %d</title>"+
+					"<desc>A programme of the soak test's guide, with a line of description as guides have.</desc></programme>\n",
+					from.Format("20060102150405 -0700"), from.Add(time.Hour).Format("20060102150405 -0700"), i, h+1, i)
+			}
+		}
+		bw.WriteString("</tv>\n")
 		bw.Flush()
 	})
 	mux.HandleFunc("GET /live/{n}", func(w http.ResponseWriter, r *http.Request) {
@@ -229,6 +300,37 @@ func startProvider(n, bitrate int) (*httpServer, error) {
 		}
 	})
 	return listen(mux)
+}
+
+// makeLibrary writes a folder of empty videos: films, each with its year,
+// and series of two seasons of ten episodes each, in folders as a library
+// of films and series has them. Nothing plays them; boxes browse them.
+func makeLibrary(dir string, films, series int) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	for i := 1; i <= films; i++ {
+		name := fmt.Sprintf("Soak film %05d (%d).mkv", i, 1950+i%75)
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o600); err != nil {
+			return err
+		}
+	}
+	for i := 1; i <= series; i++ {
+		show := fmt.Sprintf("Soak series %04d", i)
+		for season := 1; season <= 2; season++ {
+			folder := filepath.Join(dir, fmt.Sprintf("%s (%d)", show, 1990+i%35), fmt.Sprintf("Season %d", season))
+			if err := os.MkdirAll(folder, 0o700); err != nil {
+				return err
+			}
+			for episode := 1; episode <= 10; episode++ {
+				name := fmt.Sprintf("%s S%02dE%02d.mkv", show, season, episode)
+				if err := os.WriteFile(filepath.Join(folder, name), nil, 0o600); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 type httpServer struct {
@@ -257,7 +359,9 @@ type server struct {
 	log               *syncBuffer
 }
 
-func startServer(ctx context.Context, dir, bin, provider string) (*server, error) {
+// startServer starts Overscan with the provider's playlist and the folder
+// as its sources.
+func startServer(dir, bin, provider, media string) (*server, error) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
@@ -265,8 +369,9 @@ func startServer(ctx context.Context, dir, bin, provider string) (*server, error
 	addr := ln.Addr().String()
 	ln.Close()
 	s := &server{bin: bin, config: filepath.Join(dir, "overscan.yaml"), base: "http://" + addr, log: &syncBuffer{}}
-	config := fmt.Sprintf("listen: %q\ndata_dir: %q\nsources:\n  - name: soak\n    type: m3u\n    url: %q\n    max_connections: 0\n",
-		addr, filepath.Join(dir, "data"), provider+"/playlist.m3u")
+	config := fmt.Sprintf("listen: %q\ndata_dir: %q\nsources:\n  - name: soak\n    type: m3u\n    url: %q\n    max_connections: 0\n"+
+		"  - name: films\n    type: folder\n    url: %q\n",
+		addr, filepath.Join(dir, "data"), provider+"/playlist.m3u", media)
 	if err := os.WriteFile(s.config, []byte(config), 0o600); err != nil {
 		return nil, err
 	}
@@ -280,17 +385,25 @@ func startServer(ctx context.Context, dir, bin, provider string) (*server, error
 		_ = s.cmd.Wait()
 		close(s.exited)
 	}()
-	for !strings.Contains(s.log.String(), "source refreshed") {
+	return s, nil
+}
+
+// waitReady waits until the server has read the playlist, and its guide if
+// it has one.
+func (s *server) waitReady(ctx context.Context, guide bool) error {
+	ready := func(log string) bool {
+		return strings.Contains(log, "source refreshed") && (!guide || strings.Contains(log, "guide read"))
+	}
+	for !ready(s.log.String()) {
 		select {
 		case <-ctx.Done():
-			s.stop()
-			return nil, ctx.Err()
+			return ctx.Err()
 		case <-s.exited:
-			return nil, fmt.Errorf("Overscan exited:\n%s", s.log.String())
+			return fmt.Errorf("Overscan exited:\n%s", s.log.String())
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
-	return s, nil
+	return nil
 }
 
 func (s *server) stop() {
@@ -335,6 +448,7 @@ type stats struct {
 	streams, failedStreams   atomic.Int64
 	bytes                    atomic.Int64
 	listings                 atomic.Int64
+	shelves                  atomic.Int64 // shelves of films read
 }
 
 type box struct {
@@ -411,6 +525,7 @@ func (b *box) runDevice(ctx context.Context) {
 		}
 	}
 	for ctx.Err() == nil {
+		b.browseFilms(ctx)
 		var p struct{ URL string }
 		if b.device(ctx, &p, "POST", fmt.Sprintf("channels/%d/play", ids[b.rng.IntN(len(ids))]), "") != nil {
 			b.stats.failedStreams.Add(1)
@@ -418,6 +533,27 @@ func (b *box) runDevice(ctx context.Context) {
 			continue
 		}
 		b.watch(ctx, p.URL)
+	}
+}
+
+// browseFilms opens Movies, as a box does between channels, and reads the
+// first page of the shelves that list films.
+func (b *box) browseFilms(ctx context.Context) {
+	var lib struct {
+		State   string
+		Shelves []struct{ ID string }
+	}
+	if b.device(ctx, &lib, "GET", "movies", "") != nil {
+		return
+	}
+	for _, sh := range lib.Shelves {
+		if _, err := strconv.ParseInt(sh.ID, 10, 64); err != nil {
+			continue // continue watching, or added lately
+		}
+		var page json.RawMessage
+		if b.device(ctx, &page, "GET", "movies/shelves/"+sh.ID, "") == nil {
+			b.stats.shelves.Add(1)
+		}
 	}
 }
 
@@ -583,23 +719,30 @@ func cpuPercent(a, b sample) float64 {
 func mb(kb int64) float64 { return float64(kb) / 1024 }
 
 func report(o options, idle sample, samples []sample, st *stats) error {
-	var peak int64
+	// The samples before idle are those taken while the server read its
+	// sources; CPU counts from idle on, under the boxes' load.
+	var peak, loadPeak, runPeak int64
 	peakCPU := 0.0
 	for i, s := range samples {
 		peak = max(peak, s.rssKB)
-		if i > 0 {
+		if s.at.Before(idle.at) {
+			loadPeak = max(loadPeak, s.rssKB)
+			continue
+		}
+		runPeak = max(runPeak, s.rssKB)
+		if i > 0 && !samples[i-1].at.Before(idle.at) {
 			peakCPU = max(peakCPU, cpuPercent(samples[i-1], s))
 		}
 	}
 	last := samples[len(samples)-1]
-	avgCPU := cpuPercent(samples[0], last)
-	fmt.Printf("\nSoak test: %s, %d boxes, %d channels, %.1f Mbit/s a stream, a new channel every %s on average\n",
-		o.duration, o.boxes, o.channels, float64(o.bitrate)/1e6, o.zap)
-	fmt.Printf("Resident memory: %.1f MB idle with the lineup loaded, %.1f MB at the peak, %.1f MB at the end\n",
-		mb(idle.rssKB), mb(peak), mb(last.rssKB))
+	avgCPU := cpuPercent(idle, last)
+	fmt.Printf("\nSoak test: %s, %d boxes, %d channels with %d hours of guide, %d films and %d series, %.1f Mbit/s a stream, a new channel every %s on average\n",
+		o.duration, o.boxes, o.channels, o.guide, o.films, o.series, float64(o.bitrate)/1e6, o.zap)
+	fmt.Printf("Resident memory: %.1f MB at the peak while reading the sources, %.1f MB idle with them loaded, %.1f MB at the peak under load, %.1f MB at the end\n",
+		mb(loadPeak), mb(idle.rssKB), mb(runPeak), mb(last.rssKB))
 	fmt.Printf("CPU: %.1f%% of one core on average under load, %.1f%% at the peak over %s\n", avgCPU, peakCPU, o.sample)
-	fmt.Printf("Streams: %d played, %d failed, %.2f GB proxied; channel lists loaded: %d\n",
-		st.streams.Load(), st.failedStreams.Load(), float64(st.bytes.Load())/1e9, st.listings.Load())
+	fmt.Printf("Streams: %d played, %d failed, %.2f GB proxied; channel lists loaded: %d; shelves of films read: %d\n",
+		st.streams.Load(), st.failedStreams.Load(), float64(st.bytes.Load())/1e9, st.listings.Load(), st.shelves.Load())
 	fmt.Printf("API calls: %d, %d failed\n", st.requests.Load(), st.failedRequests.Load())
 	fmt.Printf("Samples: %s\n", o.out)
 

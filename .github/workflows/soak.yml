@@ -1,17 +1,19 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# Runs the soak test (tools/soak, docs/testing.md) for ten minutes: Overscan
-# with a lineup of 20,000 channels and four simulated boxes that watch
-# channels and switch between them, checked against the memory budgets of
-# the plan (section 15). It runs every Monday and on demand, not on every
-# pull request; the 24-hour run belongs on the LXC.
+# Runs the soak test (tools/soak, docs/testing.md): Overscan with a lineup
+# of 20,000 channels and their guide, a folder of films and series, and four
+# simulated boxes that watch channels, switch between them and browse the
+# films, checked against the memory budgets of the plan (section 15). It
+# runs for ten minutes every Monday, and on demand for as long as asked, up
+# to five and a half hours, since a job of GitHub's stops at six; not on
+# every pull request.
 name: Soak
 
 on:
   workflow_dispatch:
     inputs:
       duration:
-        description: How long the boxes run, such as 10m
+        description: How long the boxes run, such as 10m or 5h; at most 330m
         required: false
         default: 10m
         type: string
@@ -28,7 +30,9 @@ concurrency:
 jobs:
   soak:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # Six hours for a run asked for by hand, which may be long; the weekly
+    # run's ten minutes need far less.
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 360 || 40 }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -42,8 +46,16 @@ jobs:
         env:
           DURATION: ${{ inputs.duration || '10m' }}
         run: |
-          if ! [[ "$DURATION" =~ ^[0-9]+[mh]$ ]]; then
+          if ! [[ "$DURATION" =~ ^([0-9]+)([mh])$ ]]; then
             echo "::error::'$DURATION' is not a duration such as 10m or 2h"
+            exit 1
+          fi
+          minutes=${BASH_REMATCH[1]}
+          if [ "${BASH_REMATCH[2]}" = h ]; then
+            minutes=$((minutes * 60))
+          fi
+          if [ "$minutes" -gt 330 ]; then
+            echo "::error::'$DURATION' is longer than 330 minutes, which a job of six hours cannot hold with the build and the setting up"
             exit 1
           fi
           go run ./tools/soak -duration "$DURATION" -out soak.csv
