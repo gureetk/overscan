@@ -1,10 +1,10 @@
 # Security
 
-How Overscan protects a household's server, what it leaves to the network it runs on, what is known not to be covered, and what each review checked, the last of them the review of the whole server for 1.0. [`SECURITY.md`](../SECURITY.md) says how to report a vulnerability, and the plan's section 11 is the design.
+How Overscan protects a household's server, what it leaves to the network it runs on, what is known not to be covered, and what each review checked, the last of them the review of the whole server for 1.0. Every review has been the project's own; none has been made from outside. [`SECURITY.md`](../SECURITY.md) says how to report a vulnerability, and the plan's section 11 is the design.
 
 ## The model
 
-Overscan runs on a home network for the household's own devices. It trusts the administrator, who signs in to the admin, and the sources that the administrator adds, as far as fetching what they point to. Everything else is untrusted: devices that have not been approved, whatever a source sends, and the rest of the network.
+Overscan is made for a home network and the household's own devices (D128). Away from home, those devices reach it through a VPN into the home network, which makes them part of it, rather than through a port opened to the internet. It trusts the administrator, who signs in to the admin, and the sources that the administrator adds, as far as fetching what they point to. Everything else is untrusted: devices that have not been approved, whatever a source sends, and the rest of the network.
 
 ### Who can reach what
 
@@ -16,13 +16,13 @@ Overscan runs on a home network for the household's own devices. It trusts the a
 | A player of the outputs | Its account's playlist, guide, Xtream API and streams | Off by default; a token or a login; the server's own networks unless told otherwise; its account's limit and its sources' (D103 to D105) |
 | The administrator | Everything that Overscan does: sources, among them the files and folders on the server that its user can read, devices, accounts, settings | Trusted: signs in with the password set on the server |
 | A source | What it sends: lists, guides, streams and pictures, and the addresses that Overscan then fetches | Size caps and fuzzed parsers; its addresses and logins never leave the server; its text is shown as text; public addresses only, if set (D121) |
-| The internet beyond the home | Nothing, unless the administrator exposes the server | Built for the home network; behind a reverse proxy with TLS, named in `trusted_proxies` (D119), if at all |
+| The internet beyond the home | Nothing, unless the administrator exposes the server | Made for the home network, and not for the internet (D128): a VPN into the home network instead; if the server is exposed anyway, a reverse proxy with TLS, named in `trusted_proxies` (D119), at the least |
 
 ## What is in place
 
 | Area | In place |
 |---|---|
-| Network | Plain HTTP on port 8080, for the home network. `admin_listen` can give the admin an address of its own, such as `127.0.0.1:8081` reached over SSH (D44). Do not expose Overscan to the internet; if you must, put it behind a reverse proxy with TLS, named in `trusted_proxies` (D119). |
+| Network | Plain HTTP on port 8080, for the home network. `admin_listen` can give the admin an address of its own, such as `127.0.0.1:8081` reached over SSH (D44). Do not expose Overscan to the internet: away from home, reach it through a VPN into the home network (D128). A reverse proxy with TLS, named in `trusted_proxies` (D119), can give it a name and a certificate on the home network; exposing it through one is outside what Overscan is made for. |
 | Reverse proxies | Believed only when named in `trusted_proxies`, each an address or range on the server's own networks (D119). The client that such a proxy names in `X-Forwarded-For`, read from the right past the trusted proxies, is the one that the log, the waits after wrong passwords and the outputs' check go by; one that names no client is no player at home. Its `X-Forwarded-Proto: https` makes the admin's cookie `Secure`. From anyone else, both headers are ignored. |
 | Requests | Headers within 10 seconds and 64 KiB; a body within a minute of its first byte; a connection idle for two minutes is closed. Bodies are capped where they are read: 64 KiB for the admin's API and its forms, with a lineup file's 2 MB besides; 4 KiB for the device API; 16 KiB for an Xtream login's form. Answers take as long as they need, since a stream goes on for as long as someone watches. |
 | Routes | Every route of both addresses is in a table of who may call it, and tests that walk the routers check each against it: the wrong caller is refused, every change in the admin needs the session's CSRF token and refuses another site, and names in paths that try to climb out of what a route serves reach no file ([testing.md](testing.md), *Who may call each route*). A new route fails the tests until it is in the table. |
@@ -69,7 +69,7 @@ What Overscan does not protect against, as of 1.0, and why:
 
 ## For an outside reviewer
 
-A short guide for someone reviewing Overscan from outside.
+A short guide for someone reviewing Overscan from outside, which no one has done yet.
 
 - **Scope.** The server (`cmd/` and `internal/`, in Go), the MAG page (`web/mag`, TypeScript compiled to ES5), the admin's pages (`web/admin`), the probe page (`web/probe`), the install script, the Debian package's scripts and the systemd unit (`deploy/`), and the release (`tools/build-release.sh`, `.github/workflows/`). Out of scope: providers, media servers, the boxes' firmware and the household's network.
 - **The model** is *Who can reach what*, above, and the plan's section 11 is the design.

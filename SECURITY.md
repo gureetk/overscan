@@ -14,4 +14,4 @@ Fixes go into the next release, from the latest. Upgrading keeps everything that
 
 ## Scope
 
-Overscan is meant to run on a home network. Exposing it to the internet is discouraged, and doing so without a reverse proxy with TLS is outside what it is designed for. [docs/security.md](docs/security.md) describes the security model, what protects what, and the known limits.
+Overscan is made for a home network, and its security has been reviewed by the project, not from outside. Reaching it from the internet is outside what it is made for: away from home, connect to the home network through a VPN. [docs/security.md](docs/security.md) describes the security model, what protects what, and the known limits.

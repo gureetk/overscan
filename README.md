@@ -26,6 +26,11 @@ It is built for a household or a small group of friends running one server at
 home, not for a reseller business. One binary, one SQLite file and ffmpeg, in a
 small LXC or VM, should be all it takes.
 
+It is made for the home network. Away from home, reach it through a VPN into
+your home network rather than by opening its port to the internet: its
+security has been reviewed by the project, not from outside
+([docs/security.md](docs/security.md)).
+
 Overscan comes with no channels, films or playlists, and points to none. It
 plays only the sources its administrator adds: use it with services and media
 you are entitled to use.
