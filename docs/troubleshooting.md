@@ -50,7 +50,7 @@ What to check when something goes wrong, by what you see. [guide.md](guide.md) s
 
 **A player gets *404 page not found* for its playlist or login.** The outputs are off: *Accounts* → *Outputs for players*, and the account's own *Playlist and guide* or its login. New addresses from *Make new addresses* replace the old ones, which then answer 404.
 
-**A player gets *403*: *Overscan's outputs answer players on its own networks only.*** The player is not on your own networks, or comes through a reverse proxy that names no client. Use a VPN, or a reverse proxy named in `trusted_proxies` ([outputs.md](outputs.md), D119).
+**A player gets *403*: *Overscan's outputs answer players on its own networks only.*** The player is not on your own networks, or comes through a reverse proxy that names no client. Away from home, connect through a VPN into your home network; behind a reverse proxy, name it in `trusted_proxies` ([outputs.md](outputs.md), D119).
 
 **A player's login fails though it is right.** After five wrong logins from one address within 15 minutes, even the right one waits until the first of them is 15 minutes old.
 

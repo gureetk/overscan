@@ -2,6 +2,8 @@
 
 The first target is a Proxmox container ([`install-lxc.md`](install-lxc.md)), but every release archive also holds a `Dockerfile` and a `compose.yaml`. They build a small image from the archive's own binary: Debian's slim image with ffmpeg, which repairs streams (D57). Nothing is pulled from a registry but Debian's image and packages.
 
+Overscan is made for the home network: do not forward its port on your router, and reach it from away through a VPN into your home network (D128).
+
 ## Start it
 
 On a machine with Docker and its Compose plugin, on the same network as the MAG box, take the archive for the machine (`linux_amd64` for 64-bit x86, `linux_arm64` for 64-bit ARM, such as a Raspberry Pi 4 or 5) and, in the unpacked folder:

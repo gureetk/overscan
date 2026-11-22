@@ -74,9 +74,11 @@ The films and series of Xtream servers, Stalker portals, Jellyfin, Plex and fold
 - **Going back** to the version before: [upgrading.md](upgrading.md), *Going back*.
 - **Removing it:** `sudo ./install.sh --uninstall`, or `sudo apt remove overscan` for the package. Both keep the configuration and the data ([install-lxc.md](install-lxc.md)).
 
-## Behind a reverse proxy
+## Away from home, and behind a reverse proxy
 
-Overscan speaks plain HTTP on the home network. If you put a reverse proxy with TLS in front of it, name the proxy's address in `trusted_proxies` in the configuration file, so that Overscan knows who each client is (D119, [security.md](security.md)).
+Overscan is made for the home network (D128). Away from home, connect to the home network through a VPN, such as WireGuard, Tailscale or your router's own, rather than forwarding Overscan's port: boxes, players and the admin then work as they do at home, and the outputs' check of your own networks lets them in.
+
+Overscan speaks plain HTTP. If you put a reverse proxy with TLS in front of it on the home network, name the proxy's address in `trusted_proxies` in the configuration file, so that Overscan knows who each client is (D119, [security.md](security.md)).
 
 ## When something goes wrong
 

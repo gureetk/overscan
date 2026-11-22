@@ -1,6 +1,6 @@
 # Installing in a Proxmox container
 
-Overscan's first target is an unprivileged Debian container on Proxmox VE. The release archives hold an install script and a systemd unit that work in any Debian or Ubuntu system with systemd. [`install-docker.md`](install-docker.md) is for Docker instead.
+Overscan's first target is an unprivileged Debian container on Proxmox VE. The release archives hold an install script and a systemd unit that work in any Debian or Ubuntu system with systemd. [`install-docker.md`](install-docker.md) is for Docker instead. Overscan is made for the home network: do not forward its port on your router, and reach it from away through a VPN into your home network (D128).
 
 ## 1. Create the container
 
