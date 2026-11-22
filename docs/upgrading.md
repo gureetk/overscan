@@ -70,3 +70,4 @@ What changed after the upgrade, such as a channel renamed or a recording made, i
 What changed in a way that could matter to a script or a player, and what the new version does with the old form:
 
 - **1.0: the probe page's reports.** The probe page ([probe.md](probe.md)) saves its reports only while `probe_reports: true` is in the configuration file, or `OVERSCAN_PROBE_REPORTS=true` in the environment, and only from the server's own networks (D120). Before 1.0, it saved them from anyone. Without it, the page still runs and shows its results, and says that the server did not save the report.
+- **1.0: the systemd unit's system calls.** The unit that `install.sh` and the Debian package install lets the server, and the ffmpeg it runs, make only the system calls that ordinary services make (D126). A drop-in of your own, made with `systemctl edit overscan`, that runs something needing others can widen the list with a `SystemCallFilter=` line of its own.
