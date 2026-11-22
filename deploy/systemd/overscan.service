@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# systemd unit for Overscan. install.sh puts it in /etc/systemd/system/.
+# systemd unit for Overscan. install.sh puts it in /etc/systemd/system/; the
+# Debian package, in /usr/lib/systemd/system/, with the binary in /usr/bin.
 #
 # The sandboxing settings need mount namespaces. In an unprivileged Proxmox
 # container that means the "nesting" feature, which new containers have by
@@ -39,6 +40,14 @@ RestrictRealtime=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 SystemCallArchitectures=native
+RestrictSUIDSGID=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+# The system calls that services use, and no others, for the server and
+# the ffmpeg it runs. A call outside them fails, rather than ending the
+# process.
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
 
 [Install]
 WantedBy=multi-user.target

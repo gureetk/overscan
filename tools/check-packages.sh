@@ -6,10 +6,12 @@
 # Checks what a release ships, as built by tools/build-release.sh into DIST,
 # on a fresh Debian system with systemd, in a container (D124):
 #
-# - the amd64 Debian package installs, starts the service and answers its
-#   health check; installs again over itself, keeping a changed
-#   configuration file; is removed, keeping the configuration and the data;
-#   and is purged, keeping the data;
+# - the amd64 Debian package installs, with the ffmpeg it recommends,
+#   starts the service and answers its health check; ffmpeg copies and
+#   encodes a stream in the service's sandbox, as the server has it do;
+#   the package installs again over itself, keeping a changed configuration
+#   file; is removed, keeping the configuration and the data; and is purged,
+#   keeping the data;
 # - the amd64 archive's install.sh installs and starts the service, runs
 #   again as an upgrade, and uninstalls, keeping the configuration and the
 #   data.
@@ -25,7 +27,7 @@ image=overscan-check-debian
 docker build -q -t "$image" - >/dev/null <<'DOCKERFILE'
 FROM debian:trixie-slim
 RUN apt-get update \
- && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd systemd-sysv curl ca-certificates \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd systemd-sysv dbus curl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 STOPSIGNAL SIGRTMIN+3
 CMD ["/sbin/init"]
@@ -67,14 +69,39 @@ echo "== the Debian package"
 start
 inside "installing the package" <<SCRIPT
 apt-get update -qq
-apt-get install -y --no-install-recommends /dist/$deb
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /dist/$deb
 overscan -version
+ffmpeg -hide_banner -version | sed -n 1p
 systemctl is-active overscan
 for _ in \$(seq 20); do curl -fsS http://127.0.0.1:8080/healthz && break; sleep 1; done
 curl -fsS http://127.0.0.1:8080/healthz
 [ "\$(stat -c '%a %U %G' /etc/overscan/overscan.yaml)" = "640 root overscan" ]
 [ "\$(stat -c '%a %U' /var/lib/overscan)" = "700 overscan" ]
 test -e /var/lib/overscan/overscan.db
+SCRIPT
+inside "running ffmpeg in the service's sandbox" <<'SCRIPT'
+# The unit's own settings, but for those that start the server.
+props=()
+while IFS= read -r line; do
+	case "$line" in
+	Type=* | ExecStart=* | Restart=* | RestartSec=*) ;;
+	*) props+=(-p "$line") ;;
+	esac
+done < <(sed -n '/^\[Service\]/,/^\[/{/^[A-Za-z]*=/p}' /usr/lib/systemd/system/overscan.service)
+# stdin is this script, which neither may read.
+sandboxed() { systemd-run --quiet --wait --pipe --collect "${props[@]}" "$@" </dev/null; }
+dir=/var/lib/overscan
+# A stream as a source sends it; copied, as stream repair does; and made
+# H.264 and AAC, as a stream profile and a film's conversion do.
+sandboxed ffmpeg -nostdin -hide_banner -loglevel error -f lavfi -i testsrc=size=320x240:rate=25 -f lavfi -i sine \
+	-t 2 -c:v mpeg2video -c:a mp2 -f mpegts -y "$dir/check-sample.ts"
+sandboxed ffmpeg -nostdin -hide_banner -loglevel error -f mpegts -i "$dir/check-sample.ts" -map '0:v?' -map '0:a?' -c copy \
+	-f mpegts -y "$dir/check-copied.ts"
+sandboxed ffmpeg -nostdin -hide_banner -loglevel error -i "$dir/check-sample.ts" -c:v libx264 -preset veryfast -c:a aac \
+	-f mpegts -y "$dir/check-encoded.ts"
+test -s "$dir/check-copied.ts"
+test -s "$dir/check-encoded.ts"
+rm "$dir"/check-*.ts
 SCRIPT
 inside "installing it again" <<SCRIPT
 echo '# kept by an upgrade' >>/etc/overscan/overscan.yaml
