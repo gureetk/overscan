@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="Licence: AGPL-3.0-or-later" src="https://img.shields.io/badge/licence-AGPL--3.0--or--later-3DD9C1?labelColor=0F1424"></a>
-  <img alt="Status: early development" src="https://img.shields.io/badge/status-early_development-F5F3EC?labelColor=0F1424">
+  <img alt="Status: 1.0 release candidate" src="https://img.shields.io/badge/status-1.0_release_candidate-F5F3EC?labelColor=0F1424">
 </p>
 
 ---
@@ -32,9 +32,13 @@ you are entitled to use.
 
 ## Status
 
-**Early development.** Version 0.5.0 is the newest release. It ends the sixth
-milestone, "The household IPTV hub", and holds everything before it. The
-seventh leads to 1.0.
+**1.0 is in its release candidates.** Version 0.5.0 is the newest full
+release, and v1.0.0-rc.1 the candidate for 1.0, which ends the seventh
+milestone. 1.0 adds no feature to 0.5.0. It promises that what is there is
+safe, documented, installable and kept across upgrades: the security review is
+written up in [docs/security.md](docs/security.md), and from 1.0 on an upgrade
+keeps what a household set up, which CI checks with every change from every
+full release since 0.3.0 ([docs/upgrading.md](docs/upgrading.md)).
 
 It plays live channels from M3U playlists, Xtream servers and providers' Stalker
 portals, with their programme guides, on a MAG322w1 through Overscan's own
@@ -43,7 +47,8 @@ sources, arranges the lineup (groups, names, numbers, hidden channels, parental
 locks), approves devices and shows what is playing. The stream hub proxies every
 stream, relays HLS, leaves out what a source sends again, and can repair a
 channel's timestamps with ffmpeg. Overscan installs as a service in a Proxmox
-container or another Debian system, or runs in Docker.
+container or another Debian system, from an archive or a Debian package, or
+runs in Docker.
 
 The box and Stalker clients browse and play the films and series of Xtream
 servers, Stalker portals, Jellyfin and Plex servers and folders on the server,
@@ -76,8 +81,10 @@ it.
 
 Much of what the third to sixth milestones added has been tested against test
 servers and in a desktop browser, but not yet on a MAG box or with real
-providers, media servers and players: treat it as early.
-[docs/trying-it.md](docs/trying-it.md) says how to try it.
+providers, media servers and players, so it may not yet work with yours:
+[docs/compatibility.md](docs/compatibility.md) lists what has been tried.
+[docs/guide.md](docs/guide.md) says how to do each task, and
+[docs/trying-it.md](docs/trying-it.md) how to try it.
 
 ## What it is meant to do
 
@@ -122,6 +129,7 @@ clients are expected to work and are tracked in a compatibility matrix,
 | [docs/themes.md](docs/themes.md) | Themes for the boxes: what a theme file holds, and installing one |
 | [docs/rules.md](docs/rules.md) | A lineup's rules: what they match, what they do, and in what order |
 | [docs/lineup-file.md](docs/lineup-file.md) | Lineup files: exporting every lineup, and importing them on this server or another |
+| [docs/outputs.md](docs/outputs.md) | Players other than the boxes: an account's playlist and guide, and its Xtream login |
 | [docs/compatibility.md](docs/compatibility.md) | What StbEmu, OTT Navigator, TiviMate, VLC and Kodi get from Overscan, and what they did when tried |
 | [docs/api/admin.yaml](docs/api/admin.yaml) | The admin's JSON API, as an OpenAPI 3.1 description |
 | [web/admin/README.md](web/admin/README.md) | The admin's pages and the files they are built from |
@@ -132,7 +140,7 @@ clients are expected to work and are tracked in a compatibility matrix,
 | [docs/probe.md](docs/probe.md) | The probe page: running it on a box, and what its report contains |
 | [docs/trying-it.md](docs/trying-it.md) | A walk through Overscan in the order you set it up: the admin and its sources, a MAG box, a Stalker client, players and a channel check |
 | [docs/testing.md](docs/testing.md) | How Overscan is tested: CI, conformance, the soak test, and checklists for the box and the admin |
-| [docs/install-lxc.md](docs/install-lxc.md) | Installing Overscan as a service in a Proxmox container |
+| [docs/install-lxc.md](docs/install-lxc.md) | Installing Overscan as a service in a Proxmox container or on another Debian system, from an archive or the Debian package |
 | [docs/install-docker.md](docs/install-docker.md) | Running Overscan with Docker Compose, from a release archive |
 | [docs/backup.md](docs/backup.md) | What to back up, the `overscan backup` command, and restoring |
 | [docs/upgrading.md](docs/upgrading.md) | Upgrading: what an upgrade keeps, from which versions, and going back |
