@@ -34,7 +34,7 @@ On Debian or Ubuntu, the release's package (`overscan_<version>_amd64.deb`, or `
 
     apt install ./overscan_<version>_amd64.deb
 
-It adds the `overscan` user, writes `/etc/overscan/overscan.yaml` from the example if there is none, and enables and starts the service. It recommends ffmpeg, which apt installs with it unless told otherwise. Use one way or the other: a server installed with `install.sh` is moved to the package by `./install.sh --uninstall` first, which keeps the configuration and the data.
+It adds the `overscan` user, writes `/etc/overscan/overscan.yaml` from the example if there is none, and enables and starts the service. It depends on ffmpeg, which apt installs and sets up first, so that the server finds it when it starts; to run without ffmpeg, use `install.sh --no-ffmpeg` instead. Use one way or the other: a server installed with `install.sh` is moved to the package by `./install.sh --uninstall` first, which keeps the configuration and the data.
 
 ## 3. Configure
 

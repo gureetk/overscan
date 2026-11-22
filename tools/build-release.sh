@@ -58,7 +58,7 @@ Version: $deb_version
 Architecture: $arch
 Maintainer: gureet <noreply@git.gureet.ca>
 Installed-Size: $(du -sk --exclude=DEBIAN "$pkg" | cut -f1)
-Recommends: ffmpeg
+Depends: ffmpeg
 Section: video
 Priority: optional
 Homepage: https://github.com/gureetk/overscan

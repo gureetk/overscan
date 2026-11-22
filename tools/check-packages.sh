@@ -6,7 +6,7 @@
 # Checks what a release ships, as built by tools/build-release.sh into DIST,
 # on a fresh Debian system with systemd, in a container (D124):
 #
-# - the amd64 Debian package installs, with the ffmpeg it recommends,
+# - the amd64 Debian package installs, with the ffmpeg it depends on,
 #   starts the service and answers its health check; ffmpeg copies and
 #   encodes a stream in the service's sandbox, as the server has it do;
 #   the package installs again over itself, keeping a changed configuration
@@ -75,6 +75,8 @@ ffmpeg -hide_banner -version | sed -n 1p
 systemctl is-active overscan
 for _ in \$(seq 20); do curl -fsS http://127.0.0.1:8080/healthz && break; sleep 1; done
 curl -fsS http://127.0.0.1:8080/healthz
+# dpkg set ffmpeg up before the server started, which found it.
+journalctl -u overscan --no-pager | grep -F 'ffmpeg found to repair streams with'
 [ "\$(stat -c '%a %U %G' /etc/overscan/overscan.yaml)" = "640 root overscan" ]
 [ "\$(stat -c '%a %U' /var/lib/overscan)" = "700 overscan" ]
 test -e /var/lib/overscan/overscan.db
