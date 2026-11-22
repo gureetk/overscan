@@ -400,7 +400,7 @@ Until the admin exists (M2), sources are declared in the config file and devices
 - **MAG UI build:** TypeScript for type checks, Babel or SWC for ES5 output, an ES5-output bundler, terser, an ES5 parse guard and Autoprefixer, with no polyfills (section 9).
 - **Logging and metrics:** `log/slog` and `/healthz`. A Prometheus-format `/metrics` waits until after 1.0 (D116).
 - **Config:** YAML file plus environment overrides for infrastructure (addresses, paths, key file, log level). Everything the admin edits lives in the database. Sources declared in YAML are imported once, at start, and from then on edited in the admin (D46).
-- **Release:** archives for `linux/amd64` and `linux/arm64` built by `tools/build-release.sh`, a Debian package of each, and a `Dockerfile` that builds an image from the archive's binary (D116). A published image, a package repository, signed releases and a script for the Proxmox host wait until after 1.0.
+- **Release:** archives for `linux/amd64` and `linux/arm64` built by `tools/build-release.sh`, a Debian package of each, and a `Dockerfile` that builds an image from the archive's binary (D116). From 1.0, a full release also publishes that image, built from its own archives, on `ghcr.io` (D131). A package repository, signed releases and a script for the Proxmox host wait until after 1.0.
 - **CI:** GitHub Actions, kept lean while the repository is private, because free minutes run out quickly.
 - **Keeping a Rust option open:** core logic behind interfaces, a documented schema, black-box conformance tests, UI and admin assets separate from the server. These seams pay for themselves anyway (tests, other implementers); add an interface where there is a second implementation or a test double, not by default.
 
@@ -565,7 +565,7 @@ Security review (an outside one if possible), complete docs, a promise that upgr
 - **Media:** bind-mount host folders read-only.
 - **Backups:** container snapshots plus the SQLite online backup; the key file stored separately.
 - **MAG setup:** in *System settings → Servers → Portals*, set a portal URL to `http://<server>:8080/c/`, as Infomir's [External portal loading](https://wiki.infomir.eu/eng/set-top-box/stb-linux-webkit/embedded-portal/external-portal-loading) page describes (menu names can differ between firmware versions). With two portals set, the box asks which one to load at start, so Overscan can sit beside an existing portal; multi-portal mode keeps up to eight, with a default that loads after a delay. On first load the box shows a pairing code to approve in the admin.
-- **Docker:** a compose file for other setups. **In place:** each release archive holds a `Dockerfile` and a `compose.yaml` that build an image from its binary, on Debian's slim image with ffmpeg ([`install-docker.md`](install-docker.md)).
+- **Docker:** a compose file for other setups. **In place:** each release archive holds a `Dockerfile` and a `compose.yaml` that build an image from its binary, on Debian's slim image with ffmpeg ([`install-docker.md`](install-docker.md)); from 1.0, full releases publish the same image on `ghcr.io` (D131).
 
 ---
 
@@ -696,6 +696,7 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 - Overscan is made for the home network: reached from away through a VPN, not from the internet; its security review is the project's own (D128).
 - Upgrade one release at a time: the path from an older version goes through each full release in turn, and CI follows it too (D129).
 - Each account has a page of its own, opened from the list on *Accounts*, in place of a card that opened below it (D130).
+- Full releases publish a container image, built from their own archives, for amd64 and arm64 (D131).
 - The reference client reads Overscan through the Xtream output, without a source type of Overscan's own (open question 2).
 - HDHomeRun emulation waits in the backlog (open question 6).
 
@@ -708,7 +709,7 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 5. Answered: v0.1 was a private release (D49), and the repository is public since (D80).
 6. Answered: HDHomeRun emulation waits in the backlog (section 22); M6 ships without it.
 7. Answered: the MAG UI keeps its device secret in a cookie, with a copy in a `SaveUserData` file (D38).
-8. Publishing under the project's name: a container image on a registry, a package repository, signed releases. Until this is decided, a release holds its archives, its Debian packages and their checksums (D116).
+8. Publishing under the project's name: a package repository and signed releases. Until they are decided, a release holds its archives, its Debian packages and their checksums, and a full release its container image too (D116, D131).
 9. A private way to reach the maintainer about conduct. Until there is one, the code of conduct names GitHub's private vulnerability reporting (D123).
 
 ---

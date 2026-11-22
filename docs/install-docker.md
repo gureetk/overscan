@@ -1,6 +1,6 @@
 # Running Overscan in Docker
 
-The first target is a Proxmox container ([`install-lxc.md`](install-lxc.md)), but every release archive also holds a `Dockerfile` and a `compose.yaml`. They build a small image from the archive's own binary: Debian's slim image with ffmpeg, which repairs streams (D57). Nothing is pulled from a registry but Debian's image and packages.
+The first target is a Proxmox container ([`install-lxc.md`](install-lxc.md)), but every release archive also holds a `Dockerfile` and a `compose.yaml`. They build a small image from the archive's own binary: Debian's slim image with ffmpeg, which repairs streams (D57). Nothing is pulled from a registry but Debian's image and packages. From v1.0.0 on, each full release also publishes that image, ready to pull ([below](#the-published-image)).
 
 Overscan is made for the home network: do not forward its port on your router, and reach it from away through a VPN into your home network (D128).
 
@@ -15,6 +15,16 @@ Overscan then listens on port 8080 of the machine, and keeps its data in a volum
     docker compose exec overscan overscan admin password
 
 A MAG box uses `http://<machine>:8080/c/` as its portal, as [`trying-it.md`](trying-it.md) says.
+
+## The published image
+
+From v1.0.0 on, each full release publishes its image at `ghcr.io/gureetk/overscan`, for amd64 and arm64 (D131). The release builds it from its own archives, with the same `Dockerfile`, so it holds the same binary. Its tags are the release's version, such as `1.0.0`, and `1.0`, `1` and `latest`, which follow the newest release of their line. Pre-releases publish none.
+
+To use it rather than build one, edit `compose.yaml` in the unpacked archive: replace its lines `build: .` and `image: overscan:local` with the release's own tag:
+
+    image: ghcr.io/gureetk/overscan:1.0.0
+
+Then `docker compose up -d`. Everything else in this page stays the same. To upgrade, change the tag to the next release, then `docker compose up -d` again; going one release at a time is the safest path ([upgrading.md](upgrading.md)).
 
 ## Settings
 
@@ -53,7 +63,7 @@ To copy the database out of the container, into the current folder:
 
 ## Upgrade and remove
 
-To upgrade, unpack the new archive anywhere and run `docker compose up -d --build` in it. The project's name in `compose.yaml` is fixed, so the new container takes over the same volume, whichever folder it is in. Before a new version changes the database's schema, it copies the database into the volume's `backups` folder, which lets you go back: [upgrading.md](upgrading.md) says how.
+To upgrade, unpack the new archive anywhere and run `docker compose up -d --build` in it, or, with the published image, change its tag in `compose.yaml` and run `docker compose up -d`. The project's name in `compose.yaml` is fixed, so the new container takes over the same volume, whichever folder it is in. Before a new version changes the database's schema, it copies the database into the volume's `backups` folder, which lets you go back: [upgrading.md](upgrading.md) says how.
 
 To remove the container and its image, but keep the data:
 
