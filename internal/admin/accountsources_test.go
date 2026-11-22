@@ -29,7 +29,7 @@ func (s *sourceStopper) StopSources(accountID int64, u store.Sources, reason str
 	return 0
 }
 
-// An account's card chooses the sources that it uses: every source, or
+// An account's page chooses the sources that it uses: every source, or
 // those ticked; the change is logged, and what the account plays from
 // another source stops (D114).
 func TestAccountSourcesOnAccountsPage(t *testing.T) {
@@ -54,9 +54,9 @@ func TestAccountSourcesOnAccountsPage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rec := ta.do("GET", "/admin/accounts", nil, c)
+	rec := ta.do("GET", fmt.Sprintf("/admin/accounts/%d", sam.ID), nil, c)
 	page := rec.Body.String()
-	if rec.Code != http.StatusOK || !strings.Contains(page, "<h3>Sources</h3>") ||
+	if rec.Code != http.StatusOK || !strings.Contains(page, `<span class="row-label" id="sources-label">Sources</span>`) ||
 		!strings.Contains(page, `<input type="checkbox" name="every" value="1" checked> Every source, and those added later`) ||
 		!strings.Contains(page, fmt.Sprintf(`<input type="checkbox" name="source" value="%d" checked> one <span class="muted">M3U playlist</span>`, one)) {
 		t.Fatalf("the page: status %d", rec.Code)

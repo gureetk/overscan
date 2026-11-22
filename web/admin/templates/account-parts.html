@@ -1,0 +1,15 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+{{/* What the Accounts page and an account's own page both show of an account. */}}
+
+{{/* A line that sums an account up: .A is the account, .Lineups the server's lineups. */}}
+{{define "account-summary"}}{{with .A}}{{.Devices}} {{plural .Devices "device"}} · {{.Profiles}} {{plural .Profiles "profile"}} · {{if .MaxStreams}}up to {{.MaxStreams}} {{plural .MaxStreams "stream"}} at once{{else}}any number of streams at once{{end}}{{end}}{{if gt (len .Lineups) 1}} · sees {{.A.LineupName}}{{end}}{{with .A.SourcesText}} · {{.}}{{end}}{{with .A.LiveText}} · {{.}}{{end}}{{end}}
+
+{{/* Chips for what an account has: a login, its playlist, a PIN, an end. */}}
+{{define "account-chips"}}
+<div class="chips">
+  {{- if .Username}}<span class="badge" title="Players sign in as {{.Username}}">Login</span>{{end}}
+  {{- if .Outputs.M3U}}<span class="badge" title="Players read its playlist and guide">Playlist</span>{{end}}
+  {{- if .PINHash}}<span class="badge" title="Locked channels, films and series ask for its PIN">PIN</span>{{end}}
+  {{- if .IsEnded}}<span class="badge bad">Ended</span>{{else if .EndText}}<span class="badge">Until {{.EndText}}</span>{{end -}}
+</div>
+{{- end}}

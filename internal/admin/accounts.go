@@ -534,7 +534,8 @@ func (r accountRow) LiveText() string {
 	return "live as " + p.Label
 }
 
-// accountsData is what the Accounts page shows.
+// accountsData is what the Accounts page shows, and what an account's own
+// page offers.
 type accountsData struct {
 	Accounts []accountRow
 	// OutputsOn says that the outputs that players use are on, and
@@ -542,7 +543,6 @@ type accountsData struct {
 	OutputsOn, Anywhere bool
 	Themes              []store.Theme
 	Name                string // typed into the form that adds an account
-	Open                int64  // the account whose forms are open
 	Streams             []int  // the limits the page offers
 	Lineups             []store.LineupInfo
 	// OutputProfiles are the output profiles that the page offers (D110),
@@ -633,6 +633,55 @@ func (a *Admin) accountsData(ctx context.Context, base string) (accountsData, er
 	return data, nil
 }
 
+// accountData is what an account's own page shows: the account, what its
+// forms offer, and its devices and profiles, which the Devices page
+// changes.
+type accountData struct {
+	accountsData
+	Account  accountRow
+	Devices  []store.Device  // its approved devices
+	Profiles []store.Profile // its profiles
+	Now      time.Time
+	// Panel names the part of the page whose form was sent last, which
+	// says what came of it; "" says it at the top.
+	Panel string
+}
+
+// accountPath is the address of an account's own page.
+func accountPath(id int64) string { return "/admin/accounts/" + strconv.FormatInt(id, 10) }
+
+// accountData returns what an account's page shows, or the store's
+// ErrNotFound if there is no such account.
+func (a *Admin) accountData(ctx context.Context, id int64, base string) (accountData, error) {
+	all, err := a.accountsData(ctx, base)
+	if err != nil {
+		return accountData{}, err
+	}
+	data := accountData{accountsData: all, Now: a.now()}
+	found := false
+	for _, row := range all.Accounts {
+		if row.ID == id {
+			data.Account, found = row, true
+		}
+	}
+	if !found {
+		return accountData{}, store.ErrNotFound
+	}
+	devices, err := a.store.Devices(ctx)
+	if err != nil {
+		return accountData{}, err
+	}
+	for _, d := range devices {
+		if d.AccountID == id && d.State == store.DeviceApproved {
+			data.Devices = append(data.Devices, d)
+		}
+	}
+	if data.Profiles, err = a.store.Profiles(ctx, id); err != nil {
+		return accountData{}, err
+	}
+	return data, nil
+}
+
 // accountsPage shows the accounts.
 func (a *Admin) accountsPage(w http.ResponseWriter, r *http.Request, s store.AdminSession) {
 	a.showAccounts(w, r, s, http.StatusOK, view{})
@@ -647,35 +696,72 @@ func (a *Admin) showAccounts(w http.ResponseWriter, r *http.Request, s store.Adm
 		return
 	}
 	if typed, ok := v.Data.(accountsData); ok {
-		data.Name, data.Open = typed.Name, typed.Open
+		data.Name = typed.Name
 	}
 	v.Title, v.Section, v.Session, v.Data = "Accounts", "accounts", &s, data
 	a.render(w, r, status, "accounts", v)
 }
 
-// accountAction serves the Accounts page's forms: adding an account, and
-// the path's last part for one of them.
+// accountPage shows an account's own page.
+func (a *Admin) accountPage(w http.ResponseWriter, r *http.Request, s store.AdminSession) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		a.notFound(w, r)
+		return
+	}
+	a.showAccount(w, r, s, id, http.StatusOK, view{}, "")
+}
+
+// showAccount renders an account's page with v's error or notice, in the
+// part that panel names. Without such an account, it shows that there is
+// no such page.
+func (a *Admin) showAccount(w http.ResponseWriter, r *http.Request, s store.AdminSession, id int64, status int, v view, panel string) {
+	data, err := a.accountData(r.Context(), id, portalBase(r.Host, a.support.Listen))
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		a.notFound(w, r)
+		return
+	case err != nil:
+		a.log.Error("cannot show an account", "error", err)
+		a.message(w, r, http.StatusInternalServerError, "Something went wrong", "The server's log says what.", &s)
+		return
+	}
+	// A part that the page does not show leaves what came of the form at
+	// the top.
+	if (panel == "theme" && len(data.Themes) == 0) || (panel == "remove" && data.Account.Household()) {
+		panel = ""
+	}
+	data.Panel = panel
+	v.Title, v.Section, v.Session, v.Data = data.Account.Name, "accounts", &s, data
+	a.render(w, r, status, "account", v)
+}
+
+// accountPanels name the part of an account's page that each of its forms
+// is in.
+var accountPanels = map[string]string{
+	"rename": "", "lineup": "watching", "sources": "watching", "streams": "watching", "live": "watching",
+	"pin": "pin", "remove-pin": "pin", "theme": "theme", "expiry": "end", "playlist": "playlist", "token": "playlist",
+	"xtream": "login", "login": "login", "remove-login": "login", "remove": "remove",
+}
+
+// accountAction serves the forms of the Accounts page, which adds an
+// account, and of an account's own page, which the path's last part names.
 func (a *Admin) accountAction(w http.ResponseWriter, r *http.Request, s store.AdminSession) {
 	ctx := r.Context()
 	action := r.PathValue("action")
-	var id int64
-	if action != "" {
-		n, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-		if err != nil {
-			a.notFound(w, r)
-			return
-		}
-		id = n
+	if action == "" {
+		a.addAccountForm(w, r, s)
+		return
+	}
+	panel, ok := accountPanels[action]
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if !ok || err != nil {
+		a.notFound(w, r)
+		return
 	}
 	var acct store.Account
 	var notice string
-	var err error
 	switch action {
-	case "":
-		if acct, err = a.addAccount(ctx, r.PostFormValue("name")); err == nil {
-			id = acct.ID
-			notice = "Added the account " + acct.Name + ". Approve devices for it, or move devices to it on the Devices page."
-		}
 	case "rename":
 		if acct, err = a.renameAccount(ctx, id, r.PostFormValue("name")); err == nil {
 			notice = "Renamed the account " + acct.Name + "."
@@ -786,14 +872,43 @@ func (a *Admin) accountAction(w http.ResponseWriter, r *http.Request, s store.Ad
 		}
 	case "remove":
 		if acct, err = a.removeAccount(ctx, id); err == nil {
-			notice = "Removed the account " + acct.Name + ", with its profiles."
-			id = 0
+			// Its page has gone with it: the Accounts page says so.
+			moveTo(w, r, "/admin/accounts", func() {
+				a.showAccounts(w, r, s, http.StatusOK, view{Notice: "Removed the account " + acct.Name + ", with its profiles."})
+			})
+			return
 		}
 	default:
 		a.notFound(w, r)
 		return
 	}
-	a.accountsDone(w, r, s, err, notice, accountsData{Name: truncate(strings.TrimSpace(r.PostFormValue("name")), 400), Open: id})
+	a.accountDone(w, r, s, id, err, notice, panel)
+}
+
+// addAccountForm adds an account and opens its page, where the rest of it
+// is set. A mistake shows on the Accounts page, with the name as typed.
+func (a *Admin) addAccountForm(w http.ResponseWriter, r *http.Request, s store.AdminSession) {
+	acct, err := a.addAccount(r.Context(), r.PostFormValue("name"))
+	if err != nil {
+		a.accountsDone(w, r, s, err, "", accountsData{Name: truncate(strings.TrimSpace(r.PostFormValue("name")), 400)})
+		return
+	}
+	moveTo(w, r, accountPath(acct.ID), func() {
+		a.showAccount(w, r, s, acct.ID, http.StatusOK,
+			view{Notice: "Added the account " + acct.Name + ". Approve devices for it, or move devices to it, on the Devices page."}, "")
+	})
+}
+
+// moveTo answers a form after which another page is the one to see, at
+// path: with htmx, show writes that page and the address bar takes its
+// path; without, the browser is sent there.
+func moveTo(w http.ResponseWriter, r *http.Request, path string, show func()) {
+	if r.Header.Get("HX-Request") != "true" {
+		http.Redirect(w, r, path, http.StatusSeeOther)
+		return
+	}
+	w.Header().Set("HX-Push-Url", path)
+	show()
 }
 
 // streamsText says how many streams an account plays at once.
@@ -817,9 +932,35 @@ func (a *Admin) accountsDone(w http.ResponseWriter, r *http.Request, s store.Adm
 		a.log.Error("cannot change an account", "error", err)
 		a.showAccounts(w, r, s, http.StatusInternalServerError, view{Error: "Something went wrong; the server's log says what."})
 	case r.Header.Get("HX-Request") == "true":
-		a.showAccounts(w, r, s, http.StatusOK, view{Notice: notice, Data: accountsData{Open: typed.Open}})
+		a.showAccounts(w, r, s, http.StatusOK, view{Notice: notice})
 	default:
 		http.Redirect(w, r, "/admin/accounts", http.StatusSeeOther)
+	}
+}
+
+// accountDone answers a form of an account's page, as accountsDone does,
+// with what came of it in the form's part of the page.
+func (a *Admin) accountDone(w http.ResponseWriter, r *http.Request, s store.AdminSession, id int64, err error, notice, panel string) {
+	var bad *deviceError
+	var badEditErr *editError
+	switch {
+	case errors.As(err, &bad) && bad.code == "no_such_account":
+		// Removed meanwhile, as from another tab: its page has gone.
+		if r.Header.Get("HX-Request") == "true" {
+			w.Header().Set("HX-Push-Url", "/admin/accounts")
+		}
+		a.showAccounts(w, r, s, bad.status, view{Error: bad.text})
+	case errors.As(err, &bad):
+		a.showAccount(w, r, s, id, bad.status, view{Error: bad.text}, panel)
+	case errors.As(err, &badEditErr):
+		a.showAccount(w, r, s, id, badEditErr.status, view{Error: badEditErr.text}, panel)
+	case err != nil:
+		a.log.Error("cannot change an account", "error", err)
+		a.showAccount(w, r, s, id, http.StatusInternalServerError, view{Error: "Something went wrong; the server's log says what."}, panel)
+	case r.Header.Get("HX-Request") == "true":
+		a.showAccount(w, r, s, id, http.StatusOK, view{Notice: notice}, panel)
+	default:
+		http.Redirect(w, r, accountPath(id), http.StatusSeeOther)
 	}
 }
 
