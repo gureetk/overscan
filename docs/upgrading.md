@@ -30,6 +30,7 @@ The database's schema has a version, which the log gives as the server starts (`
 | v0.3.0 | 30 |
 | v0.4.0 | 35 |
 | v0.5.0 | 42 |
+| v1.0.0 | 43 |
 
 A version refuses a database whose schema is newer than it knows, and says so in its log, so an older version cannot open a database once a newer one has upgraded it. That is what the backup below is for.
 
