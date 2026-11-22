@@ -28,6 +28,14 @@ Take the archive for the container's machine from the repository's Releases page
 
 The script adds an `overscan` system user, puts the binary in `/usr/local/bin`, installs the distribution's ffmpeg if there is none (it repairs the streams of channels set to be repaired, D57; `./install.sh --no-ffmpeg` leaves it out), writes `/etc/overscan/overscan.yaml` from the example if there is none, and installs, enables and starts the `overscan` service. Its data lives in `/var/lib/overscan`, readable only by that user. That includes `secret.key`, the key that encrypts the addresses in the database that can hold a source's credentials (D46): keep a copy of it apart from any backup of the database.
 
+### Or with the Debian package
+
+On Debian or Ubuntu, the release's package (`overscan_<version>_amd64.deb`, or `arm64`) does the same, with the binary in `/usr/bin` (D124):
+
+    apt install ./overscan_<version>_amd64.deb
+
+It adds the `overscan` user, writes `/etc/overscan/overscan.yaml` from the example if there is none, and enables and starts the service. It recommends ffmpeg, which apt installs with it unless told otherwise. Use one way or the other: a server installed with `install.sh` is moved to the package by `./install.sh --uninstall` first, which keeps the configuration and the data.
+
 ## 3. Configure
 
 Set the administrator's password, then sign in to the admin at `http://<container>:8080/admin/` and add your sources there:
@@ -67,12 +75,10 @@ Run Overscan's commands as its user. Debian containers may not have `sudo`; `run
 
 ## Upgrading and removing
 
-To upgrade, unpack the new archive and run its `install.sh`. It keeps your configuration and data. Before a new version changes the database's schema, it copies the database into `/var/lib/overscan/backups/`, which lets you go back: [upgrading.md](upgrading.md) says how.
+To upgrade, unpack the new archive and run its `install.sh`, or install the new package with `apt install`. Either keeps your configuration and data. Before a new version changes the database's schema, it copies the database into `/var/lib/overscan/backups/`, which lets you go back: [upgrading.md](upgrading.md) says how.
 
-To remove Overscan:
+To remove Overscan, run `./install.sh --uninstall` from an unpacked archive, or `apt remove overscan` for the package. Both stop the service and remove it and the binary, and keep the configuration, the data and the `overscan` user. `apt purge overscan` removes the configuration file too. The data, with the database, the key file and the recordings, is never removed for you; once you no longer need it:
 
-    systemctl disable --now overscan
-    rm /etc/systemd/system/overscan.service /usr/local/bin/overscan
     rm -r /etc/overscan /var/lib/overscan   # configuration and data
     userdel overscan
     apt-get remove ffmpeg                   # if nothing else uses it

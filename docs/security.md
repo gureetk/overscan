@@ -71,7 +71,7 @@ What Overscan does not protect against, as of 1.0, and why:
 
 A short guide for someone reviewing Overscan from outside.
 
-- **Scope.** The server (`cmd/` and `internal/`, in Go), the MAG page (`web/mag`, TypeScript compiled to ES5), the admin's pages (`web/admin`), the probe page (`web/probe`), the install script and the systemd unit (`deploy/`), and the release (`tools/build-release.sh`, `.github/workflows/`). Out of scope: providers, media servers, the boxes' firmware and the household's network.
+- **Scope.** The server (`cmd/` and `internal/`, in Go), the MAG page (`web/mag`, TypeScript compiled to ES5), the admin's pages (`web/admin`), the probe page (`web/probe`), the install script, the Debian package's scripts and the systemd unit (`deploy/`), and the release (`tools/build-release.sh`, `.github/workflows/`). Out of scope: providers, media servers, the boxes' firmware and the household's network.
 - **The model** is *Who can reach what*, above, and the plan's section 11 is the design.
 - **Running it.** [trying-it.md](trying-it.md) starts a server and adds a source; [testing.md](testing.md) runs the tests, the conformance suites for the Stalker and Xtream APIs, the fuzzers and the upgrade test. `go test ./internal/server -run 'Route|CSRF|Stalker'` runs the route tests alone.
 - **Where to look first.**
