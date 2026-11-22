@@ -694,6 +694,7 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 - CI upgrades a household from every full release since v0.3.0 with every change, and every new migration has its own upgrade test (D118).
 - The name stays: the maintainer's search found no conflicting trademark (D127).
 - Overscan is made for the home network: reached from away through a VPN, not from the internet; its security review is the project's own (D128).
+- Upgrade one release at a time: the path from an older version goes through each full release in turn, and CI follows it too (D129).
 - The reference client reads Overscan through the Xtream output, without a source type of Overscan's own (open question 2).
 - HDHomeRun emulation waits in the backlog (open question 6).
 

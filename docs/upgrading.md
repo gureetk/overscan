@@ -17,9 +17,11 @@ What the household sees stays as it was: a new version turns nothing on by itsel
 
 What scripts, players and boxes use stays as it is too: the configuration file's keys and the environment variables, the commands and their options, the admin's API under `/api/admin/v1/`, the device API under `/api/device/v1/`, the Stalker API as clients use it, and the addresses of the playlists, guides and Xtream login that the outputs serve. Where one has to change, the new version still takes the old form, and this page says so under *Changes*.
 
-## Which versions upgrade directly
+## The path from an older version
 
-Every full release from v0.3.0 on upgrades directly to the newest, and so do the pre-releases of 1.0: there is no need to install the versions between. CI checks this for each full release with every change ([D118](decisions.md)): the old release sets up a household through its own APIs, the new build starts on the same data directory, and everything the household set up must still be there and the same. Databases of older versions, such as v0.1.0, are brought up to date by the same steps, but no test covers them: back up first.
+Go up one release at a time, through each full release in turn: v0.3.0, then v0.4.0, then v0.5.0, then v1.0.0, and on from there ([D129](decisions.md)). Start each and let it read its sources before you install the next: the log says `database ready … schema=…` once it has brought the database up to date. A version older than v0.3.0, such as v0.1.0, goes to v0.3.0 first; no test covers those older steps, so back up first.
+
+CI checks that path with every change: the oldest full release sets up a household through its own APIs, each newer full release in turn starts on the same data directory, then the new build does, and everything the household set up must still be there and the same ([D118](decisions.md)). It also checks each full release from v0.3.0 on upgraded straight to the newest, so a household that skips releases keeps its data too, and so do the pre-releases of 1.0; the path one release at a time is the one to follow.
 
 The database's schema has a version, which the log gives as the server starts (`database ready … schema=42`):
 

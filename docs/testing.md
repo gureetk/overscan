@@ -107,19 +107,21 @@ Memory peaks in the first seconds, when the four boxes load the whole lineup at 
 
 ## Upgrades
 
-From 1.0 on, an upgrade keeps what a household set up ([D115](decisions.md)), and CI checks it with every change ([D118](decisions.md)). Its *Upgrades* job downloads the Linux binary of every full release from v0.3.0 on, and of the newest pre-release when it is newer than them all, with `tools/fetch-releases.sh`, and runs `tools/upgradetest` with each. For each release, the test:
+From 1.0 on, an upgrade keeps what a household set up ([D115](decisions.md)), and CI checks it with every change ([D118](decisions.md)). Its *Upgrades* job downloads the Linux binary of every full release from v0.3.0 on, and of the newest pre-release when it is newer than them all, with `tools/fetch-releases.sh`, and runs `tools/upgradetest` with each, straight to the change. Then it runs the test once more with `-chain`, along the path that [upgrading.md](upgrading.md) recommends: the household that v0.3.0 sets up goes through each full release in turn, and then to the change ([D129](decisions.md)). For each release, the test:
 
 1. serves a fictional provider, two playlists with a guide, logos and endless streams, and a folder of films and series;
 2. runs the release on a new data directory, and sets up a household through its own APIs: sources, lineup edits and groups, the parental PIN, settings, a box paired by its code with favourites, recent channels, settings and resume points, a Stalker client, a blocked box, recordings to come and one called off, a shelf renamed and titles hidden and locked, and, as far as the release has them, profiles with a PIN and a theme, the household's end date, messages, a recording made and stopped, accounts with a login, a token, a limit, an end date, a PIN, an output profile and only some sources, a second lineup with rules, merge and guide rules, a channel's backup, and the outputs on;
 3. records what the admin's API, the box, the Stalker client, and players through the Xtream login and the account's playlist, see;
 4. starts the release again and records it all once more, to learn what changes by itself across a restart, such as when a source was last read;
-5. starts this build on the same data directory: the administrator's password must still sign in, the box must still be paired, and every answer must be the same, with nothing missing, apart from the server's version and what step 4 found;
-6. checks that the database was backed up before its schema changed ([D117](decisions.md)), that a copy of it upgraded by this build alone holds every row it had, in every table and column, and that its schema is a new database's.
+5. with `-chain`, starts each newer release in turn on the same data directory, which brings the database up to date as that release would, and waits for it to read its sources;
+6. starts this build on the same data directory: the administrator's password must still sign in, the box must still be paired, and every answer must be the same, with nothing missing, apart from the server's version and what step 4 found;
+7. checks that this build backed up the database before it changed the schema ([D117](decisions.md)), that a copy of the oldest release's database, upgraded by the releases on the way and this build alone, holds every row it had, in every table and column, and that its schema is a new database's.
 
 To run it on your machine, with the binaries of the releases to upgrade from:
 
     tools/fetch-releases.sh /tmp/releases
     go run ./tools/upgradetest /tmp/releases/overscan-*
+    go run ./tools/upgradetest -chain /tmp/releases/overscan-v0.3.0 /tmp/releases/overscan-v0.4.0 /tmp/releases/overscan-v0.5.0
 
 `-keep` keeps each upgrade's folder, with the servers' logs and databases, and `-v` lists what step 4 left out. Each release takes under a minute.
 

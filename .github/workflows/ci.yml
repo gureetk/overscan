@@ -138,6 +138,13 @@ jobs:
       - name: Upgrade a household from each
         run: go run ./tools/upgradetest "$RUNNER_TEMP"/releases/overscan-*
 
+      # The recommended path: one full release at a time, oldest first,
+      # then the change (D129).
+      - name: Upgrade a household through each full release in turn
+        run: |
+          mapfile -t chain < <(ls "$RUNNER_TEMP/releases" | grep -E '^overscan-v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)
+          go run ./tools/upgradetest -chain "${chain[@]/#/$RUNNER_TEMP/releases/}"
+
   mag-page:
     name: MAG page
     runs-on: ubuntu-latest
