@@ -22,7 +22,7 @@ import (
 // migration has an upgrade test of its own, named TestMigrationNNNN…: it
 // makes a database with the schema before it, holding what a household sets
 // up, applies the migration, and checks that none of it was lost or changed
-// (TestProfilesMigration shows the way).
+// (TestMigration0043SourcePublicOnly shows the way).
 const lastBeforeUpgradeTests = 42
 
 // Released migrations are never edited, since databases already have them:
