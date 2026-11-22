@@ -44,12 +44,55 @@ const usage = `Usage:
   overscan [-config FILE]                  run the server
   overscan [-config FILE] devices COMMAND  manage devices; "overscan devices -h" lists the commands
   overscan [-config FILE] admin password   set the administrator's password for the admin at /admin/
-  overscan [-config FILE] debug playlist   print the address of the debug playlist
+  overscan [-config FILE] debug COMMAND    check a channel, or print the debug playlist's address;
+                                           "overscan debug -h" says how
   overscan [-config FILE] backup [FILE]    copy the database to FILE, or into the data directory's backups
   overscan -version                        print the version
+  overscan help [COMMAND]                  print this help, or a command's
+
+Run the commands as the user that the server runs as. Each command's own
+help, with -h, says more.
 
 Flags:
 `
+
+// commands are the commands that run takes, with their help.
+var commands = map[string]string{
+	"devices": devicesUsage,
+	"admin":   adminUsage,
+	"debug":   debugUsage,
+	"backup":  backupUsage,
+}
+
+// helpFor reports whether args, after the flags, ask for help, and which:
+// "help" or "help COMMAND", or a command with -h, -help or --help among its
+// arguments, or with help as its first. text is "" for the general help.
+// The help answers before the configuration is read, so that it shows
+// whatever the file holds and whoever runs it.
+func helpFor(args []string) (text string, ok bool) {
+	if len(args) == 0 {
+		return "", false
+	}
+	if args[0] == "help" {
+		if len(args) > 1 {
+			if text, known := commands[args[1]]; known {
+				return text, true
+			}
+		}
+		return "", true
+	}
+	text, known := commands[args[0]]
+	if !known {
+		return "", false
+	}
+	for i, arg := range args[1:] {
+		// backup's only argument is a file, which may be called help.
+		if arg == "-h" || arg == "-help" || arg == "--help" || (i == 0 && arg == "help" && args[0] != "backup") {
+			return text, true
+		}
+	}
+	return "", false
+}
 
 func main() {
 	privateFiles()
@@ -64,21 +107,45 @@ func main() {
 func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, lookupEnv func(string) (string, bool)) int {
 	flags := flag.NewFlagSet("overscan", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	flags.Usage = func() {
-		fmt.Fprint(stderr, usage)
+	// printUsage writes the general help to w: to stdout when it was asked
+	// for, to stderr after a mistake.
+	printUsage := func(w io.Writer) {
+		fmt.Fprint(w, usage)
+		flags.SetOutput(w)
 		flags.PrintDefaults()
+		flags.SetOutput(stderr)
 	}
+	flags.Usage = func() {}
 	configPath := flags.String("config", config.DefaultPath, "path to the YAML configuration file")
 	showVersion := flags.Bool("version", false, "print the version and exit")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
+			printUsage(stdout)
 			return 0
 		}
+		fmt.Fprintln(stderr)
+		printUsage(stderr)
 		return 2
 	}
 	if *showVersion {
 		fmt.Fprintln(stdout, version)
 		return 0
+	}
+	command := flags.Args()
+	if text, ok := helpFor(command); ok {
+		if text == "" {
+			printUsage(stdout)
+		} else {
+			fmt.Fprint(stdout, text)
+		}
+		return 0
+	}
+	if len(command) > 0 {
+		if _, known := commands[command[0]]; !known {
+			fmt.Fprintf(stderr, "overscan: unknown command %q\n\n", command[0])
+			printUsage(stderr)
+			return 2
+		}
 	}
 
 	// A config file named on the command line must exist; the default one may not.
@@ -97,7 +164,6 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return 1
 	}
 
-	command := flags.Args()
 	if len(command) == 0 {
 		if !readFile {
 			log.Info("no configuration file, using defaults and environment", "path", *configPath)
@@ -113,11 +179,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return debugCommand(ctx, cfg, command[1:], stdout, stderr)
 	case "backup":
 		return backupCommand(ctx, cfg, command[1:], stdout, stderr)
-	default:
-		fmt.Fprintf(stderr, "overscan: unknown command %q\n\n", command[0])
-		flags.Usage()
-		return 2
 	}
+	return 2 // not reached: run checked the command against commands
 }
 
 // recentLogLines is how many of the log's last lines the support bundle

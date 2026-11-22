@@ -2,7 +2,7 @@
 
 What a household does with Overscan, task by task: where in the admin each is done, and which page says more. [trying-it.md](trying-it.md) walks through all of it in order, and [troubleshooting.md](troubleshooting.md) starts from what goes wrong.
 
-The admin is at `http://<server>:8080/admin/`. Its pages are *Overview*, *Sources*, *Live TV*, *Movies*, *Series*, *Devices*, *Accounts*, *Capture log* and *Settings*. Commands run as the user that runs the server: on a service install, `sudo runuser -u overscan -- overscan …`, which reads `/etc/overscan/overscan.yaml`; with Docker, `docker compose exec overscan overscan …`.
+The admin is at `http://<server>:8080/admin/`. Its pages are *Overview*, *Sources*, *Live TV*, *Movies*, *Series*, *Devices*, *Accounts*, *Capture log* and *Settings*. Commands run as the user that runs the server: on a service install, `sudo runuser -u overscan -- overscan …`, which reads `/etc/overscan/overscan.yaml`; with Docker, `docker compose exec overscan overscan …`. `overscan help` lists the commands.
 
 ## Install it
 

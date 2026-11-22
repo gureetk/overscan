@@ -3,6 +3,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -402,5 +403,104 @@ func TestInvalidSources(t *testing.T) {
 	dup := "sources:\n  - name: main\n    type: m3u\n    url: /a.m3u\n  - name: main\n    type: m3u\n    url: /b.m3u\n"
 	if _, _, err := Load(writeFile(t, dup), true, env(nil)); err == nil || !strings.Contains(err.Error(), "twice") {
 		t.Errorf("duplicate names: %v", err)
+	}
+}
+
+// A mistake in the file is named by its line and the file's own keys, and
+// never quotes the file's values, which can hold a source's credentials.
+func TestFileMistakesAreNamedByLineAndKey(t *testing.T) {
+	const secret = "s3cret-value"
+	source := "sources:\n  - name: one\n    type: xtream\n    url: http://192.0.2.1\n    username: viewer\n    password: " + secret + "\n"
+	for name, tc := range map[string]struct{ file, want string }{
+		"unknown key":      {"listne: \":8080\"\n", `line 1: there is no setting "listne"; did you mean "listen"?`},
+		"unknown, nested":  {"log:\n  levle: debug\n", `line 2: there is no setting "levle"; did you mean "level"?`},
+		"unknown, far":     {"bananas: 1\n", `line 1: there is no setting "bananas"`},
+		"wrong kind":       {"probe_reports: maybe\n", "line 1: probe_reports takes true or false, not text"},
+		"number":           {source + "    max_connections: lots\n", "line 7: max_connections takes a whole number, not text"},
+		"too large":        {source + "    max_connections: 99999999999999999999\n", "line 7: max_connections takes a smaller number"},
+		"list":             {"trusted_proxies: 192.0.2.1\n", "line 1: trusted_proxies takes a list"},
+		"settings":         {"log: verbose\n", "line 1: log takes settings of its own"},
+		"no space":         {"data_dir:/srv/overscan\n", "line 1: each line takes a key, a colon and a space"},
+		"twice":            {"listen: \":8080\"\nlisten: \":8081\"\n", `line 2: "listen" is set a second time`},
+		"tab":              {"log:\n\tlevel: debug\n", "line 2: found character"},
+		"indentation":      {source + "      extra: x\n", "line 6: mapping value is not allowed in this context; check the indentation"},
+		"quotes":           {"data_dir: \"/srv/overscan\n", "line 1: could not find end character of double-quoted text; check the indentation"},
+		"refresh":          {source + "    refresh: 6 hours\n", "a source's refresh takes a number and a unit, such as 30m, 6h or 24h"},
+		"near a secret":    {"sources:\n  - name: one\n    password: " + secret + "\n      extra: x\n", "line 3: "},
+		"secret, the kind": {"sources:\n  - name: one\n    password: [" + secret + "]\n", "line 3: password takes text, not a list"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := writeFile(t, tc.file)
+			_, _, err := Load(path, true, env(nil))
+			if err == nil {
+				t.Fatal("no error")
+			}
+			if !strings.Contains(err.Error(), tc.want) || !strings.HasPrefix(err.Error(), "config "+path) {
+				t.Errorf("got %q, want %q", err, tc.want)
+			}
+			if strings.Contains(err.Error(), secret) || strings.Contains(err.Error(), "\n") {
+				t.Errorf("the message quotes the file: %q", err)
+			}
+		})
+	}
+	if strings.Contains(fmt.Sprint(settingNames()), "\"") {
+		t.Error("a setting's name holds a quote")
+	}
+}
+
+func TestFileThatCannotBeRead(t *testing.T) {
+	absent := filepath.Join(t.TempDir(), "absent.yaml")
+	if _, _, err := Load(absent, true, env(nil)); err == nil || err.Error() != "config: there is no file at "+absent {
+		t.Errorf("absent: %v", err)
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root reads any file")
+	}
+	path := writeFile(t, "listen: \":8080\"\n")
+	if err := os.Chmod(path, 0); err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []bool{true, false} {
+		if _, _, err := Load(path, required, env(nil)); err == nil || !strings.Contains(err.Error(), "may not be read by this user; run the command as the user that the server runs as") {
+			t.Errorf("unreadable, required %v: %v", required, err)
+		}
+	}
+}
+
+func TestListenAddresses(t *testing.T) {
+	for value, want := range map[string]string{
+		":8080":          "",
+		"192.0.2.1:8080": "",
+		"[::1]:8080":     "",
+		":0":             "",
+		":http":          "",
+		"8080":           `listen "8080": give a port after a colon, such as ":8080"`,
+		":99999":         `listen ":99999": the port must be a number up to 65535`,
+		":-1":            "the port must be a number up to 65535",
+	} {
+		_, _, err := Load(writeFile(t, "listen: \""+value+"\"\n"), true, env(nil))
+		switch {
+		case want == "" && err != nil:
+			t.Errorf("%s: %v", value, err)
+		case want != "" && (err == nil || !strings.Contains(err.Error(), want)):
+			t.Errorf("%s: got %v, want %q", value, err, want)
+		}
+	}
+	if _, _, err := Load(writeFile(t, "admin_listen: \":99999\"\n"), true, env(nil)); err == nil || !strings.Contains(err.Error(), "admin_listen") {
+		t.Errorf("admin_listen: %v", err)
+	}
+}
+
+func TestDistance(t *testing.T) {
+	for _, tc := range []struct {
+		a, b string
+		want int
+	}{
+		{"listen", "listen", 0}, {"listne", "listen", 1}, {"lisen", "listen", 1}, {"levle", "level", 1},
+		{"data-dir", "data_dir", 1}, {"datadir", "data_dir", 1}, {"", "log", 3}, {"bananas", "sources", 6},
+	} {
+		if got := distance(tc.a, tc.b); got != tc.want {
+			t.Errorf("distance(%q, %q) = %d, want %d", tc.a, tc.b, got, tc.want)
+		}
 	}
 }

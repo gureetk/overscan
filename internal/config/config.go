@@ -259,18 +259,18 @@ func Load(path string, required bool, lookupEnv func(string) (string, bool)) (cf
 		// which the decoder would turn into a zeroed Config, so skip it.
 		var doc any
 		if err := yaml.Unmarshal(data, &doc); err != nil {
-			return Config{}, false, fmt.Errorf("config %s: %w", path, err)
+			return Config{}, false, decodeError(path, err)
 		}
 		if doc != nil {
 			if err := yaml.UnmarshalWithOptions(data, &cfg, yaml.DisallowUnknownField()); err != nil {
-				return Config{}, false, fmt.Errorf("config %s: %w", path, err)
+				return Config{}, false, decodeError(path, err)
 			}
 		}
 		readFile = true
 	case errors.Is(err, fs.ErrNotExist) && !required:
 		// Carry on with the defaults.
 	default:
-		return Config{}, false, fmt.Errorf("config: %w", err)
+		return Config{}, false, readError(path, err)
 	}
 
 	for _, v := range envVars {
@@ -303,12 +303,12 @@ func Load(path string, required bool, lookupEnv func(string) (string, bool)) (cf
 // validate checks the settings that this package owns. Logging settings are
 // checked where the logger is built.
 func (c Config) validate() error {
-	if _, _, err := net.SplitHostPort(c.Listen); err != nil {
-		return fmt.Errorf("listen %q: %w", c.Listen, err)
+	if err := checkListen("listen", c.Listen); err != nil {
+		return err
 	}
 	if c.AdminListen != "" {
-		if _, _, err := net.SplitHostPort(c.AdminListen); err != nil {
-			return fmt.Errorf("admin_listen %q: %w", c.AdminListen, err)
+		if err := checkListen("admin_listen", c.AdminListen); err != nil {
+			return err
 		}
 		if c.AdminListen == c.Listen {
 			return errors.New("admin_listen must differ from listen; leave it out to serve the admin on listen")
@@ -344,6 +344,19 @@ func (c Config) validate() error {
 			return fmt.Errorf("source %q is declared twice", src.Name)
 		}
 		names[src.Name] = true
+	}
+	return nil
+}
+
+// checkListen checks an address to listen on, the setting key's value: a
+// port after a colon, with the address to take it on before it if any.
+func checkListen(key, value string) error {
+	_, port, err := net.SplitHostPort(value)
+	if err != nil {
+		return fmt.Errorf(`%s %q: give a port after a colon, such as ":8080", with the address to listen on before it if any`, key, value)
+	}
+	if _, err := net.LookupPort("tcp", port); err != nil {
+		return fmt.Errorf("%s %q: the port must be a number up to 65535", key, value)
 	}
 	return nil
 }
