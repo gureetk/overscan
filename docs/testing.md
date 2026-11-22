@@ -75,7 +75,24 @@ The *Soak* workflow runs the ten-minute version every Monday, and on demand from
 
 ### Baseline
 
-The first ten-minute run, in November 2026, with the defaults, against the server as released in v0.0.4, on a cloud machine with two cores of an Intel Xeon at 2.1 GHz, not the LXC.
+The budgets are the plan's, in its section 15: under about 60 MB of memory idle, under about 150 MB with a large catalogue, and a few percent of one core for a few streams.
+
+**For 1.0**, in November 2026: a run of 330 minutes with the defaults, by the *Soak* workflow on a GitHub-hosted runner (`ubuntu-latest`, Ubuntu 26.04), and, as a second check, 150 minutes on a cloud machine with two cores of an Intel Xeon at 2.3 GHz. The first ran the server as released in v1.0.0-alpha.4, the second as in alpha.5, which changed no code that the test runs; neither is the LXC.
+
+| Measure | 330 minutes, GitHub's runner | 150 minutes, two cores | Budget |
+| --- | --- | --- | --- |
+| Resident memory at the peak while reading the sources | 60.5 MB | 60.3 MB | 150 MB |
+| Resident memory, idle with the sources loaded | 37.7 MB | 36.7 MB | 60 MB |
+| Resident memory at the peak under load | 73.6 MB | 68.1 MB | 150 MB |
+| Resident memory at the end | 60.9 MB | 55.4 MB | |
+| CPU, average under load: four streams, 20 Mbit/s in all | 1.6% of one core | 1.4% of one core | A few percent |
+| CPU at the peak, over five seconds | 35.4% of one core | 21.8% of one core | |
+| Streams | 665 played, none failed, 49.4 GB proxied | 321 played, none failed, 22.5 GB proxied | |
+| Calls | 1,829, none failed; 330 shelves of films read | 871, none failed; 158 shelves read | |
+
+The budgets hold. Reading the sources, with the guide's 480,000 programmes, peaks at about 60 MB; the server hands that memory back to the system as soon as the sources are stored, and then idles at under 40 MB. Under load, the two-core run's samples stay between about 48 and 68 MB, with no growth from its first hour to its last. Peaks of CPU last a few seconds; the average stays under 2% of one core.
+
+**The first run**, in November 2026: ten minutes with the defaults of the time, a lineup of 20,000 channels without a guide or a library, against the server as released in v0.0.4, on a cloud machine with two cores of an Intel Xeon at 2.1 GHz.
 
 | Measure | Result | Budget |
 | --- | --- | --- |
