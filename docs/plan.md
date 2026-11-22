@@ -765,7 +765,9 @@ Dispatcharr and m3u-editor already import M3U and Xtream and publish M3U, XMLTV,
 
 ## 22. Backlog (after 1.0)
 
-Radio and audio clubs · weather and widgets · app launcher · DVB tuner sources · HDHomeRun emulation, if it misses M6 · pseudo-channels from libraries (or via ErsatzTV or Tunarr) · multi-room resume · recordings sharing · `/metrics` and Prometheus dashboards · a script for the Proxmox host that makes the container · plugin system · translations · a native integration with the reference client · Ministra-style management REST (moved from M5) · a web player in the admin for previewing streams · Schedules Direct as a guide source, with the user's own subscription.
+**First: finer control over transcoding.** The first milestone after 1.0 lets the administrator choose what is transcoded and how: live TV, films and series as a whole, and single channels and titles; the codec and the quality; and hardware encoders and decoders. The unit's sandbox and the container must then let ffmpeg reach the GPU, which both hide today.
+
+Then, in no set order: radio and audio clubs · weather and widgets · app launcher · DVB tuner sources · HDHomeRun emulation, if it misses M6 · pseudo-channels from libraries (or via ErsatzTV or Tunarr) · multi-room resume · recordings sharing · `/metrics` and Prometheus dashboards · a script for the Proxmox host that makes the container · plugin system · translations · a native integration with the reference client · Ministra-style management REST (moved from M5) · a web player in the admin for previewing streams · Schedules Direct as a guide source, with the user's own subscription.
 
 ---
 
