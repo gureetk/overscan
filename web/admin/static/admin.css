@@ -1201,14 +1201,50 @@ button.big { height: 3rem; padding: 0 1.5rem; font-size: 0.9375rem; }
 .profile-more form { margin: 0; }
 .add-profile { max-width: 34rem; }
 .profile-group { margin: 1rem 0 0; font-size: 0.875rem; font-weight: 600; color: var(--text3); }
-.account-forms h3 { margin: 0.75rem 0 0; font-size: 0.875rem; font-weight: 600; }
-.account-forms h3:first-of-type { margin-top: 0.25rem; }
-.account-forms > form { margin: 0; }
+
+/* Accounts (D102): a list of them, each opening its own page, with the
+   outputs for players beside it on a wide screen. */
+.account-list { margin: 0.75rem 0 1rem; padding: 0; list-style: none; }
+.account-list li { position: relative; display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 0.5rem; border-top: 1px solid var(--line); }
+.account-list li:last-child { border-bottom: 1px solid var(--line); }
+.account-list li:hover { background: var(--hover); }
+.account-link { display: block; color: var(--text); font-size: 0.9375rem; font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+.account-link:hover { color: var(--text); }
+/* The whole row opens the account, and shows the focus. */
+.account-link::after { content: ""; position: absolute; inset: 0; }
+.account-link:focus-visible { outline: none; }
+.account-list li:has(.account-link:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 8px; }
+.account-list .chips { flex: 0 1 auto; justify-content: flex-end; }
+.account-list .go { flex: none; display: inline-flex; color: var(--text3); }
+@media (min-width: 80rem) {
+  .accounts-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(22rem, 1fr); gap: 1rem; align-items: start; }
+  .accounts-layout > .card + .card { margin-top: 0; }
+}
+
+/* An account's own page: its name, which the button beside it changes,
+   and its settings in panels that flow into up to four columns. */
+.account-head { align-items: center; }
+.account-title { display: flex; align-items: center; gap: 0.875rem; }
+.account-title > .tile-icon { width: 3rem; height: 3rem; border-radius: 14px; }
+.account-title > .tile-icon .i { width: 1.5rem; height: 1.5rem; }
+.account-title > div { min-width: 0; }
+.title-line { display: flex; align-items: center; gap: 0.25rem; }
+.title-line h1 { min-width: 0; overflow-wrap: anywhere; }
+.account-head .lead { margin-top: 0.25rem; }
+.account-settings { columns: 25rem 4; }
+.account-settings .panel > * { margin-top: 0; margin-bottom: 0; }
+.account-settings .panel > * + * { margin-top: 0.75rem; }
+.account-settings .panel > .switch-row + .switch-row { margin-top: 0; }
+.account-settings .addresses div:first-child { padding-top: 0; }
+/* An address is picked up whole, with one click. */
+.account-settings .addresses dd { user-select: all; }
+.switch-row.with-ticks { flex-direction: column; align-items: flex-start; gap: 0.625rem; }
+.switch-row label.check { display: inline-flex; font-size: 0.875rem; font-weight: 500; }
+.row-label { display: block; font-size: 0.9375rem; font-weight: 600; }
+.account-devices li { overflow-wrap: anywhere; }
+.account-devices li + li { margin-top: 0.375rem; }
 .login-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.5rem; }
 .login-form .field { flex: 1 1 12rem; margin: 0; }
-.accounts .chips { flex: 0 0 auto; }
-.account-forms .switch-row { margin: 0; }
-.account-forms .addresses div:first-child { padding-top: 0; }
 
 /* Themes (D97). */
 .themes { margin: 0.75rem 0; padding: 0; list-style: none; }
@@ -1232,9 +1268,10 @@ button.big { height: 3rem; padding: 0 1.5rem; font-size: 0.9375rem; }
 .message-foot form { margin: 0; }
 @media (max-width: 47.5rem) {
   .profile-edit { margin-left: 0; }
-  .accounts .profile-head { flex-wrap: wrap; }
-  .accounts .profile-text { flex: 1 1 calc(100% - 3.25rem); }
-  .accounts .profile-head .chips { flex: 1 1 100%; padding-left: 3.25rem; }
+  .account-list li { flex-wrap: wrap; }
+  .account-list .profile-text { flex: 1 1 calc(100% - 5.5rem); }
+  .account-list .chips { order: 3; flex: 1 1 100%; justify-content: flex-start; padding-left: 3rem; }
+  .account-list .chips:empty { display: none; }
 }
 .cell-form { margin: 0; }
 .cell-form select { max-width: 12rem; }

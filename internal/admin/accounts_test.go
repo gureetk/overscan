@@ -32,8 +32,9 @@ func (ta *testAdmin) accountsByName() map[string]store.Account {
 	return out
 }
 
-// The Accounts page adds an account, gives it a login, a limit, an end
-// date and a PIN, and removes it once no device is approved for it (D102).
+// The Accounts page lists the accounts and adds one; each account's own
+// page gives it a login, a limit, an end date and a PIN, and removes it
+// once no device is approved for it (D102).
 func TestAccountsPage(t *testing.T) {
 	ta := newTestAdmin(t)
 	ta.setPassword("correct horse")
@@ -41,32 +42,52 @@ func TestAccountsPage(t *testing.T) {
 	hx := []string{"HX-Request", "true"}
 
 	rec := ta.do("GET", "/admin/accounts", nil, c)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Household") ||
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `<a class="account-link" href="/admin/accounts/1">Household</a>`) ||
 		!strings.Contains(rec.Body.String(), `href="/admin/accounts" aria-current="page"`) {
 		t.Fatalf("the page: status %d", rec.Code)
 	}
-	// A household with one account sees it, and no way to remove it.
-	if strings.Contains(rec.Body.String(), "Remove the account") {
-		t.Error("the household's account can be removed")
+	// The household's own page has no way to remove it.
+	rec = ta.do("GET", "/admin/accounts/1", nil, c)
+	if page := rec.Body.String(); rec.Code != http.StatusOK || !strings.Contains(page, "<h1>Household</h1>") ||
+		!strings.Contains(page, `href="/admin/accounts" aria-current="page"`) || strings.Contains(page, "Remove the account") {
+		t.Errorf("the household's page: status %d", rec.Code)
+	}
+	for _, path := range []string{"/admin/accounts/99", "/admin/accounts/one"} {
+		if rec := ta.do("GET", path, nil, c); rec.Code != http.StatusNotFound {
+			t.Errorf("%s: status %d", path, rec.Code)
+		}
 	}
 
+	// A new account's page opens, saying that it was added.
 	rec = ta.do("POST", "/admin/accounts", url.Values{"csrf": {csrf}, "name": {"Sam"}}, c, hx...)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Added the account Sam.") {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Added the account Sam.") || !strings.Contains(rec.Body.String(), "<h1>Sam</h1>") {
 		t.Fatalf("add: status %d", rec.Code)
 	}
 	sam, ok := ta.accountsByName()["Sam"]
 	if !ok {
 		t.Fatal("no account Sam")
 	}
-	// Its forms are open after the change.
-	if !strings.Contains(rec.Body.String(), fmt.Sprintf(`id="account-%d"`, sam.ID)) {
-		t.Error("the page does not list Sam")
+	path := fmt.Sprintf("/admin/accounts/%d", sam.ID)
+	if got := rec.Header().Get("HX-Push-Url"); got != path {
+		t.Errorf("the address after adding: %q, want %q", got, path)
 	}
-	if rec := ta.do("POST", "/admin/accounts", url.Values{"csrf": {csrf}, "name": {"sam"}}, c, hx...); rec.Code != http.StatusBadRequest {
+	if rec := ta.do("POST", "/admin/accounts", url.Values{"csrf": {csrf}, "name": {"sam"}}, c, hx...); rec.Code != http.StatusBadRequest ||
+		!strings.Contains(rec.Body.String(), `value="sam"`) {
 		t.Errorf("a second Sam: status %d", rec.Code)
 	}
+	// Without htmx, the browser goes to the new page, and back to it after
+	// each change.
+	rec = ta.do("POST", "/admin/accounts", url.Values{"csrf": {csrf}, "name": {"Kim"}}, c)
+	kim := ta.accountsByName()["Kim"]
+	if want := fmt.Sprintf("/admin/accounts/%d", kim.ID); rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != want {
+		t.Errorf("add without htmx: status %d, to %q, want %q", rec.Code, rec.Header().Get("Location"), want)
+	}
+	rec = ta.do("POST", path+"/streams", url.Values{"csrf": {csrf}, "streams": {"3"}}, c)
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != path {
+		t.Errorf("a change without htmx: status %d, to %q", rec.Code, rec.Header().Get("Location"))
+	}
+	path += "/"
 
-	path := fmt.Sprintf("/admin/accounts/%d/", sam.ID)
 	for _, step := range []struct {
 		action string
 		form   url.Values
@@ -122,18 +143,75 @@ func TestAccountsPage(t *testing.T) {
 	if d := ta.device(boxMAC); d.AccountID != householdAccount {
 		t.Errorf("the box's account: %d", d.AccountID)
 	}
+	// Once it is removed, the Accounts page says so.
 	rec = ta.do("POST", path+"remove", url.Values{"csrf": {csrf}}, c, hx...)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Removed the account Sam and Kim") {
-		t.Errorf("remove: status %d", rec.Code)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Removed the account Sam and Kim") ||
+		rec.Header().Get("HX-Push-Url") != "/admin/accounts" {
+		t.Errorf("remove: status %d, to %q", rec.Code, rec.Header().Get("HX-Push-Url"))
 	}
 	if _, ok := ta.accountsByName()["Sam and Kim"]; ok {
 		t.Error("the account is still there")
+	}
+	// A form of its page, open in another tab, finds it gone.
+	rec = ta.do("POST", path+"pin", url.Values{"csrf": {csrf}, "pin": {"1357"}}, c, hx...)
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "There is no such account.") ||
+		!strings.Contains(rec.Body.String(), "<h1>Accounts</h1>") {
+		t.Errorf("a removed account's form: status %d", rec.Code)
+	}
+	rec = ta.do("POST", fmt.Sprintf("/admin/accounts/%d/remove", kim.ID), url.Values{"csrf": {csrf}}, c)
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/admin/accounts" {
+		t.Errorf("remove without htmx: status %d, to %q", rec.Code, rec.Header().Get("Location"))
 	}
 	if rec := ta.do("POST", "/admin/accounts/1/remove", url.Values{"csrf": {csrf}}, c, hx...); rec.Code != http.StatusConflict {
 		t.Errorf("remove the household's: status %d", rec.Code)
 	}
 	if rec := ta.do("POST", "/admin/accounts", url.Values{"name": {"Kim"}}, c); rec.Code != http.StatusForbidden {
 		t.Errorf("without the CSRF token: status %d", rec.Code)
+	}
+}
+
+// What came of a form shows once, in the form's own part of an account's
+// page, or at the top for a form whose part the page does not show.
+func TestAccountPageSaysWhereItChanged(t *testing.T) {
+	ta := newTestAdmin(t)
+	ta.setPassword("correct horse")
+	c, csrf := ta.signIn("correct horse")
+	part := func(page, id string) string {
+		start := strings.Index(page, `<section class="panel" id="`+id+`"`)
+		if start < 0 {
+			return ""
+		}
+		return page[start : start+strings.Index(page[start:], "</section>")]
+	}
+	for _, step := range []struct {
+		action string
+		form   url.Values
+		status int
+		part   string // "" for the top, before the first part
+		says   string
+	}{
+		{"pin", url.Values{"pin": {"2468"}}, http.StatusOK, "account-pin", "Set the parental PIN of Household."},
+		{"pin", url.Values{"pin": {"12"}}, http.StatusBadRequest, "account-pin", "A PIN has 4 to 8 digits."},
+		{"streams", url.Values{"streams": {"2"}}, http.StatusOK, "account-watching", "Household plays 2 streams at once now."},
+		{"expiry", url.Values{"date": {"2027-12-31"}}, http.StatusOK, "account-end", "Household plays until the end of 31 December 2027."},
+		{"login", url.Values{"username": {"home"}, "password": {"short"}}, http.StatusBadRequest, "account-login", "at least 8 characters"},
+		{"playlist", url.Values{"on": {"1"}}, http.StatusOK, "account-playlist", "can read its playlist and guide"},
+		{"rename", url.Values{"name": {"Home"}}, http.StatusOK, "", "Renamed the account Home."},
+		// The page has no part for these: there are no themes, and the
+		// household's account cannot be removed.
+		{"theme", url.Values{"theme": {"7"}}, http.StatusNotFound, "", "There is no such theme."},
+		{"remove", url.Values{}, http.StatusConflict, "", "The household&#39;s account cannot be removed."},
+	} {
+		step.form.Set("csrf", csrf)
+		rec := ta.do("POST", "/admin/accounts/1/"+step.action, step.form, c, "HX-Request", "true")
+		page := rec.Body.String()
+		where := page[:max(strings.Index(page, `<section class="panel"`), 0)]
+		if step.part != "" {
+			where = part(page, step.part)
+		}
+		if rec.Code != step.status || !strings.Contains(where, step.says) || strings.Count(page, step.says) != 1 {
+			t.Errorf("%s %v: status %d, want %d saying %q once, in %q", step.action, step.form, rec.Code, step.status, step.says, step.part)
+		}
 	}
 }
 

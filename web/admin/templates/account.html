@@ -1,0 +1,253 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+{{/* An account's own page: what it watches, how players reach it, its boxes' PIN and theme, its end date, and its devices and profiles. Each part says what came of its own form. */}}
+{{define "content"}}
+{{- $a := .Data.Account}}
+{{- $csrf := .Session.CSRFToken}}
+<div id="accounts-main">
+<p class="crumbs"><a href="/admin/accounts">Accounts</a></p>
+<div class="page-head account-head">
+  <div class="account-title">
+    <span class="tile-icon{{if $a.IsEnded}} bad{{else}} accent{{end}}">{{template "i-user"}}</span>
+    <div>
+      <div class="title-line">
+        <h1>{{$a.Name}}</h1>
+        <details class="popover">
+          <summary class="button quiet icon small" aria-label="Rename {{$a.Name}}" title="Rename">{{template "i-pencil"}}</summary>
+          <div class="menu form-menu">
+            <form method="post" action="/admin/accounts/{{$a.ID}}/rename" hx-post="/admin/accounts/{{$a.ID}}/rename" hx-target="#accounts-main" hx-select="#accounts-main" hx-swap="outerHTML" class="row-form">
+              <input type="hidden" name="csrf" value="{{$csrf}}">
+              <input name="name" maxlength="50" value="{{$a.Name}}" aria-label="New name of {{$a.Name}}" required>
+              <button class="primary" type="submit">Rename</button>
+            </form>
+          </div>
+        </details>
+      </div>
+      <p class="lead">{{template "account-summary" (dict "A" $a "Lineups" .Data.Lineups)}}</p>
+    </div>
+  </div>
+  {{template "account-chips" $a}}
+</div>
+{{- if not .Data.Panel}}
+{{template "alerts" .}}
+{{- end}}
+<div class="settings account-settings">
+
+<section class="panel" id="account-watching" aria-labelledby="watching-title">
+  <div class="panel-title"><span class="tile-icon accent">{{template "i-live"}}</span><h2 id="watching-title">What it watches</h2></div>
+  {{- template "panel-alerts" (dict "V" . "Panel" "watching")}}
+  {{- if gt (len .Data.Lineups) 1}}
+  <form method="post" action="/admin/accounts/{{$a.ID}}/lineup" hx-post="/admin/accounts/{{$a.ID}}/lineup" hx-trigger="change" hx-target="#accounts-main" hx-select="#accounts-main" hx-swap="outerHTML" class="switch-row with-select">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <div>
+      <label for="lineup">Lineup</label>
+      <p id="lineup-text">What its devices and players see of live TV. Its favourites stay, for the channels that the lineup has. Lineups are made on the <a href="/admin/lineup">Live TV</a> page.</p>
+      <noscript><button class="small" type="submit">Save</button></noscript>
+    </div>
+    <select id="lineup" name="lineup" aria-describedby="lineup-text">
+      {{- range .Data.Lineups}}<option value="{{.ID}}"{{if eq .ID $a.LineupID}} selected{{end}}>{{.Name}}</option>{{end}}
+    </select>
+  </form>
+  {{- end}}
+  <form method="post" action="/admin/accounts/{{$a.ID}}/streams" hx-post="/admin/accounts/{{$a.ID}}/streams" hx-trigger="change" hx-target="#accounts-main" hx-select="#accounts-main" hx-swap="outerHTML" class="switch-row with-select">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <div>
+      <label for="streams">Streams at once</label>
+      <p id="streams-text">What its devices and players play at once, whatever their sources. A device that starts another stream at the limit stops its own first; another device is told that the account plays as many as it may. Each source's own limit still holds.</p>
+      <noscript><button class="small" type="submit">Save</button></noscript>
+    </div>
+    <select id="streams" name="streams" aria-describedby="streams-text">
+      <option value="0"{{if eq $a.MaxStreams 0}} selected{{end}}>Any number</option>
+      {{- range .Data.Streams}}<option value="{{.}}"{{if eq . $a.MaxStreams}} selected{{end}}>{{.}}</option>{{end}}
+    </select>
+  </form>
+  <form method="post" action="/admin/accounts/{{$a.ID}}/live" hx-post="/admin/accounts/{{$a.ID}}/live" hx-trigger="change" hx-target="#accounts-main" hx-select="#accounts-main" hx-swap="outerHTML" class="switch-row with-select">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <div>
+      <label for="live">Live streams</label>
+      <p id="live-text">As each source sends them, or made H.264 by this server, for a device that cannot play what a source sends, or a network too slow for it. A device's own choice, on the Devices page, comes first. Each stream that this server transcodes counts against the number at a time on the Settings page.{{with .Data.TranscodeNote}} {{.}}{{end}}</p>
+      <noscript><button class="small" type="submit">Save</button></noscript>
+    </div>
+    <select id="live" name="output_profile" aria-describedby="live-text">
+      {{- range .Data.OutputProfiles}}<option value="{{.Name}}"{{if eq .Name $a.OutputProfile}} selected{{end}}>{{.Label}}</option>{{end}}
+    </select>
+  </form>
+  {{- if .Data.Sources}}
+  <form method="post" action="/admin/accounts/{{$a.ID}}/sources" hx-post="/admin/accounts/{{$a.ID}}/sources" hx-target="#accounts-main" hx-select="#accounts-main" hx-swap="outerHTML" class="switch-row with-ticks sources-form">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <div>
+      <span class="row-label" id="sources-label">Sources</span>
+      <p id="sources-text">Where its devices and players get channels, films and series. With only some sources, a channel shows when its own stream or a backup's comes from one of them, and plays from those alone.{{if and $a.Sources.Only (not $a.Sources.IDs)}} The sources it used were removed, so it sees nothing until you tick one.{{end}}</p>
+    </div>
+    <label class="check"><input type="checkbox" name="every" value="1"{{if not $a.Sources.Only}} checked{{end}}> Every source, and those added later</label>
+    <fieldset class="source-ticks" aria-describedby="sources-text">
+      <legend class="sr">The sources that {{$a.Name}} uses</legend>
+      {{- range .Data.Sources}}
+      <label class="check"><input type="checkbox" name="source" value="{{.ID}}"{{if $a.Sources.Uses .ID}} checked{{end}}> {{.Name}} <span class="muted">{{.Kind}}</span></label>
+      {{- end}}
+    </fieldset>
+    <button class="small" type="submit">Save the sources</button>
+  </form>
+  {{- end}}
+</section>
+
+<section class="panel" id="account-playlist" aria-labelledby="playlist-title">
+  <div class="panel-title"><span class="tile-icon accent">{{template "i-lineup"}}</span><h2 id="playlist-title">Playlist and guide</h2>{{if and $a.Outputs.M3U .Data.OutputsOn}}<span class="badge ok">On</span>{{else}}<span class="badge">Off</span>{{end}}</div>
+  {{- template "panel-alerts" (dict "V" . "Panel" "playlist")}}
+  {{- if not .Data.OutputsOn}}
+  <p class="state-line warn"><i class="dot bad" aria-hidden="true"></i><span>The outputs for players are off, so players get nothing. Turn them on on the <a href="/admin/accounts#outputs">Accounts</a> page as well.</span></p>
+  {{- end}}
+  <form method="post" action="/admin/accounts/{{$a.ID}}/playlist" hx-post="/admin/accounts/{{$a.ID}}/playlist" hx-trigger="change" hx-target="#accounts-main" hx-select="#accounts-main" hx-swap="outerHTML" class="switch-row">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <input class="switch" type="checkbox" id="playlist" name="on" value="1"{{if $a.Outputs.M3U}} checked{{end}} aria-describedby="playlist-text">
+    <div>
+      <label for="playlist">Players read its playlist and guide</label>
+      <p id="playlist-text">{{if $a.Outputs.M3U}}Players such as Kodi, VLC or TiviMate read them at the addresses below, and play its channels through this server.{{else}}Off: players cannot read its playlist and guide.{{end}}</p>
+      <noscript><button class="small" type="submit">Save</button></noscript>
+    </div>
+  </form>
+  {{- if $a.Playlist}}
+  <dl class="facts-list addresses">
+    <div><dt>Playlist (M3U)</dt><dd class="mono">{{$a.Playlist}}</dd></div>
+    <div><dt>Guide (XMLTV)</dt><dd class="mono">{{$a.Guide}}</dd></div>
+  </dl>
+  <form method="post" action="/admin/accounts/{{$a.ID}}/token" hx-post="/admin/accounts/{{$a.ID}}/token" hx-target="#accounts-main" hx-select="#accounts-main" hx-swap="outerHTML" hx-confirm="Make new addresses for {{$a.Name}}'s playlist and guide? The old ones stop working at once.">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <button class="small" type="submit">Make new addresses</button>
+  </form>
+  {{- end}}
+  <p class="hint">Give a player the playlist's address; most read the guide from it, and others take the guide's address too. The addresses need no password, so treat them as one: making new ones stops the old.</p>
+</section>
+
+<section class="panel" id="account-login" aria-labelledby="login-title">
+  <div class="panel-title"><span class="tile-icon accent">{{template "i-key"}}</span><h2 id="login-title">Login for players</h2>{{if and $a.Outputs.Xtream $a.Username .Data.OutputsOn}}<span class="badge ok">On</span>{{else}}<span class="badge">Off</span>{{end}}</div>
+  {{- template "panel-alerts" (dict "V" . "Panel" "login")}}
+  {{- if not .Data.OutputsOn}}
+  <p class="state-line warn"><i class="dot bad" aria-hidden="true"></i><span>The outputs for players are off, so players get nothing. Turn them on on the <a href="/admin/accounts#outputs">Accounts</a> page as well.</span></p>
+  {{- end}}
+  <form method="post" action="/admin/accounts/{{$a.ID}}/xtream" hx-post="/admin/accounts/{{$a.ID}}/xtream" hx-trigger="change" hx-target="#accounts-main" hx-select="#accounts-main" hx-swap="outerHTML" class="switch-row">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <input class="switch" type="checkbox" id="xtream" name="on" value="1"{{if $a.Outputs.Xtream}} checked{{end}} aria-describedby="xtream-text">
+    <div>
+      <label for="xtream">Players sign in with its login</label>
+      <p id="xtream-text">{{if not $a.Outputs.Xtream}}Off: players cannot sign in as {{$a.Name}}.{{else if not $a.Username}}Give it a login below first.{{else}}Players such as TiviMate or OTT Navigator sign in as they do to an Xtream server, with this server's address and the login.{{end}}</p>
+      <noscript><button class="small" type="submit">Save</button></noscript>
+    </div>
+  </form>
+  {{- if $a.Server}}
+  <dl class="facts-list addresses">
+    <div><dt>Server</dt><dd class="mono">{{$a.Server}}</dd></div>
+  </dl>
+  {{- end}}
+  <form method="post" action="/admin/accounts/{{$a.ID}}/login" hx-post="/admin/accounts/{{$a.ID}}/login" hx-target="#accounts-main" hx-select="#accounts-main" hx-swap="outerHTML" class="login-form">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <div class="field">
+      <label for="username">Username</label>
+      <input id="username" name="username" maxlength="64" value="{{$a.Username}}" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" minlength="8" maxlength="128" autocomplete="new-password" {{if $a.PasswordHash}}placeholder="Leave empty to keep it"{{else}}required{{end}}>
+    </div>
+    <button type="submit">Save the login</button>
+  </form>
+  {{- if $a.Username}}
+  <form method="post" action="/admin/accounts/{{$a.ID}}/remove-login" hx-post="/admin/accounts/{{$a.ID}}/remove-login" hx-target="#accounts-main" hx-select="#accounts-main" hx-swap="outerHTML">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <button class="small" type="submit">Remove the login</button>
+  </form>
+  {{- end}}
+  <p class="hint">Players send the password in the addresses they ask for, so give the login a password of its own, never this admin's or a source's. A password holds letters without accents, digits, '.', '_', '-' and '~'.</p>
+</section>
+
+<section class="panel" id="account-pin" aria-labelledby="pin-title">
+  <div class="panel-title"><span class="tile-icon accent">{{template "i-lock"}}</span><h2 id="pin-title">Parental PIN</h2>{{if $a.PINHash}}<span class="badge ok">Set</span>{{else}}<span class="badge">None</span>{{end}}</div>
+  {{- template "panel-alerts" (dict "V" . "Panel" "pin")}}
+  <p class="state-line">{{if $a.PINHash}}<i class="dot ok" aria-hidden="true"></i>Locked channels, films and series ask for it on its boxes.{{else}}<i class="dot" aria-hidden="true"></i>Without a PIN, locks do nothing on its boxes.{{end}}</p>
+  <form method="post" action="/admin/accounts/{{$a.ID}}/pin" hx-post="/admin/accounts/{{$a.ID}}/pin" hx-target="#accounts-main" hx-select="#accounts-main" hx-swap="outerHTML" class="row-form">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <input name="pin" type="password" inputmode="numeric" pattern="[0-9]{4,8}" minlength="4" maxlength="8" autocomplete="new-password" placeholder="{{if $a.PINHash}}New PIN, {{end}}4 to 8 digits" aria-label="{{if $a.PINHash}}New parental PIN{{else}}Parental PIN{{end}} of {{$a.Name}}" required>
+    <button type="submit">{{if $a.PINHash}}Change the PIN{{else}}Set a PIN{{end}}</button>
+  </form>
+  {{- if $a.PINHash}}
+  <form method="post" action="/admin/accounts/{{$a.ID}}/remove-pin" hx-post="/admin/accounts/{{$a.ID}}/remove-pin" hx-target="#accounts-main" hx-select="#accounts-main" hx-swap="outerHTML">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <button class="small" type="submit">Remove the PIN</button>
+  </form>
+  {{- end}}
+</section>
+
+{{- if .Data.Themes}}
+<section class="panel" id="account-theme" aria-labelledby="theme-title">
+  <div class="panel-title"><span class="tile-icon accent">{{template "i-palette"}}</span><h2 id="theme-title">Theme</h2></div>
+  {{- template "panel-alerts" (dict "V" . "Panel" "theme")}}
+  <form method="post" action="/admin/accounts/{{$a.ID}}/theme" hx-post="/admin/accounts/{{$a.ID}}/theme" hx-trigger="change" hx-target="#accounts-main" hx-select="#accounts-main" hx-swap="outerHTML" class="switch-row with-select">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <div>
+      <label for="theme">Theme of its boxes</label>
+      <p id="theme-text">Its boxes show it within five minutes. Themes are added on the Settings page.</p>
+      <noscript><button class="small" type="submit">Save</button></noscript>
+    </div>
+    <select id="theme" name="theme" aria-describedby="theme-text">
+      <option value="0"{{if eq $a.ThemeID 0}} selected{{end}}>Overscan</option>
+      {{- range .Data.Themes}}<option value="{{.ID}}"{{if eq .ID $a.ThemeID}} selected{{end}}>{{.Name}}</option>{{end}}
+    </select>
+  </form>
+</section>
+{{- end}}
+
+<section class="panel" id="account-end" aria-labelledby="end-title">
+  <div class="panel-title"><span class="tile-icon{{if $a.IsEnded}} bad{{else}} accent{{end}}">{{template "i-calendar"}}</span><h2 id="end-title">End date</h2></div>
+  {{- template "panel-alerts" (dict "V" . "Panel" "end")}}
+  <p class="state-line{{if $a.IsEnded}} warn{{end}}">{{if $a.IsEnded}}<i class="dot bad" aria-hidden="true"></i>It has ended: its devices play nothing.{{else if $a.EndText}}<i class="dot ok" aria-hidden="true"></i>It plays until the end of {{$a.EndText}}.{{else}}<i class="dot ok" aria-hidden="true"></i>It never ends.{{end}}</p>
+  <form method="post" action="/admin/accounts/{{$a.ID}}/expiry" hx-post="/admin/accounts/{{$a.ID}}/expiry" hx-target="#accounts-main" hx-select="#accounts-main" hx-swap="outerHTML" class="row-form">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <input type="date" name="date" value="{{$a.EndDay}}" aria-label="The last day {{$a.Name}} plays" required>
+    <button type="submit">{{if $a.EndText}}Change the end date{{else}}Set an end date{{end}}</button>
+  </form>
+  {{- if $a.EndText}}
+  <form method="post" action="/admin/accounts/{{$a.ID}}/expiry" hx-post="/admin/accounts/{{$a.ID}}/expiry" hx-target="#accounts-main" hx-select="#accounts-main" hx-swap="outerHTML">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <input type="hidden" name="remove" value="1">
+    <button class="small" type="submit">Remove the end date</button>
+  </form>
+  {{- end}}
+  <p class="hint">The last day it plays, in this server's time zone.</p>
+</section>
+
+<section class="panel" id="account-devices" aria-labelledby="devices-title">
+  <div class="panel-title"><span class="tile-icon accent">{{template "i-devices"}}</span><h2 id="devices-title">Devices and profiles</h2></div>
+  {{- if .Data.Devices}}
+  <ul class="plain account-devices">
+    {{- range .Data.Devices}}
+    <li>{{if .Label}}<span class="strong">{{.Label}}</span>{{else}}<span class="muted">No label</span>{{end}} <span class="mac">{{.MAC}}</span> <span class="muted">· seen {{ago .LastSeen $.Data.Now}}</span></li>
+    {{- end}}
+  </ul>
+  {{- else}}
+  <p class="empty">No device is approved for it yet.</p>
+  {{- end}}
+  <p class="account-profiles"><span class="muted">{{if eq (len .Data.Profiles) 1}}Its profile:{{else}}Its profiles:{{end}}</span> {{range $i, $p := .Data.Profiles}}{{if $i}}, {{end}}{{$p.Name}}{{end}}</p>
+  <p class="hint">Approve, move and remove its devices, and add or change its profiles, on the <a href="/admin/devices">Devices</a> page.</p>
+</section>
+
+{{- if not $a.Household}}
+<section class="panel" id="account-remove" aria-labelledby="remove-title">
+  <div class="panel-title"><span class="tile-icon bad">{{template "i-alert"}}</span><h2 id="remove-title">Remove the account</h2></div>
+  {{- template "panel-alerts" (dict "V" . "Panel" "remove")}}
+  {{- if $a.Devices}}
+  <p class="hint">To remove {{$a.Name}}, move its devices to another account on the Devices page, or remove them.</p>
+  {{- else}}
+  <p class="hint">Its profiles go with it, with their favourites and where they stopped.</p>
+  <form method="post" action="/admin/accounts/{{$a.ID}}/remove" hx-post="/admin/accounts/{{$a.ID}}/remove" hx-target="#accounts-main" hx-select="#accounts-main" hx-swap="outerHTML" hx-confirm="Remove the account {{$a.Name}}? Its profiles go with it, with their favourites and where they stopped.">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <button type="submit" class="danger">Remove the account</button>
+  </form>
+  {{- end}}
+</section>
+{{- end}}
+
+</div>
+</div>
+{{end}}
+
+{{/* What came of a form, in its part of the page: .V is the page's view, .Panel the part. */}}
+{{define "panel-alerts"}}{{if eq .V.Data.Panel .Panel}}{{template "alerts" .V}}{{end}}{{end}}

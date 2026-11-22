@@ -101,6 +101,7 @@ func (a *Admin) Handler() http.Handler {
 	mux.Handle("POST /admin/devices/{mac}/{action}", a.page(a.deviceAction("")))
 	mux.Handle("GET /admin/accounts", a.page(a.accountsPage))
 	mux.Handle("POST /admin/accounts", a.page(a.accountAction))
+	mux.Handle("GET /admin/accounts/{id}", a.page(a.accountPage))
 	mux.Handle("POST /admin/accounts/outputs/{which}", a.page(a.outputsForm))
 	mux.Handle("POST /admin/accounts/{id}/{action}", a.page(a.accountAction))
 	mux.Handle("POST /admin/profiles", a.page(a.profileAction))
@@ -192,10 +193,10 @@ type view struct {
 
 // pageNames are the pages in admin/templates, each of which defines
 // "content" for the layout.
-var pageNames = []string{"sign-in", "home", "password", "message", "devices", "accounts", "lineup", "rules", "library", "sources", "capture", "settings"}
+var pageNames = []string{"sign-in", "home", "password", "message", "devices", "accounts", "account", "lineup", "rules", "library", "sources", "capture", "settings"}
 
 // pageParts are the parts in admin/templates that pages share, by page.
-var pageParts = map[string][]string{"lineup": {"lineup-nav"}, "rules": {"lineup-nav"}}
+var pageParts = map[string][]string{"lineup": {"lineup-nav"}, "rules": {"lineup-nav"}, "accounts": {"account-parts"}, "account": {"account-parts"}}
 
 func (a *Admin) parsePages() map[string]*template.Template {
 	funcs := template.FuncMap{"asset": a.assetPath, "csrfHeaders": csrfHeaders, "ago": ago, "dict": dict, "count": count, "plural": plural, "initial": initial, "size": sizeText,

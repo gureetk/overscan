@@ -47,11 +47,11 @@ In the app, add a Stalker portal at `http://<server>:8080/stalker_portal/c/` wit
 
 ## Serve players
 
-VLC, Kodi, TiviMate and other players read an account's M3U playlist and XMLTV guide, or sign in with an account's Xtream login. Everything starts off: turn on *Accounts* → *Outputs for players*, then the account's *Playlist and guide* or its *Login* ([outputs.md](outputs.md)). Players are answered on your own networks only, unless you choose otherwise.
+VLC, Kodi, TiviMate and other players read an account's M3U playlist and XMLTV guide, or sign in with an account's Xtream login. Everything starts off: turn on *Accounts* → *Outputs for players*, then, on the account's page, its *Playlist and guide* or its *Login for players* ([outputs.md](outputs.md)). Players are answered on your own networks only, unless you choose otherwise.
 
 ## Give people accounts
 
-*Accounts* → *Add an account*, then move their devices to it on *Devices*. Each account has a limit on the streams it plays at once, the lineup it sees, the sources it uses, an end date, a parental PIN, a theme, how its live channels are sent (*Live streams*), and its own playlist and login for players.
+*Accounts* → *Add an account*, which opens the new account's page, then move their devices to it on *Devices*. Each account has a page of its own, opened from the list, for a limit on the streams it plays at once, the lineup it sees, the sources it uses, an end date, a parental PIN, a theme, how its live channels are sent (*Live streams*), and its own playlist and login for players.
 
 ## Record and pause
 

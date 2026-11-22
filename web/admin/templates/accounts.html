@@ -1,25 +1,48 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 {{define "content"}}
+<div id="accounts-main">
 <div class="page-head">
   <div>
     <h1>Accounts</h1>
-    <p class="lead">Who uses Overscan. Each account has its own devices and profiles, end date, parental PIN, theme and limit on streams. A household needs only one.</p>
+    <p class="lead">Who uses Overscan. Each account has its own devices and profiles, end date, parental PIN, theme and limit on streams: open one to change them. A household needs only one.</p>
   </div>
 </div>
-<div id="account-sections">
 {{template "alerts" .}}
+<div class="accounts-layout">
+<section class="card" id="accounts" aria-labelledby="accounts-title">
+  <h2 id="accounts-title">Accounts <span class="count quiet">{{len .Data.Accounts}}</span></h2>
+  <ul class="account-list">
+    {{- range .Data.Accounts}}
+    <li id="account-{{.ID}}">
+      <span class="tile-icon{{if .IsEnded}} bad{{end}}">{{template "i-user"}}</span>
+      <div class="profile-text">
+        <a class="account-link" href="/admin/accounts/{{.ID}}">{{.Name}}</a>
+        <span class="muted">{{template "account-summary" (dict "A" . "Lineups" $.Data.Lineups)}}</span>
+      </div>
+      {{- template "account-chips" .}}
+      <span class="go" aria-hidden="true">{{template "i-chevron-right"}}</span>
+    </li>
+    {{- end}}
+  </ul>
+  <form method="post" action="/admin/accounts" hx-post="/admin/accounts" hx-target="#accounts-main" hx-select="#accounts-main" hx-swap="outerHTML" class="row-form add-profile" id="add-account">
+    <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+    <input name="name" maxlength="50" placeholder="Such as Alex" aria-label="Name of a new account" required value="{{.Data.Name}}">
+    <button type="submit">{{template "i-plus"}}Add an account</button>
+  </form>
+  <p class="hint">A new account sees the same lineup, films and series, and starts with the household's parental PIN and theme. Its page opens once it is added. Approve devices for it on the Devices page, or move devices to it there.</p>
+</section>
 <section class="card" id="outputs" aria-labelledby="outputs-title">
   <div class="panel-title"><span class="tile-icon">{{template "i-live"}}</span><h2 id="outputs-title">Outputs for players</h2>{{if .Data.OutputsOn}}<span class="badge ok">On</span>{{else}}<span class="badge">Off</span>{{end}}</div>
-  <form method="post" action="/admin/accounts/outputs/on" hx-post="/admin/accounts/outputs/on" hx-trigger="change" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="switch-row">
+  <form method="post" action="/admin/accounts/outputs/on" hx-post="/admin/accounts/outputs/on" hx-trigger="change" hx-target="#accounts-main" hx-select="#accounts-main" hx-swap="outerHTML" class="switch-row">
     <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
     <input class="switch" type="checkbox" id="outputs-on" name="on" value="1"{{if .Data.OutputsOn}} checked{{end}} aria-describedby="outputs-on-text">
     <div>
       <label for="outputs-on">Serve players other than the boxes</label>
-      <p id="outputs-on-text">{{if .Data.OutputsOn}}Players such as Kodi, VLC or TiviMate read the playlist and guide of each account whose playlist is on, below, and play its channels through this server, within each account's and each source's limits.{{else}}Off: players other than the boxes get nothing. Boxes and Stalker clients play as before.{{end}}</p>
+      <p id="outputs-on-text">{{if .Data.OutputsOn}}Players such as Kodi, VLC or TiviMate read the playlist and guide of each account whose playlist is on, or sign in with its login, and play its channels through this server, within each account's and each source's limits.{{else}}Off: players other than the boxes get nothing. Boxes and Stalker clients play as before.{{end}}</p>
       <noscript><button class="small" type="submit">Save</button></noscript>
     </div>
   </form>
-  <form method="post" action="/admin/accounts/outputs/anywhere" hx-post="/admin/accounts/outputs/anywhere" hx-trigger="change" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="switch-row">
+  <form method="post" action="/admin/accounts/outputs/anywhere" hx-post="/admin/accounts/outputs/anywhere" hx-trigger="change" hx-target="#accounts-main" hx-select="#accounts-main" hx-swap="outerHTML" class="switch-row">
     <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
     <input class="switch" type="checkbox" id="outputs-anywhere" name="on" value="1"{{if .Data.Anywhere}} checked{{end}} aria-describedby="outputs-anywhere-text">
     <div>
@@ -30,206 +53,6 @@
   </form>
   <p class="hint">Players send an account's token or login in every address they ask for, and a playlist's addresses play without a password. Keep the outputs on your own network; to reach them from outside, use a VPN, or a proxy with TLS, rather than an open port.</p>
 </section>
-<section class="card" id="accounts" aria-labelledby="accounts-title">
-  <h2 id="accounts-title">Accounts <span class="count quiet">{{len .Data.Accounts}}</span></h2>
-  <ul class="profiles accounts">
-    {{- range .Data.Accounts}}
-    {{- $id := .ID}}
-    <li id="account-{{.ID}}">
-      <div class="profile-head">
-        <span class="tile-icon{{if .IsEnded}} bad{{end}}">{{template "i-user"}}</span>
-        <div class="profile-text">
-          <strong>{{.Name}}</strong>
-          <span class="muted">{{.Devices}} {{plural .Devices "device"}} · {{.Profiles}} {{plural .Profiles "profile"}} · {{if .MaxStreams}}up to {{.MaxStreams}} {{plural .MaxStreams "stream"}} at once{{else}}any number of streams at once{{end}}{{if gt (len $.Data.Lineups) 1}} · sees {{.LineupName}}{{end}}{{with .SourcesText}} · {{.}}{{end}}{{with .LiveText}} · {{.}}{{end}}</span>
-        </div>
-        <div class="chips">
-          {{- if .Username}}<span class="badge" title="Players sign in as {{.Username}}">Login</span>{{end}}
-          {{- if .PINHash}}<span class="badge" title="Locked channels, films and series ask for its PIN">PIN</span>{{end}}
-          {{- if .IsEnded}}<span class="badge bad">Ended</span>{{else if .EndText}}<span class="badge">Until {{.EndText}}</span>{{end}}
-        </div>
-      </div>
-      <details class="profile-edit"{{if eq .ID $.Data.Open}} open{{end}}>
-        <summary class="button quiet small">Change</summary>
-        <div class="profile-forms account-forms">
-          <form method="post" action="/admin/accounts/{{.ID}}/rename" hx-post="/admin/accounts/{{.ID}}/rename" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="row-form">
-            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
-            <input name="name" maxlength="50" value="{{.Name}}" aria-label="New name of {{.Name}}" required>
-            <button type="submit">Rename</button>
-          </form>
-
-          {{- if gt (len $.Data.Lineups) 1}}
-          <h3>Lineup</h3>
-          <form method="post" action="/admin/accounts/{{.ID}}/lineup" hx-post="/admin/accounts/{{.ID}}/lineup" hx-trigger="change" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="row-form">
-            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
-            {{- $lineup := .LineupID}}
-            <select name="lineup" aria-label="Lineup that {{.Name}} sees">
-              {{- range $.Data.Lineups}}<option value="{{.ID}}"{{if eq .ID $lineup}} selected{{end}}>{{.Name}}</option>{{end}}
-            </select>
-            <noscript><button type="submit">Save</button></noscript>
-          </form>
-          <p class="hint">What its devices and players see of live TV. Its favourites stay, for the channels that the lineup has. Lineups are made and edited on the Live TV page.</p>
-          {{- end}}
-
-          {{- if $.Data.Sources}}
-          <h3>Sources</h3>
-          <form method="post" action="/admin/accounts/{{.ID}}/sources" hx-post="/admin/accounts/{{.ID}}/sources" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="sources-form">
-            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
-            <label class="check"><input type="checkbox" name="every" value="1"{{if not .Sources.Only}} checked{{end}}> Every source, and those added later</label>
-            <fieldset class="source-ticks">
-              <legend class="sr">The sources that {{.Name}} uses</legend>
-              {{- $acct := .}}
-              {{- range $.Data.Sources}}
-              <label class="check"><input type="checkbox" name="source" value="{{.ID}}"{{if $acct.Sources.Uses .ID}} checked{{end}}> {{.Name}} <span class="muted">{{.Kind}}</span></label>
-              {{- end}}
-            </fieldset>
-            <button type="submit">Save</button>
-          </form>
-          <p class="hint">Where its devices and players get channels, films and series. With only some sources, a channel shows when its own stream or a backup's comes from one of them, and plays from those alone.{{if and .Sources.Only (not .Sources.IDs)}} The sources it used were removed, so it sees nothing until you tick one.{{end}}</p>
-          {{- end}}
-
-          <h3>Streams at once</h3>
-          <form method="post" action="/admin/accounts/{{.ID}}/streams" hx-post="/admin/accounts/{{.ID}}/streams" hx-trigger="change" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="row-form">
-            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
-            <select name="streams" aria-label="Streams that {{.Name}} plays at once">
-              <option value="0"{{if eq .MaxStreams 0}} selected{{end}}>Any number</option>
-              {{- $max := .MaxStreams}}
-              {{- range $.Data.Streams}}<option value="{{.}}"{{if eq . $max}} selected{{end}}>{{.}}</option>{{end}}
-            </select>
-            <noscript><button type="submit">Save</button></noscript>
-          </form>
-          <p class="hint">What its devices and players play at once, whatever their sources. A device that starts another stream at the limit stops its own first; another device of the account is told that the account plays as many streams as it may. Each source's own limit still holds.</p>
-
-          <h3>Live streams</h3>
-          <form method="post" action="/admin/accounts/{{.ID}}/live" hx-post="/admin/accounts/{{.ID}}/live" hx-trigger="change" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="row-form">
-            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
-            {{- $profile := .OutputProfile}}
-            <select name="output_profile" aria-label="How {{.Name}}'s devices and players get live channels">
-              {{- range $.Data.OutputProfiles}}<option value="{{.Name}}"{{if eq .Name $profile}} selected{{end}}>{{.Label}}</option>{{end}}
-            </select>
-            <noscript><button type="submit">Save</button></noscript>
-          </form>
-          <p class="hint">How its devices and players get live channels: as each source sends them, or made H.264 by this server, for a device that cannot play what a source sends, or a network too slow for it. A device's own choice, on the Devices page, comes first. Each stream that this server transcodes counts against the number at a time on the Settings page.{{with $.Data.TranscodeNote}} {{.}}{{end}}</p>
-
-          <h3>End date</h3>
-          <form method="post" action="/admin/accounts/{{.ID}}/expiry" hx-post="/admin/accounts/{{.ID}}/expiry" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="row-form">
-            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
-            <input type="date" name="date" value="{{.EndDay}}" aria-label="The last day {{.Name}} plays" required>
-            <button type="submit">Set the end date</button>
-          </form>
-          {{- if .EndText}}
-          <form method="post" action="/admin/accounts/{{.ID}}/expiry" hx-post="/admin/accounts/{{.ID}}/expiry" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML">
-            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
-            <input type="hidden" name="remove" value="1">
-            <button type="submit">Remove the end date</button>
-          </form>
-          {{- end}}
-          <p class="hint">The last day it plays, in this server's time zone. After it, its devices play nothing.</p>
-
-          <h3>Parental PIN</h3>
-          <form method="post" action="/admin/accounts/{{.ID}}/pin" hx-post="/admin/accounts/{{.ID}}/pin" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="row-form">
-            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
-            <input name="pin" type="password" inputmode="numeric" pattern="[0-9]{4,8}" minlength="4" maxlength="8" autocomplete="new-password" placeholder="{{if .PINHash}}New PIN, {{end}}4 to 8 digits" aria-label="{{if .PINHash}}New parental PIN{{else}}Parental PIN{{end}} of {{.Name}}" required>
-            <button type="submit">{{if .PINHash}}Change the PIN{{else}}Set a PIN{{end}}</button>
-          </form>
-          {{- if .PINHash}}
-          <form method="post" action="/admin/accounts/{{.ID}}/remove-pin" hx-post="/admin/accounts/{{.ID}}/remove-pin" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML">
-            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
-            <button type="submit">Remove the PIN</button>
-          </form>
-          {{- end}}
-          <p class="hint">Locked channels, films and series ask for it on the account's boxes. Without a PIN, locks do nothing.</p>
-
-          {{- if $.Data.Themes}}
-          <h3>Theme</h3>
-          <form method="post" action="/admin/accounts/{{.ID}}/theme" hx-post="/admin/accounts/{{.ID}}/theme" hx-trigger="change" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="row-form">
-            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
-            {{- $theme := .ThemeID}}
-            <select name="theme" aria-label="Theme of {{.Name}}'s boxes">
-              <option value="0"{{if eq $theme 0}} selected{{end}}>Overscan</option>
-              {{- range $.Data.Themes}}<option value="{{.ID}}"{{if eq .ID $theme}} selected{{end}}>{{.Name}}</option>{{end}}
-            </select>
-            <noscript><button type="submit">Save</button></noscript>
-          </form>
-          {{- end}}
-
-          <h3>Playlist and guide</h3>
-          <form method="post" action="/admin/accounts/{{.ID}}/playlist" hx-post="/admin/accounts/{{.ID}}/playlist" hx-trigger="change" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="switch-row">
-            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
-            <input class="switch" type="checkbox" id="playlist-{{.ID}}" name="on" value="1"{{if .Outputs.M3U}} checked{{end}}>
-            <div>
-              <label for="playlist-{{.ID}}">Players read {{.Name}}'s playlist and guide</label>
-              <noscript><button class="small" type="submit">Save</button></noscript>
-            </div>
-          </form>
-          {{- if .Playlist}}
-          <dl class="facts-list addresses">
-            <div><dt>Playlist (M3U)</dt><dd class="mono">{{.Playlist}}</dd></div>
-            <div><dt>Guide (XMLTV)</dt><dd class="mono">{{.Guide}}</dd></div>
-          </dl>
-          <form method="post" action="/admin/accounts/{{.ID}}/token" hx-post="/admin/accounts/{{.ID}}/token" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" hx-confirm="Make new addresses for {{.Name}}'s playlist and guide? The old ones stop working at once.">
-            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
-            <button type="submit">Make new addresses</button>
-          </form>
-          {{- end}}
-          <p class="hint">{{if not $.Data.OutputsOn}}The outputs are off: turn them on above as well. {{end}}Give a player the playlist's address; most read the guide from it, and others take the guide's address too. The addresses need no password, so treat them as one: making new ones stops the old.</p>
-
-          <h3>Login</h3>
-          <form method="post" action="/admin/accounts/{{.ID}}/xtream" hx-post="/admin/accounts/{{.ID}}/xtream" hx-trigger="change" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="switch-row">
-            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
-            <input class="switch" type="checkbox" id="xtream-{{.ID}}" name="on" value="1"{{if .Outputs.Xtream}} checked{{end}}>
-            <div>
-              <label for="xtream-{{.ID}}">Players sign in as {{.Name}} with its login</label>
-              <noscript><button class="small" type="submit">Save</button></noscript>
-            </div>
-          </form>
-          {{- if .Server}}
-          <dl class="facts-list addresses">
-            <div><dt>Server</dt><dd class="mono">{{.Server}}</dd></div>
-          </dl>
-          {{- end}}
-          <form method="post" action="/admin/accounts/{{.ID}}/login" hx-post="/admin/accounts/{{.ID}}/login" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="login-form">
-            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
-            <div class="field">
-              <label for="username-{{.ID}}">Username</label>
-              <input id="username-{{.ID}}" name="username" maxlength="64" value="{{.Username}}" autocomplete="off" autocapitalize="none" spellcheck="false" required>
-            </div>
-            <div class="field">
-              <label for="password-{{.ID}}">Password</label>
-              <input id="password-{{.ID}}" name="password" type="password" minlength="8" maxlength="128" autocomplete="new-password" {{if .PasswordHash}}placeholder="Leave empty to keep it"{{else}}required{{end}}>
-            </div>
-            <button type="submit">Save the login</button>
-          </form>
-          {{- if .Username}}
-          <form method="post" action="/admin/accounts/{{.ID}}/remove-login" hx-post="/admin/accounts/{{.ID}}/remove-login" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML">
-            <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
-            <button type="submit">Remove the login</button>
-          </form>
-          {{- end}}
-          <p class="hint">{{if and .Outputs.Xtream (not $.Data.OutputsOn)}}The outputs are off: turn them on above as well. {{end}}{{if and .Outputs.Xtream (not .Username)}}Give it a login below first. {{end}}Players such as TiviMate or OTT Navigator sign in with it as they do to an Xtream server: give them this server's address and the login. They send the password in the addresses they ask for, so give it a password of its own, never this admin's or a source's. A password holds letters without accents, digits, '.', '_', '-' and '~'.</p>
-
-          {{- if not .Household}}
-          <div class="profile-more">
-            {{- if .Devices}}
-            <p class="hint">To remove {{.Name}}, move its devices to another account on the Devices page, or remove them.</p>
-            {{- else}}
-            <form method="post" action="/admin/accounts/{{.ID}}/remove" hx-post="/admin/accounts/{{.ID}}/remove" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" hx-confirm="Remove the account {{.Name}}? Its profiles go with it, with their favourites and where they stopped.">
-              <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
-              <button type="submit" class="danger">Remove the account</button>
-            </form>
-            {{- end}}
-          </div>
-          {{- end}}
-        </div>
-      </details>
-    </li>
-    {{- end}}
-  </ul>
-  <form method="post" action="/admin/accounts" hx-post="/admin/accounts" hx-target="#account-sections" hx-select="#account-sections" hx-swap="outerHTML" class="row-form add-profile">
-    <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
-    <input name="name" maxlength="50" placeholder="Such as Alex" aria-label="Name of a new account" required value="{{.Data.Name}}">
-    <button type="submit">Add an account</button>
-  </form>
-  <p class="hint">A new account sees the same lineup, films and series, and starts with the household's parental PIN and theme. Approve devices for it on the Devices page, or move devices to it there.</p>
-</section>
+</div>
 </div>
 {{end}}

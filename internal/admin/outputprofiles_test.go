@@ -14,7 +14,7 @@ import (
 	"overscan.gureet.ca/internal/store"
 )
 
-// An account's card and the API choose its output profile; the Devices page
+// An account's page and the API choose its output profile; the Devices page
 // offers a device's own once this server transcodes (D110).
 func TestOutputProfiles(t *testing.T) {
 	ta := newTestAdmin(t)
@@ -28,9 +28,9 @@ func TestOutputProfiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Without ffmpeg: the card offers it, and says why it would do nothing.
-	page := ta.do("GET", "/admin/accounts", nil, c).Body.String()
-	mustContain(t, "the card", page, "<h3>Live streams</h3>", `<option value="source" selected>As the source sends it</option>`,
+	// Without ffmpeg: the account's page offers it, and says why it would do nothing.
+	page := ta.do("GET", "/admin/accounts/1", nil, c).Body.String()
+	mustContain(t, "the account's page", page, `<label for="live">Live streams</label>`, `<option value="source" selected>As the source sends it</option>`,
 		`<option value="h264-720p">H.264, up to 720p</option>`, "This server cannot transcode: it lacks ffmpeg and ffprobe")
 	if strings.Contains(ta.do("GET", "/admin/devices", nil, c).Body.String(), "<th>Live streams</th>") {
 		t.Error("the devices offer their own output profiles while the server cannot transcode")
@@ -53,9 +53,9 @@ func TestOutputProfiles(t *testing.T) {
 	if err := ta.st.SetTranscodes(ctx, 1); err != nil {
 		t.Fatal(err)
 	}
-	if page := ta.do("GET", "/admin/accounts", nil, c).Body.String(); strings.Contains(page, "This server cannot transcode") ||
+	if page := ta.do("GET", "/admin/accounts/1", nil, c).Body.String(); strings.Contains(page, "This server cannot transcode") ||
 		strings.Contains(page, "Transcoding is off") {
-		t.Error("the card still says that it would do nothing")
+		t.Error("the account's page still says that it would do nothing")
 	}
 	page = ta.do("GET", "/admin/devices", nil, c).Body.String()
 	mustContain(t, "the devices", page, "<th>Live streams</th>", `<option value="" selected>As its account's</option>`)
