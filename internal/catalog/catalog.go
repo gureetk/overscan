@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -234,6 +235,11 @@ func (r *Refresher) loop(ctx context.Context, src source.Settings, id int64) {
 			// guide.RetryAfter, at a later refresh.
 			_, _, _ = r.guide.ReadIfDue(ctx, src, id)
 		}
+		// A refresh and a guide read build large lists that are garbage
+		// once stored. Give that memory back to the system now, rather than
+		// over the next minutes, so that the server stays small while it
+		// idles (the plan's section 15).
+		debug.FreeOSMemory()
 		timer.Reset(src.Refresh)
 	}
 }
