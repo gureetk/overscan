@@ -1,0 +1,78 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Tags a full release's container image for both machines (D131). The
+# Release workflow pushes each machine's image as X.Y.Z-amd64 and
+# X.Y.Z-arm64; this joins them under X.Y.Z, X.Y, X and latest, and names the
+# image in the release's notes. The Release workflow calls it. It can also be
+# run from the Actions tab, with a full release whose images are pushed, if
+# its tagging failed; running it again changes nothing.
+#
+# The images are Docker manifests, so the list that joins them is a Docker
+# manifest list, which holds no annotations: what describes the image is in
+# each image's labels.
+name: Image tags
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The full release, such as v1.0.0
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      version:
+        description: A full release whose images are pushed, such as v1.0.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  tags:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # the release's notes
+      packages: write # tag the image
+    env:
+      VERSION: ${{ inputs.version }}
+      IMAGE: ghcr.io/${{ github.repository }}
+    steps:
+      - name: Check the version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$VERSION" == v0.0.* ]]; then
+            echo "::error::'$VERSION' is not a full release such as v1.0.0"
+            exit 1
+          fi
+          gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName
+
+      - name: Tag the image for both machines
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin <<<"$GH_TOKEN"
+          v=${VERSION#v}
+          docker buildx imagetools create \
+            --tag "$IMAGE:$v" --tag "$IMAGE:${v%.*}" --tag "$IMAGE:${v%%.*}" --tag "$IMAGE:latest" \
+            "$IMAGE:$v-amd64" "$IMAGE:$v-arm64"
+          docker buildx imagetools inspect "$IMAGE:$v"
+
+      - name: Name the image in the release's notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=${VERSION#v}
+          gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json body --jq .body >notes.md
+          if grep -qF "docker pull $IMAGE:$v\`" notes.md; then
+            echo "The notes already name the image."
+            exit 0
+          fi
+          {
+            echo
+            echo "The container image, for amd64 and arm64: \`docker pull $IMAGE:$v\`, also tagged \`${v%.*}\`, \`${v%%.*}\` and \`latest\` ([install-docker.md](https://github.com/$GITHUB_REPOSITORY/blob/$VERSION/docs/install-docker.md))."
+          } >>notes.md
+          gh release edit "$VERSION" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
