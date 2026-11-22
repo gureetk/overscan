@@ -57,7 +57,7 @@ Run Overscan's commands as its user. Debian containers may not have `sudo`; `run
     runuser -u overscan -- overscan devices approve -label "Living room" 00:1A:79:XX:XX:XX
     runuser -u overscan -- overscan debug playlist
 
-[`trying-it.md`](trying-it.md) says how to try what works so far.
+[`guide.md`](guide.md) says where each task is done, and [`trying-it.md`](trying-it.md) walks through them.
 
 ## Backups
 
