@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="Licence: AGPL-3.0-or-later" src="https://img.shields.io/badge/licence-AGPL--3.0--or--later-3DD9C1?labelColor=0F1424"></a>
-  <img alt="Status: 1.0 release candidate" src="https://img.shields.io/badge/status-1.0_release_candidate-F5F3EC?labelColor=0F1424">
+  <a href="https://github.com/gureetk/overscan/releases/latest"><img alt="Newest release" src="https://img.shields.io/github/v/release/gureetk/overscan?label=release&color=F5F3EC&labelColor=0F1424"></a>
 </p>
 
 ---
@@ -37,13 +37,12 @@ you are entitled to use.
 
 ## Status
 
-**1.0 is in its release candidates.** Version 0.5.0 is the newest full
-release, and v1.0.0-rc.1 the candidate for 1.0, which ends the seventh
-milestone. 1.0 adds no feature to 0.5.0. It promises that what is there is
-safe, documented, installable and kept across upgrades: the security review is
-written up in [docs/security.md](docs/security.md), and from 1.0 on an upgrade
-keeps what a household set up, which CI checks with every change from every
-full release since 0.3.0 ([docs/upgrading.md](docs/upgrading.md)).
+**Version 1.0.0 is the newest release.** It ends the seventh milestone, and
+adds no feature to 0.5.0. It promises that what is there is safe, documented,
+installable and kept across upgrades: the security review is written up in
+[docs/security.md](docs/security.md), and from 1.0 on an upgrade keeps what a
+household set up, which CI checks with every change from every full release
+since 0.3.0 ([docs/upgrading.md](docs/upgrading.md)).
 
 It plays live channels from M3U playlists, Xtream servers and providers' Stalker
 portals, with their programme guides, on a MAG322w1 through Overscan's own
@@ -53,7 +52,7 @@ locks), approves devices and shows what is playing. The stream hub proxies every
 stream, relays HLS, leaves out what a source sends again, and can repair a
 channel's timestamps with ffmpeg. Overscan installs as a service in a Proxmox
 container or another Debian system, from an archive or a Debian package, or
-runs in Docker.
+runs in Docker, from the archive or the published image.
 
 The box and Stalker clients browse and play the films and series of Xtream
 servers, Stalker portals, Jellyfin and Plex servers and folders on the server,

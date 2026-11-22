@@ -527,7 +527,7 @@ Security review (an outside one if possible), complete docs, a promise that upgr
 - The name: the trademark check (D1) and the short consultation of section 17, prepared for the maintainer, who does them or waives them. **Settled:** the maintainer's search found no conflicting mark, and the name stays (D127).
 - The release: v1.0.0-rc.N, upgrade-tested from v0.5.0, v0.4.0 and v0.3.0, then v1.0.0.
 *Done when:* the review's findings are fixed, or written up in [`security.md`](security.md) as known limits; every doc says what the code does; CI shows that a database from every full release since v0.3.0 upgrades to 1.0 and keeps what the household set up; what 1.0 ships installs, upgrades and uninstalls cleanly on a fresh Debian system; the performance budgets hold in a long soak; the name's check is done, or waived by the maintainer; and v1.0.0 is published.
-*Status:* built, and in its release candidates from v1.0.0-rc.1, on 22 November 2026, which adds the long soak's results. Its pre-releases: M7's plan (v1.0.0-alpha.1), upgrades that keep data (alpha.2), the security review (alpha.3), the docs (alpha.4) and the packaging (alpha.5). The maintainer publishes v1.0.0.
+*Status:* done, and released in v1.0.0 on 22 November 2026. Its pre-releases: M7's plan (v1.0.0-alpha.1), upgrades that keep data (alpha.2), the security review (alpha.3), the docs (alpha.4) and the packaging (alpha.5); then the candidates: rc.1, which adds the long soak's results, and rc.2, which fits the admin's pages to wide screens, gives each account a page of its own, and builds the container image that v1.0.0 is the first to publish.
 
 ---
 
