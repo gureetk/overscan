@@ -400,6 +400,12 @@ main.lone > * { position: relative; }
 .menu.form-menu.wide { min-width: min(23rem, calc(100vw - 2rem)); max-width: min(28rem, calc(100vw - 2rem)); }
 .form-menu .row-form input, .form-menu .row-form select { flex: 1 1 9rem; }
 .form-menu .hint { margin: 0; }
+.button.accent, summary.button.accent { background: var(--accent-soft); color: var(--accent); }
+.replace-form { display: flex; flex-direction: column; gap: 0.5rem; }
+.replace-form label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8125rem; font-weight: 600; }
+.replace-form button { align-self: flex-start; }
+.source-order { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.source-order select { flex: 1 1 9rem; min-width: 0; }
 
 /* Menus and small forms that open from a button. */
 details.popover { position: relative; }

@@ -43,6 +43,9 @@ type LineupGroup struct {
 	Channels    int  // channels in it that their sources list
 	Shown       int  // of those, the ones devices see
 	FirstNumber int  // the lowest number devices see in it, 0 if none
+	// NumbersFrom is its first number (D137), which numbers its channels
+	// and those that join it; 0 if it has none.
+	NumbersFrom int
 	Categories  []GroupCategory
 }
 
@@ -64,13 +67,14 @@ func (s *Store) LineupGroups(ctx context.Context, lineupID int64) ([]LineupGroup
 	}
 	byID := map[int64]*LineupGroup{}
 	var order []int64
-	rows, err := s.db.QueryContext(ctx, "SELECT id, name, hidden, locked, edited FROM lineup_groups WHERE lineup_id = ?", lineupID)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, name, hidden, locked, edited, COALESCE(numbers_from, 0) FROM lineup_groups WHERE lineup_id = ?`, lineupID)
 	if err != nil {
 		return fail(err)
 	}
 	for rows.Next() {
 		g := &LineupGroup{}
-		if err := rows.Scan(&g.ID, &g.Name, &g.Hidden, &g.Locked, &g.Edited); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.Hidden, &g.Locked, &g.Edited, &g.NumbersFrom); err != nil {
 			rows.Close()
 			return fail(err)
 		}
@@ -326,6 +330,9 @@ func (s *Store) MoveCategory(ctx context.Context, lineupID, categoryID, groupID 
 		if _, err := tx.ExecContext(ctx, "UPDATE lineup_groups SET edited = 1 WHERE id = ?", groupID); err != nil {
 			return err
 		}
+		if err := numberGroups(ctx, tx, lineupID); err != nil {
+			return err
+		}
 		return removeEmptyGroups(ctx, tx, lineupID)
 	})
 }
@@ -552,6 +559,9 @@ func (s *Store) SetEntriesGroup(ctx context.Context, lineupID int64, entryIDs []
 		if err := numberOwnLineup(ctx, tx, lineupID); err != nil {
 			return err
 		}
+		if err := numberGroups(ctx, tx, lineupID); err != nil {
+			return err
+		}
 		return removeEmptyGroups(ctx, tx, lineupID)
 	})
 }
@@ -576,7 +586,9 @@ func (s *Store) SetEntriesVisibility(ctx context.Context, lineupID int64, entryI
 				return err
 			}
 		}
-		return nil
+		// A channel hidden or shown in a group with a first number gives
+		// its number up or takes the next (D137).
+		return numberGroups(ctx, tx, lineupID)
 	})
 }
 
@@ -652,7 +664,7 @@ func pinNumber(ctx context.Context, tx *sql.Tx, lineupID, entryID int64, number 
 		return err
 	}
 	if cur.Valid && cur.Int64 == int64(number) {
-		_, err := tx.ExecContext(ctx, "UPDATE lineup_entries SET pinned = 1 WHERE id = ?", entryID)
+		_, err := tx.ExecContext(ctx, "UPDATE lineup_entries SET pinned = 1, numbered_in = NULL WHERE id = ?", entryID)
 		return err
 	}
 	var holder int64
@@ -676,7 +688,7 @@ func pinNumber(ctx context.Context, tx *sql.Tx, lineupID, entryID int64, number 
 			return err
 		}
 	}
-	_, err = tx.ExecContext(ctx, "UPDATE lineup_entries SET number = ?, pinned = 1, rule_pinned = 0 WHERE id = ?", number, entryID)
+	_, err = tx.ExecContext(ctx, "UPDATE lineup_entries SET number = ?, pinned = 1, rule_pinned = 0, numbered_in = NULL WHERE id = ?", number, entryID)
 	return err
 }
 

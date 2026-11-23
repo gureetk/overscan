@@ -303,7 +303,8 @@ const MaxNumber = renumberOffset - 1
 // A lineup of its own groups (D136) numbers only the channels that it
 // holds, each after the highest number it has, whatever the source's
 // numbers say, and never numbers again; an entry that it no longer holds
-// gives its number up as a missing channel's does.
+// gives its number up as a missing channel's does. An entry in a group
+// with a first number (D137) is numbered by numberGroups instead.
 func numberChannels(ctx context.Context, tx *sql.Tx, lineupID, sourceID int64, renumber bool) error {
 	var numbers string
 	if err := tx.QueryRowContext(ctx, "SELECT numbers FROM sources WHERE id = ?", sourceID).Scan(&numbers); err != nil {
@@ -328,16 +329,17 @@ func numberChannels(ctx context.Context, tx *sql.Tx, lineupID, sourceID int64, r
 		}
 	}
 	if renumber {
+		// A group's first number (D137) keeps the numbers that it gave.
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE lineup_entries SET number = NULL
-			WHERE lineup_id = ? AND pinned = 0 AND rule_pinned = 0 AND channel_id IN (
+			WHERE lineup_id = ? AND pinned = 0 AND rule_pinned = 0 AND numbered_in IS NULL AND channel_id IN (
 				SELECT id FROM channels WHERE source_id = ? AND missing_since IS NOT NULL)`,
 			lineupID, sourceID); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE lineup_entries SET number = number + ?
-			WHERE lineup_id = ? AND pinned = 0 AND rule_pinned = 0 AND number IS NOT NULL AND channel_id IN (
+			WHERE lineup_id = ? AND pinned = 0 AND rule_pinned = 0 AND numbered_in IS NULL AND number IS NOT NULL AND channel_id IN (
 				SELECT id FROM channels WHERE source_id = ? AND missing_since IS NULL)`,
 			renumberOffset, lineupID, sourceID); err != nil {
 			return err
@@ -382,14 +384,16 @@ func numberChannels(ctx context.Context, tx *sql.Tx, lineupID, sourceID int64, r
 	}
 	var cands []candidate
 	rows, err = tx.QueryContext(ctx, `
-		SELECT c.id, COALESCE(e.id, 0), c.number, c.position
+		SELECT c.id, COALESCE(e.id, 0), c.number, c.position, ng.numbers_from IS NOT NULL
 		FROM channels c
 		LEFT JOIN lineup_entries e ON e.channel_id = c.id AND e.lineup_id = ?
 		LEFT JOIN categories k ON k.id = c.category_id
 		LEFT JOIN lineup_categories m ON m.lineup_id = ? AND m.source_id = c.source_id AND m.category = COALESCE(k.name, '')
+		LEFT JOIN lineup_groups ng ON ng.id = COALESCE(e.group_id, e.rule_group_id, m.group_id)
 		WHERE c.source_id = ? AND c.missing_since IS NULL AND COALESCE(e.pinned, 0) = 0 AND COALESCE(e.rule_pinned, 0) = 0
 			AND (? OR e.id IS NULL OR e.number IS NULL)
 			AND (? = 0 OR m.group_id IS NOT NULL OR e.group_id IS NOT NULL)
+			AND (e.id IS NULL OR ng.numbers_from IS NULL)
 		ORDER BY c.position`,
 		lineupID, lineupID, sourceID, renumber, own)
 	if err != nil {
@@ -398,13 +402,16 @@ func numberChannels(ctx context.Context, tx *sql.Tx, lineupID, sourceID int64, r
 	for rows.Next() {
 		var c candidate
 		var wanted, position int
-		if err := rows.Scan(&c.channelID, &c.entryID, &wanted, &position); err != nil {
+		var grouped bool
+		if err := rows.Scan(&c.channelID, &c.entryID, &wanted, &position, &grouped); err != nil {
 			rows.Close()
 			return err
 		}
 		c.wants = wanted
 		switch {
-		case own:
+		case own, grouped:
+			// A group's first number numbers it (D137), once it has an
+			// entry; meanwhile it takes no number that another wants.
 			c.wants = 0
 		case numbers == NumbersPlaylist:
 			c.wants = position

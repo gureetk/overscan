@@ -277,6 +277,7 @@ type apiGroup struct {
 	Channels    int                `json:"channels"`
 	Shown       int                `json:"shown"`
 	FirstNumber *int               `json:"first_number"`
+	NumbersFrom *int               `json:"numbers_from"`
 	Categories  []apiGroupCategory `json:"categories"`
 }
 
@@ -285,6 +286,9 @@ func groupBody(g store.LineupGroup) apiGroup {
 		Shown: g.Shown, Categories: []apiGroupCategory{}}
 	if g.FirstNumber > 0 {
 		out.FirstNumber = &g.FirstNumber
+	}
+	if g.NumbersFrom > 0 {
+		out.NumbersFrom = &g.NumbersFrom
 	}
 	for _, c := range g.Categories {
 		ac := apiGroupCategory{SourceID: c.SourceID, Source: c.Source, Name: c.Name, Gone: c.Gone}
@@ -446,16 +450,22 @@ func (a *Admin) apiChangeGroup(w http.ResponseWriter, r *http.Request, _ store.A
 		return
 	}
 	var body struct {
-		Name   *string `json:"name"`
-		Hidden *bool   `json:"hidden"`
-		Locked *bool   `json:"locked"`
+		Name        *string `json:"name"`
+		Hidden      *bool   `json:"hidden"`
+		Locked      *bool   `json:"locked"`
+		NumbersFrom *int    `json:"numbers_from"`
 	}
 	if !readJSON(w, r, &body) {
 		return
 	}
-	if body.Name == nil && body.Hidden == nil && body.Locked == nil {
-		apiError(w, http.StatusBadRequest, "bad_json", "Say what to change: name, hidden or locked.")
+	if body.Name == nil && body.Hidden == nil && body.Locked == nil && body.NumbersFrom == nil {
+		apiError(w, http.StatusBadRequest, "bad_json", "Say what to change: name, hidden, locked or numbers_from.")
 		return
+	}
+	if body.NumbersFrom != nil {
+		if a.editAnswer(w, a.setNumbersFrom(r.Context(), id, *body.NumbersFrom)) {
+			return
+		}
 	}
 	if body.Name != nil {
 		if a.editAnswer(w, a.renameGroup(r.Context(), id, *body.Name)) {

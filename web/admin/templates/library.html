@@ -16,6 +16,12 @@
   <aside class="card groups-panel" aria-labelledby="shelves-title">
     <div class="groups-head">
       <h2 id="shelves-title">Shelves</h2>
+      <details class="popover">
+        <summary class="button quiet icon" aria-label="Find and replace in the shelves' names" title="Find and replace in the shelves' names">{{template "i-pencil"}}</summary>
+        <div class="menu form-menu">
+          {{template "replace-form" (dict "Action" (print .Data.View.Path "/shelves/replace") "Target" "#library-main" "Back" .Data.View.Back "CSRF" .Session.CSRFToken "What" "shelves")}}
+        </div>
+      </details>
       {{- if .Data.Ordered}}
       <form method="post" action="{{.Data.View.Path}}/order/reset" hx-post="{{.Data.View.Path}}/order/reset" hx-target="#library-main" hx-select="#library-main" hx-swap="outerHTML" hx-confirm="Put every shelf back in its sources' order?">
         <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">

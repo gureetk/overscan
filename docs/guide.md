@@ -28,6 +28,8 @@ The admin is at `http://<server>:8080/admin/`. Its pages are *Overview*, *Source
 
 *Live TV*: groups, names, numbers, hidden channels, locks and stream repair, which stay as you set them when sources change (D47).
 
+- **A group's numbers:** its *Numbers from…* button numbers its channels from a first number, such as 100, and a channel that joins the group later takes the next free number after its last; numbers you set yourself stay. *Sort by name*, under the group's ⋯, puts its channels in the order of their names, 2 before 10 (D137).
+- **Find and replace** in the names of every group, with the pencil beside *Groups*, or of every shelf, beside *Shelves* on *Movies* and *Series*: to take a provider's prefix out of all of them, for example (D137).
 - **Rules** change many channels at once and keep doing so: hide a category, rename, renumber, give a logo, use another channel's guide or move its times, merge the copies of a channel ([rules.md](rules.md)).
 - **Backups** play in a channel's place when its own stream cannot start: a channel's panel, *Backups* (D109).
 - **Several lineups,** such as one for children: *Lineups* → copy; each account chooses the one its devices see (D106).

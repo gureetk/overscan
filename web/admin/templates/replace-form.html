@@ -1,0 +1,13 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+{{/* Find and replace in names, of groups or of shelves (D137). */}}
+{{define "replace-form"}}
+<p class="menu-label">Find and replace in the {{.What}}' names</p>
+<form method="post" action="{{.Action}}" hx-post="{{.Action}}" hx-target="{{.Target}}" hx-select="{{.Target}}" hx-swap="outerHTML" class="replace-form">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <input type="hidden" name="back" value="{{.Back}}">
+  <label>Find<input name="find" maxlength="200" placeholder="Such as UK: or /^\w+\| /" required></label>
+  <label>Replace with<input name="with" maxlength="200" placeholder="Nothing"></label>
+  <button type="submit" class="primary">Replace in every name</button>
+  <p class="hint">Text is found whatever its case; text between slashes is a regular expression, and <code>$1</code> in what replaces it is its first group. A name that would be left empty stays as it is.</p>
+</form>
+{{end}}

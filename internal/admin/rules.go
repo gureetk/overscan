@@ -124,8 +124,19 @@ func describeRule(r rules.Rule, sources map[int64]string) string {
 			}
 		}
 		first := "the first in the lineup"
+		var by []string
+		if len(r.Sources) > 0 {
+			var from []string
+			for _, id := range r.Sources {
+				from = append(from, sources[id])
+			}
+			by = append(by, "from "+strings.Join(from, ", then from "))
+		}
 		if r.Prefer != "" {
-			first = "the first in " + r.Prefer + ", else the first in the lineup,"
+			by = append(by, "in "+r.Prefer)
+		}
+		if len(by) > 0 {
+			first = "the first " + strings.Join(by, " and ") + ", else the first in the lineup,"
 		}
 		return "Merges into one " + what + " that have " + same + ": " + first + " shows, with the others as its backups."
 	}
@@ -196,6 +207,25 @@ type rulesData struct {
 	DraftID int64
 
 	lineupSeen
+}
+
+// SourceSlots are the places that a merge rule's form offers for its order
+// of sources (D137): one for each source, up to four.
+func (d rulesData) SourceSlots() []int {
+	out := make([]int, min(len(d.Sources), 4))
+	for i := range out {
+		out[i] = i
+	}
+	return out
+}
+
+// SourceAt is the source that a merge rule puts in place i of its order, 0
+// if none.
+func (rulesData) SourceAt(r rules.Rule, i int) int64 {
+	if i < len(r.Sources) {
+		return r.Sources[i]
+	}
+	return 0
 }
 
 // FormRule is what a rule's form shows: the rule, or what was sent for it
@@ -314,6 +344,11 @@ func ruleForm(r *http.Request) rules.Rule {
 		}
 	case rules.Merge:
 		rule.Copies, rule.Prefer = r.PostFormValue("copies"), r.PostFormValue("prefer")
+		for _, text := range r.PostForm["first_source"] {
+			if id, err := strconv.ParseInt(text, 10, 64); err == nil && id > 0 && !slices.Contains(rule.Sources, id) {
+				rule.Sources = append(rule.Sources, id)
+			}
+		}
 		if rule.Copies == rules.ByName {
 			rule.Replace, rule.With = r.PostFormValue("merge_replace"), r.PostFormValue("merge_with")
 		}
@@ -470,6 +505,7 @@ type apiRuleBody struct {
 	Minutes int      `json:"minutes,omitempty"`
 	Copies  string   `json:"copies,omitempty"`
 	Prefer  string   `json:"prefer,omitempty"`
+	Sources []int64  `json:"sources,omitempty"`
 }
 
 type apiMatch struct {
@@ -486,14 +522,14 @@ func ruleBody(r store.LineupRule) apiRule {
 			Match: apiMatch{SourceID: r.Match.Source, Group: r.Match.Group, Name: r.Match.Name, Guide: r.Match.Guide,
 				Quality: r.Match.Quality},
 			Action: r.Action, Off: r.Off, Name: r.Name, Replace: r.Replace, With: r.With, Group: r.Group, From: r.From, Logo: r.Logo,
-			Channel: r.Channel, Minutes: r.Minutes, Copies: r.Copies, Prefer: r.Prefer}}
+			Channel: r.Channel, Minutes: r.Minutes, Copies: r.Copies, Prefer: r.Prefer, Sources: r.Sources}}
 }
 
 func (b apiRuleBody) rule() rules.Rule {
 	return rules.Rule{Match: rules.Match{Source: b.Match.SourceID, Group: b.Match.Group, Name: b.Match.Name,
 		Guide: b.Match.Guide, Quality: b.Match.Quality}, Action: b.Action, Off: b.Off, Name: b.Name, Replace: b.Replace,
 		With: b.With, Group: b.Group, From: b.From, Logo: b.Logo, Channel: b.Channel, Minutes: b.Minutes,
-		Copies: b.Copies, Prefer: b.Prefer}
+		Copies: b.Copies, Prefer: b.Prefer, Sources: b.Sources}
 }
 
 func (a *Admin) apiRules(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {

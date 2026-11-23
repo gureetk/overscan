@@ -125,6 +125,7 @@ func (a *Admin) Handler() http.Handler {
 	mux.Handle("POST /admin/lineup/channels", a.page(a.lineupRoute(a.changeSome)))
 	mux.Handle("POST /admin/lineup/groups", a.page(a.lineupRoute(a.createGroupForm)))
 	mux.Handle("POST /admin/lineup/groups/{id}/{action}", a.page(a.lineupRoute(a.groupAction)))
+	mux.Handle("POST /admin/lineup/groups/replace", a.page(a.lineupRoute(a.replaceGroupsForm)))
 	mux.Handle("POST /admin/lineup/categories", a.page(a.lineupRoute(a.moveCategoryForm)))
 	// Every source's categories, to choose those a group takes (D136).
 	mux.Handle("GET /admin/lineup/groups/{id}/categories", a.page(a.lineupRoute(a.groupCategoriesPage)))
@@ -139,6 +140,7 @@ func (a *Admin) Handler() http.Handler {
 	for _, k := range []struct{ path, kind string }{{"movies", store.KindMovie}, {"series", store.KindSeries}} {
 		mux.Handle("GET /admin/"+k.path, a.page(a.libraryPage(k.kind)))
 		mux.Handle("POST /admin/"+k.path+"/shelves/{id}/{action}", a.page(a.shelfAction(k.kind)))
+		mux.Handle("POST /admin/"+k.path+"/shelves/replace", a.page(a.replaceShelvesForm(k.kind)))
 		mux.Handle("POST /admin/"+k.path+"/order/reset", a.page(a.shelfOrderReset(k.kind)))
 		mux.Handle("POST /admin/"+k.path+"/titles", a.page(a.titlesAction(k.kind)))
 	}
@@ -204,7 +206,8 @@ type view struct {
 var pageNames = []string{"sign-in", "home", "password", "message", "devices", "accounts", "account", "lineup", "rules", "library", "sources", "categories", "group-categories", "capture", "settings"}
 
 // pageParts are the parts in admin/templates that pages share, by page.
-var pageParts = map[string][]string{"lineup": {"lineup-nav"}, "rules": {"lineup-nav"}, "accounts": {"account-parts"}, "account": {"account-parts"}}
+var pageParts = map[string][]string{"lineup": {"lineup-nav", "replace-form"}, "rules": {"lineup-nav"}, "library": {"replace-form"},
+	"accounts": {"account-parts"}, "account": {"account-parts"}}
 
 func (a *Admin) parsePages() map[string]*template.Template {
 	funcs := template.FuncMap{"asset": a.assetPath, "csrfHeaders": csrfHeaders, "ago": ago, "dict": dict, "count": count, "plural": plural, "initial": initial, "size": sizeText,

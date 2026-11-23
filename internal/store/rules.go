@@ -122,15 +122,18 @@ func checkRule(r rules.Rule) (string, error) {
 
 // ruleSource checks that the source a rule names, if any, exists.
 func ruleSource(ctx context.Context, tx *sql.Tx, r rules.Rule) error {
-	if r.Match.Source == 0 {
-		return nil
+	ids := r.Sources
+	if r.Match.Source != 0 {
+		ids = append([]int64{r.Match.Source}, ids...)
 	}
-	var exists bool
-	if err := tx.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM sources WHERE id = ?)", r.Match.Source).Scan(&exists); err != nil {
-		return err
-	}
-	if !exists {
-		return &rules.Error{Text: "There is no such source."}
+	for _, id := range ids {
+		var exists bool
+		if err := tx.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM sources WHERE id = ?)", id).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			return &rules.Error{Text: "There is no such source."}
+		}
 	}
 	return nil
 }
@@ -138,12 +141,54 @@ func ruleSource(ctx context.Context, tx *sql.Tx, r rules.Rule) error {
 // dropSourceRules removes a lineup's rules that name a source that is gone,
 // since a new source can take its ID, and runs those left.
 func dropSourceRules(ctx context.Context, tx *sql.Tx, lineupID, sourceID int64) error {
+	// A merge rule that puts the source in its order of sources (D137)
+	// stays, without it.
+	type ordered struct {
+		id   int64
+		spec string
+	}
+	var merges []ordered
+	rows, err := tx.QueryContext(ctx, `
+		SELECT r.id, r.spec FROM lineup_rules r
+		WHERE r.lineup_id = ? AND EXISTS (SELECT 1 FROM json_each(r.spec, '$.sources') WHERE value = ?)`, lineupID, sourceID)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var o ordered
+		if err := rows.Scan(&o.id, &o.spec); err != nil {
+			rows.Close()
+			return err
+		}
+		merges = append(merges, o)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, o := range merges {
+		var r rules.Rule
+		if err := json.Unmarshal([]byte(o.spec), &r); err != nil {
+			return err
+		}
+		r.Sources = slices.DeleteFunc(r.Sources, func(id int64) bool { return id == sourceID })
+		spec, err := json.Marshal(r)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE lineup_rules SET spec = ? WHERE id = ?", string(spec), o.id); err != nil {
+			return err
+		}
+	}
 	res, err := tx.ExecContext(ctx, "DELETE FROM lineup_rules WHERE lineup_id = ? AND json_extract(spec, '$.match.source') = ?",
 		lineupID, sourceID)
 	if err != nil {
 		return err
 	}
 	if n, err := res.RowsAffected(); err != nil || n == 0 {
+		if err == nil && len(merges) > 0 {
+			return applyRules(ctx, tx, lineupID)
+		}
 		return err
 	}
 	if err := orderRules(ctx, tx, lineupID, 0, 0); err != nil {
@@ -353,10 +398,19 @@ func ruleEntries(ctx context.Context, tx *sql.Tx, lineupID int64) ([]ruleEntry, 
 	return out, rows.Err()
 }
 
-// applyRules runs a lineup's rules: it works out what they do to each
+// applyRules runs a lineup's rules, then numbers what joined the groups
+// that have a first number (D137).
+func applyRules(ctx context.Context, tx *sql.Tx, lineupID int64) error {
+	if err := runRules(ctx, tx, lineupID); err != nil {
+		return err
+	}
+	return numberGroups(ctx, tx, lineupID)
+}
+
+// runRules runs a lineup's rules: it works out what they do to each
 // entry, writes what changed, numbers what they number, and removes the
 // groups that only they made and that nothing is in any more.
-func applyRules(ctx context.Context, tx *sql.Tx, lineupID int64) error {
+func runRules(ctx context.Context, tx *sql.Tx, lineupID int64) error {
 	list, err := lineupRules(ctx, tx, lineupID)
 	if err != nil {
 		return err
@@ -462,22 +516,38 @@ func applyRules(ctx context.Context, tx *sql.Tx, lineupID int64) error {
 		case rules.Renumber:
 			numberings = append(numberings, numbering{from: r.From, entries: matched})
 		case rules.Merge:
+			// A source's place in the rule's order of sources (D137); those
+			// it does not name come after them.
+			place := map[int64]int{}
+			for i, id := range r.Sources {
+				place[id] = i + 1
+			}
+			placeOf := func(i int) int {
+				if p, ok := place[entries[i].source]; ok {
+					return p
+				}
+				return len(r.Sources) + 1
+			}
 			for _, g := range copiesOf(entries, matched, merger) {
 				// The copy that devices see comes first, then one of the
-				// quality that the rule prefers, then the lineup's order.
-				rank := func(i int) int {
-					r := 0
-					if !seen.shows(entries[i], effects[i].hidden) {
-						r += 2
+				// source that the rule puts first, then one of the quality
+				// that it prefers, then the lineup's order.
+				seenFirst := func(i int) int {
+					if seen.shows(entries[i], effects[i].hidden) {
+						return 0
 					}
-					if !merger.Prefers(entries[i].ch) {
-						r++
+					return 1
+				}
+				preferred := func(i int) int {
+					if merger.Prefers(entries[i].ch) {
+						return 0
 					}
-					return r
+					return 1
 				}
 				slices.SortStableFunc(g, func(a, b int) int {
 					x, y := entries[a], entries[b]
-					return cmp.Or(cmp.Compare(rank(a), rank(b)), compareNumbers(x.number, y.number),
+					return cmp.Or(cmp.Compare(seenFirst(a), seenFirst(b)), cmp.Compare(placeOf(a), placeOf(b)),
+						cmp.Compare(preferred(a), preferred(b)), compareNumbers(x.number, y.number),
 						cmp.Compare(x.source, y.source), cmp.Compare(x.position, y.position))
 				})
 				backups[g[0]] = backups[g[0]][:0]
@@ -842,12 +912,12 @@ func numberByRules(ctx context.Context, tx *sql.Tx, lineupID int64, entries []ru
 		}
 	}
 	for _, i := range move {
-		if _, err := tx.ExecContext(ctx, "UPDATE lineup_entries SET number = ?, rule_pinned = 1 WHERE id = ?", target[i], entries[i].id); err != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE lineup_entries SET number = ?, rule_pinned = 1, numbered_in = NULL WHERE id = ?", target[i], entries[i].id); err != nil {
 			return err
 		}
 	}
 	for _, i := range pin {
-		if _, err := tx.ExecContext(ctx, "UPDATE lineup_entries SET rule_pinned = 1 WHERE id = ?", entries[i].id); err != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE lineup_entries SET rule_pinned = 1, numbered_in = NULL WHERE id = ?", entries[i].id); err != nil {
 			return err
 		}
 	}
