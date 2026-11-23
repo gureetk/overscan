@@ -1,0 +1,67 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+{{define "content"}}
+<div id="health-main">
+<p class="crumbs"><a href="/admin/">Overview</a></p>
+<div class="page-head">
+  <div>
+    <h1>Channels that failed</h1>
+    <p class="lead">Channels whose streams failed to start the last time someone played them. Overscan notes it as people watch, and never opens a channel to test it.</p>
+  </div>
+</div>
+{{template "alerts" .}}
+{{- if .Data.Channels}}
+<div class="form-buttons health-all">
+  {{- if .Data.Failing}}
+  <form method="post" action="/admin/health" hx-post="/admin/health" hx-target="#health-main" hx-select="#health-main" hx-swap="outerHTML">
+    <input type="hidden" name="csrf" value="{{.Data.CSRF}}">
+    <input type="hidden" name="op" value="hide-all">
+    <button type="submit">Hide {{if eq .Data.Failing 1}}it{{else}}all {{count .Data.Failing}}{{end}} until {{if eq .Data.Failing 1}}it plays{{else}}they play{{end}} again</button>
+  </form>
+  {{- end}}
+  {{- if .Data.Held}}
+  <form method="post" action="/admin/health" hx-post="/admin/health" hx-target="#health-main" hx-select="#health-main" hx-swap="outerHTML">
+    <input type="hidden" name="csrf" value="{{.Data.CSRF}}">
+    <input type="hidden" name="op" value="show-all">
+    <button type="submit">Show {{if eq .Data.Held 1}}the hidden one{{else}}all {{count .Data.Held}} hidden{{end}} again</button>
+  </form>
+  {{- end}}
+</div>
+<section class="card" aria-label="Channels">
+  <div class="table-wrap">
+  <table class="list health">
+    <thead><tr><th>Channel</th><th>Source</th><th>Failed</th><th>Last played</th><th><span class="sr">Hide or show</span></th></tr></thead>
+    <tbody>
+    {{- range .Data.Channels}}
+      <tr{{if .Held}} class="is-hidden"{{end}}>
+        <td><span class="strong">{{.Name}}</span>{{if .Held}}<div class="chips"><span class="badge">{{template "i-eye-off"}}Hidden until it plays again</span></div>{{end}}</td>
+        <td>{{.Source}}</td>
+        <td>{{if .Failing}}<span class="cell-label">Failed </span>{{ago .FailedAt $.Data.Now}}{{if gt .Failures 1}}<div class="note">{{.Failures}} times in a row</div>{{end}}{{else}}<span class="muted">Not since it was hidden</span>{{end}}</td>
+        <td>{{if .PlayedAt.IsZero}}<span class="muted">Not seen playing</span>{{else}}<span class="cell-label">Played </span>{{ago .PlayedAt $.Data.Now}}{{end}}{{with .Details.Summary}}<div class="note">{{.}}</div>{{end}}</td>
+        <td class="right">
+          <form method="post" action="/admin/health" hx-post="/admin/health" hx-target="#health-main" hx-select="#health-main" hx-swap="outerHTML">
+            <input type="hidden" name="csrf" value="{{$.Data.CSRF}}">
+            <input type="hidden" name="channel" value="{{.ChannelID}}">
+            {{- if .Held}}
+            <input type="hidden" name="op" value="show">
+            <button type="submit" class="small">Show it again</button>
+            {{- else}}
+            <input type="hidden" name="op" value="hide">
+            <button type="submit" class="small">Hide until it plays</button>
+            {{- end}}
+          </form>
+        </td>
+      </tr>
+    {{- end}}
+    </tbody>
+  </table>
+  </div>
+</section>
+{{- if gt .Data.Total (len .Data.Channels)}}
+<p class="hint">The {{len .Data.Channels}} that failed last, of {{count .Data.Total}}.</p>
+{{- end}}
+<p class="hint">Devices do not see a channel hidden until it plays again, in any lineup. It shows again by itself once its stream plays, as another channel's backup or a merged copy; otherwise, until you show it again. A channel that starts once no longer counts as failing.</p>
+{{- else}}
+<section class="card"><p class="empty">Every channel played the last time someone watched it.</p></section>
+{{- end}}
+</div>
+{{end}}

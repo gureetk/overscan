@@ -130,6 +130,7 @@ func (h *Hub) relayHLS(ctx context.Context, w http.ResponseWriter, s *session, t
 		err := <-done
 		r.ended(err)
 		if ctx.Err() == nil {
+			h.noteFailed(s)
 			http.Error(w, "the source sent nothing to play", http.StatusBadGateway)
 		}
 		return true, ""
@@ -143,6 +144,9 @@ func (h *Hub) relayHLS(ctx context.Context, w http.ResponseWriter, s *session, t
 	for c := first; ok; c, ok = <-out {
 		_, err := filter.Write(c)
 		s.bytes.Add(int64(len(c)))
+		if err == nil {
+			h.passed(s, c)
+		}
 		chunks.Put((*[relayChunk]byte)(c[:relayChunk]))
 		if err != nil {
 			failed = true

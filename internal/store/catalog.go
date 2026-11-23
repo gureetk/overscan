@@ -608,7 +608,8 @@ const lineupEntryJoins = `
 		JOIN sources s ON s.id = c.source_id
 		LEFT JOIN categories k ON k.id = c.category_id
 		LEFT JOIN lineup_categories m ON m.lineup_id = e.lineup_id AND m.source_id = c.source_id AND m.category = COALESCE(k.name, '')
-		LEFT JOIN lineup_groups g ON g.id = COALESCE(e.group_id, e.rule_group_id, m.group_id)`
+		LEFT JOIN lineup_groups g ON g.id = COALESCE(e.group_id, e.rule_group_id, m.group_id)
+		LEFT JOIN channel_health hh ON hh.channel_id = c.id`
 
 // takenJoins joins an entry e's channel c to its category k and the
 // lineup's group of it m, for takenEntry.
@@ -648,11 +649,11 @@ const (
 // shownEntry is true of an entry that devices see: numbered, not hidden on
 // its own, by a rule (D107) or by its group, for a channel that its source
 // still lists, from an enabled source, not one that its source marks for
-// adults, which the setting says to hide (D86), and held by its lineup
-// (D136).
+// adults, which the setting says to hide (D86), held by its lineup (D136),
+// and not hidden until its channel plays again (D138).
 const shownEntry = `e.number IS NOT NULL AND COALESCE(e.hidden, e.rule_hidden, g.hidden, 0) = 0
 		AND c.missing_since IS NULL AND s.enabled = 1
-		AND NOT (c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultHide + `') AND ` + takenEntry
+		AND NOT (c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultHide + `') AND ` + takenEntry + ` AND NOT ` + heldChannel
 
 // LineupChannels returns what a lineup shows, by number.
 func (s *Store) LineupChannels(ctx context.Context, lineupID int64) ([]LineupChannel, error) {

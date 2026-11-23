@@ -204,6 +204,7 @@
         <label for="{{$p}}-prefer">Show first</label>
         <select id="{{$p}}-prefer" name="prefer">
           <option value="">The first in the lineup</option>
+          <option value="best"{{if and $merge (eq $r.Prefer "best")}} selected{{end}}>The best picture seen</option>
           {{- range .D.Qualities}}<option value="{{.}}"{{if and $merge (eq . $r.Prefer)}} selected{{end}}>The first in {{.}}</option>{{end}}
         </select>
       </div>

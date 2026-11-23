@@ -89,7 +89,7 @@ func (s *Store) LineupGroups(ctx context.Context, lineupID int64) ([]LineupGroup
 	rows, err = s.db.QueryContext(ctx, `
 		SELECT COALESCE(g.id, 0), count(*),
 			COALESCE(sum(e.number IS NOT NULL AND COALESCE(e.hidden, e.rule_hidden, g.hidden, 0) = 0
-				AND NOT (c.adult = 1 AND `+adultMarksSQL+` = '`+AdultHide+`')), 0),
+				AND NOT (c.adult = 1 AND `+adultMarksSQL+` = '`+AdultHide+`') AND COALESCE(hh.held, 0) = 0), 0),
 			COALESCE(min(CASE WHEN COALESCE(e.hidden, e.rule_hidden, g.hidden, 0) = 0 THEN e.number END), 0)`+lineupEntryJoins+`
 		WHERE e.lineup_id = ? AND c.missing_since IS NULL AND s.enabled = 1 AND `+takenEntry+`
 		GROUP BY COALESCE(g.id, 0)`,
@@ -360,7 +360,9 @@ type LineupEntry struct {
 	LeftOut bool
 	// Untaken is set when its lineup holds only what its groups take, and
 	// no group takes it (D136).
-	Untaken     bool
+	Untaken bool
+	// Health is what Overscan has seen of its channel's stream (D138).
+	Health      ChannelHealth
 	Logo        string
 	Locked      bool  // the administrator locked it (D55)
 	GroupLocked bool  // its group is locked
@@ -467,7 +469,7 @@ const entrySelect = `
 		SELECT e.id, c.id, c.source_id, s.name, COALESCE(e.number, 0), e.pinned, ` + entryName + `, c.name,
 			e.name IS NOT NULL, COALESCE(g.id, 0), COALESCE(g.name, ''), e.group_id IS NOT NULL, COALESCE(k.name, ''),
 			CASE e.hidden WHEN 0 THEN 1 WHEN 1 THEN 2 ELSE 0 END,
-			e.number IS NULL OR COALESCE(e.hidden, e.rule_hidden, g.hidden, 0) = 1 OR c.missing_since IS NOT NULL,
+			e.number IS NULL OR COALESCE(e.hidden, e.rule_hidden, g.hidden, 0) = 1 OR c.missing_since IS NOT NULL OR COALESCE(hh.held, 0) = 1,
 			c.missing_since IS NOT NULL, ` + entryLogo + `, e.locked, COALESCE(g.locked, 0),
 			COALESCE(c.repair, ` + repairDefaultSQL + `), c.repair, c.adult,
 			c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultLock + `', c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultHide + `', c.radio,
@@ -478,7 +480,7 @@ const entrySelect = `
 			COALESCE((SELECT COALESCE(m.name, m.rule_name, mc.name)
 				FROM lineup_entry_rule_backups rb JOIN lineup_entries m ON m.id = rb.entry_id JOIN channels mc ON mc.id = m.channel_id
 				WHERE rb.channel_id = e.channel_id AND m.lineup_id = e.lineup_id LIMIT 1), ''),
-			` + leftOutSQL + `, NOT ` + takenEntry
+			` + leftOutSQL + `, NOT ` + takenEntry + `, ` + healthColumns
 
 // leftOutSQL is true of a channel c, in its category k, that is missing
 // because its source no longer brings its category (D135).
@@ -490,13 +492,16 @@ const leftOutSQL = `(c.missing_since IS NOT NULL
 
 func scanEntry(row rowScanner) (LineupEntry, error) {
 	var e LineupEntry
+	var hs healthScan
 	var own sql.NullBool
 	var shift int64
-	err := row.Scan(&e.ID, &e.ChannelID, &e.SourceID, &e.Source, &e.Number, &e.Pinned, &e.Name, &e.ChannelName,
+	dest := []any{&e.ID, &e.ChannelID, &e.SourceID, &e.Source, &e.Number, &e.Pinned, &e.Name, &e.ChannelName,
 		&e.Renamed, &e.GroupID, &e.Group, &e.Moved, &e.Category, &e.Visibility, &e.Hidden, &e.Missing, &e.Logo,
 		&e.Locked, &e.GroupLocked, &e.Repair, &own, &e.Adult, &e.AdultLocked, &e.AdultHidden, &e.Radio,
 		&e.RuleRenamed, &e.RuleMoved, &e.RuleShown, &e.RuleHidden, &e.RuleLogo, &e.RuleNumbered, &e.RuleGuide, &shift,
-		&e.Backups, &e.RuleBackups, &e.MergedInto, &e.LeftOut, &e.Untaken)
+		&e.Backups, &e.RuleBackups, &e.MergedInto, &e.LeftOut, &e.Untaken}
+	err := row.Scan(append(dest, hs.dest()...)...)
+	e.Health = hs.health()
 	if own.Valid {
 		e.RepairOwn = &own.Bool
 	}

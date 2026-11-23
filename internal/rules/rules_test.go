@@ -223,4 +223,14 @@ func TestMerge(t *testing.T) {
 	if err != nil || got.Copies != ByName || got.Prefer != "FHD" || got.Name != "" || got.Replace != "x" || got.With != "y" {
 		t.Errorf("tidied: %+v %v", got, err)
 	}
+	// The best picture seen is the store's to rank (D138): no quality word
+	// is preferred.
+	got, err = Check(Rule{Action: "merge", Copies: "guide", Prefer: " Best "})
+	if err != nil || got.Prefer != Best {
+		t.Errorf("best: %+v %v", got, err)
+	}
+	best, err := CompileMerge(got)
+	if err != nil || best.Prefers(Channel{Name: "Granite One FHD"}) {
+		t.Errorf("best prefers a quality word: %v", err)
+	}
 }

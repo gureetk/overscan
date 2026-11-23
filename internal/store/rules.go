@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"overscan.gureet.ca/internal/rules"
+	"overscan.gureet.ca/internal/streaminfo"
 )
 
 // A lineup's rules (D107): ordered rules that match channels by their
@@ -366,6 +367,10 @@ type ruleEntry struct {
 	handHidden sql.NullInt64
 	handGroup  sql.NullInt64
 	enabled    bool
+	// held is set when its channel is hidden until it plays again, and rank
+	// says how good a copy its stream was when last seen (D138).
+	held bool
+	rank int
 }
 
 // ruleEntries reads every entry of a lineup with its channel.
@@ -376,8 +381,10 @@ func ruleEntries(ctx context.Context, tx *sql.Tx, lineupID int64) ([]ruleEntry, 
 		SELECT e.id, c.id, COALESCE(e.number, 0), e.pinned, c.missing_since IS NOT NULL OR NOT `+takenEntry+`,
 			c.source_id, c.position, COALESCE(k.name, ''), c.name, c.xmltv_id,
 			e.rule_hidden, e.rule_name, e.rule_group_id, e.rule_logo, e.rule_pinned, e.rule_guide_id, e.rule_guide_shift,
-			e.hidden, e.group_id, s.enabled
+			e.hidden, e.group_id, s.enabled, COALESCE(hh.held, 0), COALESCE(hh.height, 0), COALESCE(hh.interlaced, 0),
+			COALESCE(hh.frame_rate, 0), COALESCE(hh.dynamic_range, '')
 		FROM lineup_entries e JOIN channels c ON c.id = e.channel_id JOIN sources s ON s.id = c.source_id`+takenJoins+`
+			LEFT JOIN channel_health hh ON hh.channel_id = c.id
 		WHERE e.lineup_id = ?`, lineupID)
 	if err != nil {
 		return nil, err
@@ -386,12 +393,14 @@ func ruleEntries(ctx context.Context, tx *sql.Tx, lineupID int64) ([]ruleEntry, 
 	var out []ruleEntry
 	for rows.Next() {
 		var e ruleEntry
+		var d streaminfo.Details
 		if err := rows.Scan(&e.id, &e.channel, &e.number, &e.pinned, &e.missing, &e.source, &e.position,
 			&e.ch.Category, &e.ch.Name, &e.ch.Guide,
 			&e.hidden, &e.name, &e.groupID, &e.logo, &e.rulePinned, &e.guide, &e.shift,
-			&e.handHidden, &e.handGroup, &e.enabled); err != nil {
+			&e.handHidden, &e.handGroup, &e.enabled, &e.held, &d.Height, &d.Interlaced, &d.FrameRate, &d.DynamicRange); err != nil {
 			return nil, err
 		}
+		e.rank = d.Rank()
 		e.ch.Source = e.source
 		out = append(out, e)
 	}
@@ -533,13 +542,16 @@ func runRules(ctx context.Context, tx *sql.Tx, lineupID int64) error {
 				// source that the rule puts first, then one of the quality
 				// that it prefers, then the lineup's order.
 				seenFirst := func(i int) int {
-					if seen.shows(entries[i], effects[i].hidden) {
+					if seen.shows(entries[i], effects[i].hidden) && !entries[i].held {
 						return 0
 					}
 					return 1
 				}
 				preferred := func(i int) int {
-					if merger.Prefers(entries[i].ch) {
+					switch {
+					case r.Prefer == rules.Best:
+						return -entries[i].rank
+					case merger.Prefers(entries[i].ch):
 						return 0
 					}
 					return 1

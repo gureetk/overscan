@@ -32,6 +32,8 @@ The admin is at `http://<server>:8080/admin/`. Its pages are *Overview*, *Source
 - **Find and replace** in the names of every group, with the pencil beside *Groups*, or of every shelf, beside *Shelves* on *Movies* and *Series*: to take a provider's prefix out of all of them, for example (D137).
 - **Rules** change many channels at once and keep doing so: hide a category, rename, renumber, give a logo, use another channel's guide or move its times, merge the copies of a channel ([rules.md](rules.md)).
 - **Backups** play in a channel's place when its own stream cannot start: a channel's panel, *Backups* (D109).
+- **Channels that fail:** a channel whose stream failed to start the last time someone played it is marked *Failed to start*, and listed on *Overview* → *Channels that failed*, where it can be hidden until it plays again, one at a time or all at once; a channel's panel, *Its stream*, does the same. A hidden channel shows again by itself once its stream plays, as another channel's backup or a merged copy. Overscan learns this only as people watch, and never opens a channel to test it (D138).
+- **What a stream holds:** a channel shows its picture's resolution once it has played, such as 1080i or 2160p HDR10, and its panel the codecs and frame rate; a merge rule can show first *The best picture seen* (D138).
 - **Several lineups,** such as one for children: *Lineups* → copy; each account chooses the one its devices see (D106).
 - **A lineup of your own groups** starts empty and holds only what its groups take: *Lineups* → *New lineup of your own groups*, optionally merging the copies of a channel from the start; add a group, then tick the categories it takes, from any source, with its *Categories…* button. A channel that a source adds to one of them joins at the next refresh, numbered after the last. The top of each lineup's page says which accounts see it, and through what (D136).
 - **Export and import** every lineup as one file ([lineup-file.md](lineup-file.md)).
@@ -86,6 +88,7 @@ Overscan speaks plain HTTP. If you put a reverse proxy with TLS in front of it o
 
 ## When something goes wrong
 
+- **What is playing:** *Overview* → *Playing now*, each stream with what it holds, and *Stop* to end one that a forgotten player holds (D138).
 - **The log:** `journalctl -u overscan -f` on a service install, `docker compose logs -f` with Docker. Each line says what happened in plain words.
 - **The support bundle,** on *Settings*: the settings, the lineup's counts and the log's last lines, without addresses, logins or most of each MAC address, to read or to attach to a report.
 - **The capture log:** what Stalker clients and players asked for that Overscan does not answer.

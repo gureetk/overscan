@@ -352,9 +352,12 @@
     {{- if .E.Radio}}<span class="badge" title="Its source lists it as a radio station: boxes play it on their Radio screen">{{template "i-radio"}}Radio</span>{{end}}
     {{- if .E.LeftOut}}<span class="badge" title="Its source no longer brings its category. Overscan keeps it, with its edits, for a week in case you tick the category again.">{{template "i-eye-off"}}Left out</span>
     {{- else if .E.Missing}}<span class="badge bad" title="Its source no longer lists it. Overscan keeps it, with its edits, for a week in case it comes back.">{{template "i-alert"}}Missing</span>
+    {{- else if .E.Health.Held}}<span class="badge warn" title="Its stream failed to start. Devices do not see it until it plays again.">{{template "i-eye-off"}}Hidden until it plays</span>
     {{- else if .E.Hidden}}<span class="badge">{{template "i-eye-off"}}{{if or (eq .Visibility "hidden") .E.RuleHidden}}Hidden{{else}}Hidden with its group{{end}}</span>
     {{- else if not .E.Number}}<span class="badge">No number</span>{{end}}
     {{- if and (eq .Visibility "shown") (not .E.Missing)}}<span class="badge" title="Shown even if its group is hidden">{{template "i-eye"}}Always shown</span>{{end}}
+    {{- if and .E.Health.Failing (not .E.Health.Held) (not .E.Missing)}}<span class="badge warn" title="{{.FailedText}}">{{template "i-alert"}}Failed to start</span>{{end}}
+    {{- with .E.Health.Details.Label}}<span class="badge" title="{{$.StreamText}}">{{.}}</span>{{end}}
     {{- with .RuleText}}<span class="badge accent" title="{{.}}">{{template "i-rule"}}Rule</span>{{end}}
     {{- with .AllBackups}}<span class="badge" title="When its stream cannot start, {{if eq . 1}}its backup plays{{else}}one of its {{.}} backups plays{{end}}">{{.}} {{plural . "backup"}}</span>{{end}}
     {{- if .E.Locked}}<span class="badge locked" title="It needs the parental PIN to play">{{template "i-lock"}}Locked</span>
@@ -435,6 +438,35 @@
       <a class="button" href="{{.View.URL 0}}" hx-get="{{.View.URL 0}}" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" hx-push-url="true">Cancel</a>
     </div>
   </form>
+  <section class="stream-health" aria-labelledby="stream-title">
+    <h3 id="stream-title">Its stream</h3>
+    {{- $h := .E.Health}}
+    <dl class="facts">
+      <div><dt>Last played</dt><dd>{{if $h.PlayedAt.IsZero}}Not seen playing{{else}}{{ago $h.PlayedAt .Now}}{{end}}</dd></div>
+      {{- if $h.Failing}}
+      <div><dt>Failed to start</dt><dd>{{ago $h.FailedAt .Now}}{{if gt $h.Failures 1}}, {{$h.Failures}} times in a row{{end}}</dd></div>
+      {{- end}}
+      {{- with $h.Details.Summary}}
+      <div class="wide"><dt>Holds</dt><dd>{{$.StreamText}}</dd></div>
+      {{- end}}
+    </dl>
+    {{- if or $h.Failing $h.Held}}
+    <form method="post" action="/admin/lineup/channels/{{.E.ID}}/health" hx-post="/admin/lineup/channels/{{.E.ID}}/health" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" class="row-form">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <input type="hidden" name="back" value="{{.View.Back}}">
+      {{- if $h.Held}}
+      <input type="hidden" name="held" value="0">
+      <button type="submit">Show it again</button>
+      {{- else}}
+      <input type="hidden" name="held" value="1">
+      <button type="submit">Hide until it plays again</button>
+      {{- end}}
+    </form>
+    <p class="hint">{{if $h.Held}}Devices do not see it in any lineup until its stream plays again: as another channel's backup or a merged copy, or once you show it again.{{else}}Hidden this way, devices do not see it in any lineup until its stream plays again: as another channel's backup or a merged copy, or once you show it again.{{end}}</p>
+    {{- else}}
+    <p class="hint">Overscan notes what happens as people watch, and never opens a channel to test it.</p>
+    {{- end}}
+  </section>
   <section class="backups" aria-labelledby="backups-title">
     <h3 id="backups-title">Backups</h3>
     {{- if .Backups}}

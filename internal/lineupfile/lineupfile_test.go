@@ -97,6 +97,8 @@ func TestParseRefuses(t *testing.T) {
 		"later":      {"kind: overscan-lineups\nversion: 3\nlineups: []\n", "Upgrade Overscan"},
 		"own groups in version 1": {head + "lineups:\n  - name: Kids\n    own_groups: true\n",
 			"change its version to 2"},
+		"the best copy in version 1": {head + "lineups:\n  - name: Kids\n    rules:\n      - {action: merge, copies: name, prefer: best}\n",
+			"change its version to 2"},
 		"no version":    {"kind: overscan-lineups\nlineups: []\n", "version"},
 		"unknown field": {head + "lineups:\n  - name: Kids\n    colour: red\n", "does not"},
 		"no lineups":    {head + "lineups: []\n", "no lineup"},

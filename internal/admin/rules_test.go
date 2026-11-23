@@ -373,4 +373,12 @@ func TestMergeRulesPage(t *testing.T) {
 	if rec := ta.apiDo("POST", "lineup/rules", `{"action": "merge"}`, c, h...); rec.Code != http.StatusBadRequest {
 		t.Errorf("a merge rule that does not say how: status %d", rec.Code)
 	}
+	// The best picture seen (D138).
+	rec = ta.apiDo("POST", "lineup/rules", `{"action": "merge", "copies": "guide", "prefer": "Best"}`, c, h...)
+	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"prefer": "best"`) {
+		t.Errorf("the best: status %d, %s", rec.Code, rec.Body)
+	}
+	mustContain(t, "the rules", ta.do("GET", "/admin/lineup/rules", nil, c).Body.String(),
+		"Merges into one the channels that have the same guide ID: the first with the best picture seen, else the first in the lineup, shows",
+		`<option value="best" selected>The best picture seen</option>`)
 }
