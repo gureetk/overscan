@@ -570,6 +570,7 @@ label.check { display: inline-flex; align-items: center; gap: 0.5rem; font-weigh
 .hint { color: var(--text3); font-size: 0.8125rem; line-height: 1.45; }
 .hint.warn { color: var(--warn); }
 .empty { margin: 0; color: var(--text3); }
+#lineup-results > .empty { padding: 0 1.25rem 1.25rem; }
 .muted { color: var(--text3); }
 .note { color: var(--text3); font-size: 0.8125rem; }
 .plain { margin: 0; padding: 0; list-style: none; }
@@ -807,9 +808,12 @@ h2.with-dot .count { margin-left: 0; }
 .lineup-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; margin-bottom: 1rem; }
 .lineup-pick { display: flex; align-items: center; gap: 0.5rem; min-width: 0; max-width: 100%; margin: 0; }
 .lineup-pick label { font-weight: 600; }
-.lineup-pick select { flex: 0 1 auto; min-width: min(12rem, 100%); font-weight: 600; }
+.lineup-pick select { flex: 0 1 auto; min-width: 12rem; max-width: 100%; font-weight: 600; }
 .lineup-bar .hint { margin: 0; }
 .lineups-menu { margin-left: auto; }
+.lineup-bar .seen-by { flex: 1 1 18rem; }
+.new-lineup { display: flex; flex-direction: column; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--line); }
+.new-lineup .merge-choice { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; }
 details.lineups-menu > .menu { left: auto; right: 0; min-width: 22rem; max-width: min(28rem, calc(100vw - 2rem)); }
 .lineup-file { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--line); }
 .lineup-file .row-form { align-self: stretch; }
@@ -1145,6 +1149,7 @@ button.link:hover { background: none; color: var(--accent-hover); text-decoratio
 .category-list label.check input { flex: none; align-self: center; }
 .category-list .items { flex: none; color: var(--text3); font-size: 0.8125rem; white-space: nowrap; }
 .category-list .stale .c-name { color: var(--text3); }
+.category-list .c-source { color: var(--text3); }
 .bring-form .form-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
 .bring-form .form-buttons .hint { margin: 0; }
 @media (max-width: 47.5rem) {

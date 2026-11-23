@@ -14,11 +14,12 @@ An import is all or nothing: a file with a mistake adds nothing, and the page sa
 
 ```yaml
 # Overscan's lineups: the groups made or changed in each, its channels changed by hand, and its rules.
-# Exported from Overscan v0.5.0 on 20 November 2026 at 21:40 UTC. Importing the file adds its lineups as new ones.
+# Exported from Overscan v1.1.0 on 4 December 2026 at 21:40 UTC. Importing the file adds its lineups as new ones.
 kind: overscan-lineups
-version: 1
+version: 2
 lineups:
   - name: Kids
+    own_groups: true
     groups:
       - name: Cartoons
         locked: true
@@ -43,9 +44,9 @@ lineups:
         action: exclude
 ```
 
-- **`kind` and `version`** say what the file is. Overscan refuses a file of a later version, which a later Overscan writes, rather than drop what it does not know.
-- **`lineups`**, each with its **`name`**.
-- **`groups`**: the groups that were made or changed by hand, by name, with `hidden`, `locked`, and the `categories` of the sources that they hold. The groups that Overscan makes by itself, one for each category, it makes again on import.
+- **`kind` and `version`** say what the file is. Overscan refuses a file of a later version, which a later Overscan writes, rather than drop what it does not know. Version 2 adds `own_groups`; Overscan writes version 1 when no lineup has it, so that Overscan 1.0, which reads version 1 only, imports the file too, and it reads both.
+- **`lineups`**, each with its **`name`**, and **`own_groups: true`** for a lineup that holds only what its groups take ([D136](decisions.md)); without it, a lineup takes every category of every source.
+- **`groups`**: the groups that were made or changed by hand, by name, with `hidden`, `locked`, and the `categories` of the sources that they hold; a category's `name: ""` is a source's channels without a category. The groups that Overscan makes by itself, one for each category, it makes again on import; a lineup with `own_groups` has none but the file's.
 - **`channels`**: the channels changed by hand. A channel is known by its `source`, by name, and its `key` there, which stays the same across refreshes; `title` is its name at its source, for people who read the file, and an import does not use it. What was changed: a pinned `number`, a `name`, a `group`, `hidden` (`true` or `false` for a channel hidden or shown by hand, left out for one that follows its group), `locked`, and the `backups` that play when its stream cannot start, in order. Channels not changed by hand are not in the file: an import takes them from the sources, numbered as usual.
 - **`rules`**: the lineup's rules, in order, with the fields that [rules.md](rules.md) describes. A rule's `source`, if it has one, is a source's name.
 

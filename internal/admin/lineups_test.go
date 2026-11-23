@@ -118,7 +118,8 @@ func TestLineupsOnTheLiveTVPage(t *testing.T) {
 		t.Errorf("Sam's lineup: status %d, %+v", rec.Code, a)
 	}
 	page = ta.do("GET", "/admin/lineup"+in, nil, c).Body.String()
-	if !strings.Contains(page, "Seen by Sam.") || strings.Contains(page, "Remove this lineup") {
+	if !strings.Contains(page, fmt.Sprintf(`Seen by <a href="/admin/accounts/%d">Sam</a>, through nothing yet.`, sam.ID)) ||
+		strings.Contains(page, "Remove this lineup") {
 		t.Errorf("Kids' page while Sam sees it:\n%s", page)
 	}
 	rec = ta.do("POST", "/admin/lineups/remove", lineupForm(csrf, back), c, hx...)

@@ -99,6 +99,8 @@ func (a *Admin) apiRoutes() []apiRoute {
 		{method: "DELETE", path: "lineup/groups/{id}", fn: a.apiLineupRoute(a.apiDeleteGroup)},
 		{method: "POST", path: "lineup/groups/{id}/merge", fn: a.apiLineupRoute(a.apiMergeGroup)},
 		{method: "POST", path: "lineup/groups/{id}/number", fn: a.apiLineupRoute(a.apiNumberGroup)},
+		{method: "PUT", path: "lineup/groups/{id}/categories", fn: a.apiLineupRoute(a.apiSetGroupCategories)},
+		{method: "GET", path: "lineup/categories", fn: a.apiLineupRoute(a.apiLineupCategories)},
 		{method: "PUT", path: "lineup/categories/{id}", fn: a.apiLineupRoute(a.apiMoveCategory)},
 		{method: "GET", path: "lineup/channels", fn: a.apiLineupRoute(a.apiEntries)},
 		{method: "PATCH", path: "lineup/channels", fn: a.apiLineupRoute(a.apiChangeEntries)},

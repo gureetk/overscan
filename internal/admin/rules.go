@@ -194,10 +194,9 @@ type rulesData struct {
 	// when it could not be saved: its form shows it again.
 	Draft   *rules.Rule
 	DraftID int64
-}
 
-// SeenBy names the accounts that see the lineup shown.
-func (d rulesData) SeenBy() string { return andList(d.Current.Accounts) }
+	lineupSeen
+}
 
 // FormRule is what a rule's form shows: the rule, or what was sent for it
 // when it could not be saved.
@@ -242,6 +241,9 @@ func (a *Admin) rulesData(ctx context.Context, lv lineupView) (rulesData, error)
 		if l.ID == lineup {
 			d.Current = l
 		}
+	}
+	if d.lineupSeen, err = a.lineupSeen(ctx, lineup); err != nil {
+		return rulesData{}, err
 	}
 	names, sources, err := a.ruleSources(ctx)
 	if err != nil {

@@ -46,7 +46,7 @@ func (s *Store) ExportLineups(ctx context.Context) (lineupfile.File, error) {
 	if err != nil {
 		return lineupfile.File{}, fmt.Errorf("store: export the lineups: %w", err)
 	}
-	f.Kind, f.Version = lineupfile.Kind, lineupfile.Version
+	f.Kind, f.Version = lineupfile.Kind, f.Needs()
 	return f, nil
 }
 
@@ -71,7 +71,7 @@ func sourceNames(ctx context.Context, tx *sql.Tx) (map[int64]string, error) {
 
 func exportLineup(ctx context.Context, tx *sql.Tx, id int64, sources map[int64]string) (lineupfile.Lineup, error) {
 	var l lineupfile.Lineup
-	if err := tx.QueryRowContext(ctx, "SELECT name FROM lineups WHERE id = ?", id).Scan(&l.Name); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT name, own_groups FROM lineups WHERE id = ?", id).Scan(&l.Name, &l.OwnGroups); err != nil {
 		return l, err
 	}
 
@@ -98,7 +98,7 @@ func exportLineup(ctx context.Context, tx *sql.Tx, id int64, sources map[int64]s
 			l.Groups = append(l.Groups, g)
 			last = gid
 		}
-		if category != "" {
+		if source != 0 {
 			cur := &l.Groups[len(l.Groups)-1]
 			cur.Categories = append(cur.Categories, lineupfile.Category{Source: sources[source], Name: category})
 		}
@@ -212,8 +212,9 @@ func (l LeftOut) Total() int { return l.Categories + l.Channels + l.Backups + l.
 
 // ImportLineups adds a file's lineups as new lineups (D112), all of them or
 // none. Each starts as a lineup made anew, with a group for each category
-// and every channel numbered as D40 says, then takes the file's groups,
-// channels, backups and rules. Sources are found by name and channels by
+// and every channel numbered as D40 says, or empty if it holds only what
+// its groups take (D136), then takes the file's groups, channels, backups
+// and rules. Sources are found by name and channels by
 // their source's key; what names a source or a channel that this server
 // lacks is left out and counted. A lineup whose name another has gets a
 // number after it. It fails with ErrTooManyLineups when the server would
@@ -292,13 +293,15 @@ func importLineup(ctx context.Context, tx *sql.Tx, l lineupfile.Lineup, sources 
 		return res, err
 	}
 	res.Name = name
-	if err := tx.QueryRowContext(ctx, "INSERT INTO lineups (name) VALUES (?) RETURNING id", name).Scan(&res.ID); err != nil {
+	if err := tx.QueryRowContext(ctx, "INSERT INTO lineups (name, own_groups) VALUES (?, ?) RETURNING id",
+		name, l.OwnGroups).Scan(&res.ID); err != nil {
 		return res, lineupNameError(err)
 	}
 	id := res.ID
 
 	// A lineup made anew: every source's categories and channels, as a
-	// refresh adds them, in the order the sources were added.
+	// refresh adds them, in the order the sources were added. One of its
+	// own groups starts with none.
 	for _, source := range order {
 		if err := groupCategories(ctx, tx, id, source); err != nil {
 			return res, err
@@ -414,6 +417,14 @@ func importLineup(ctx context.Context, tx *sql.Tx, l lineupfile.Lineup, sources 
 			pins = append(pins, pin{entry, c.Number})
 		}
 		res.Channels++
+	}
+	if l.OwnGroups {
+		// It numbers what its groups now take.
+		for _, source := range order {
+			if err := numberChannels(ctx, tx, id, source, false); err != nil {
+				return res, err
+			}
+		}
 	}
 	slices.SortFunc(pins, func(a, b pin) int { return cmp.Compare(a.number, b.number) })
 	for _, p := range pins {

@@ -3,7 +3,8 @@
 // Package lineupfile reads and writes the file that lineups are exported to
 // and imported from (D112): one YAML file, with a version, that holds each
 // lineup's groups that the administrator made or changed, its channels
-// changed by hand, with their backups, and its rules. Sources are named,
+// changed by hand, with their backups, and its rules, and since version 2
+// whether it holds only what its groups take (D136). Sources are named,
 // and channels known by their source and the key that their source gives
 // them, which stays the same across refreshes. A file never holds a
 // source's address, a login or anything else secret.
@@ -26,11 +27,14 @@ import (
 	"overscan.gureet.ca/internal/rules"
 )
 
-// Kind and Version name the file's format. A file of a later version is
-// refused, so that nothing in it is dropped without a word.
+// Kind and Version name the file's format: Version is the latest that
+// Overscan reads. A file of a later version is refused, so that nothing in
+// it is dropped without a word. Version 2 adds a lineup's own_groups; a
+// file is written as version 1 when it holds nothing of version 2, so that
+// an Overscan that reads only version 1 imports it too.
 const (
 	Kind    = "overscan-lineups"
-	Version = 1
+	Version = 2
 )
 
 // Limits on a file, as the admin has them for what it holds.
@@ -56,10 +60,14 @@ type File struct {
 // in it. What Overscan does by itself, such as a group for each category
 // and the numbers of channels not pinned, it does again on import.
 type Lineup struct {
-	Name     string       `yaml:"name"`
-	Groups   []Group      `yaml:"groups,omitempty"`
-	Channels []Channel    `yaml:"channels,omitempty"`
-	Rules    []rules.Rule `yaml:"rules,omitempty"`
+	Name string `yaml:"name"`
+	// OwnGroups is set for a lineup that holds only what its groups take,
+	// and is left out for one that takes every category of every source
+	// (version 2).
+	OwnGroups bool         `yaml:"own_groups,omitempty"`
+	Groups    []Group      `yaml:"groups,omitempty"`
+	Channels  []Channel    `yaml:"channels,omitempty"`
+	Rules     []rules.Rule `yaml:"rules,omitempty"`
 }
 
 // Group is a group that the administrator made or changed, with the
@@ -71,7 +79,8 @@ type Group struct {
 	Categories []Category `yaml:"categories,omitempty"`
 }
 
-// Category is a source's live category, by name.
+// Category is a source's live category, by name; "" names the source's
+// channels without a category.
 type Category struct {
 	Source string `yaml:"source"`
 	Name   string `yaml:"name"`
@@ -109,9 +118,21 @@ func (e *Error) Error() string { return e.Text }
 
 func bad(format string, args ...any) error { return &Error{fmt.Sprintf(format, args...)} }
 
-// Marshal writes a file, with a comment on top that says what it is.
+// Needs returns the version of the file format that f needs: 2 if it
+// holds anything of version 2, else 1.
+func (f File) Needs() int {
+	for _, l := range f.Lineups {
+		if l.OwnGroups {
+			return 2
+		}
+	}
+	return 1
+}
+
+// Marshal writes a file, with a comment on top that says what it is, as
+// the version that it needs.
 func Marshal(f File, header string) ([]byte, error) {
-	f.Kind, f.Version = Kind, Version
+	f.Kind, f.Version = Kind, f.Needs()
 	out, err := yaml.MarshalWithOptions(f, yaml.Indent(2), yaml.IndentSequence(true))
 	if err != nil {
 		return nil, err
@@ -195,6 +216,10 @@ func Parse(data []byte) (f File, err error) {
 	}
 	if err := yaml.NodeToValue(body, &f, yaml.DisallowUnknownField()); err != nil {
 		return File{}, bad("The file holds something that a lineup file does not: %s", firstLine(err))
+	}
+	if need := f.Needs(); need > f.Version {
+		return File{}, bad("The file says version %d, but holds own_groups, which version %d of lineup files added: change its version to %d.",
+			f.Version, need, need)
 	}
 	return f, f.Check()
 }
@@ -316,6 +341,9 @@ func (l Lineup) check() error {
 		for _, c := range g.Categories {
 			if err := checkKey(c.Source, "a category's source"); err != nil {
 				return bad("the group %s: %v", g.Name, err)
+			}
+			if c.Name == "" {
+				continue // the channels without a category
 			}
 			if err := checkKey(c.Name, "a category's name"); err != nil {
 				return bad("the group %s: %v", g.Name, err)

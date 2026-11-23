@@ -53,18 +53,50 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatalf("%v in\n%s", err, text)
 	}
 	want := sample()
-	want.Kind, want.Version = Kind, Version
+	want.Kind, want.Version = Kind, 1
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("read back\n%+v\nwant\n%+v", got, want)
+	}
+}
+
+// A lineup of its own groups needs version 2 (D136), and a group can take
+// the channels without a category; a file without either stays version 1.
+func TestVersion2(t *testing.T) {
+	f := sample()
+	f.Lineups[0].OwnGroups = true
+	f.Lineups[0].Groups[1].Categories = []Category{{Source: "one", Name: ""}}
+	out, err := Marshal(f, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"version: 2\n", "own_groups: true\n", "name: \"\"\n"} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("the file lacks %q:\n%s", want, out)
+		}
+	}
+	got, err := Parse(out)
+	if err != nil {
+		t.Fatalf("%v in\n%s", err, out)
+	}
+	f.Kind, f.Version = Kind, 2
+	if !reflect.DeepEqual(got, f) {
+		t.Errorf("read back\n%+v\nwant\n%+v", got, f)
+	}
+	// A file that says version 2 and needs only 1 reads.
+	if got, err := Parse([]byte("kind: overscan-lineups\nversion: 2\nlineups:\n  - name: Kids\n")); err != nil || got.Version != 2 ||
+		got.Lineups[0].OwnGroups {
+		t.Errorf("%+v, %v", got, err)
 	}
 }
 
 func TestParseRefuses(t *testing.T) {
 	head := "kind: overscan-lineups\nversion: 1\n"
 	for name, c := range map[string]struct{ text, says string }{
-		"empty":         {"", "empty"},
-		"not a file":    {"lineups: []\n", "not a file of Overscan's lineups"},
-		"later":         {"kind: overscan-lineups\nversion: 2\nlineups: []\n", "Upgrade Overscan"},
+		"empty":      {"", "empty"},
+		"not a file": {"lineups: []\n", "not a file of Overscan's lineups"},
+		"later":      {"kind: overscan-lineups\nversion: 3\nlineups: []\n", "Upgrade Overscan"},
+		"own groups in version 1": {head + "lineups:\n  - name: Kids\n    own_groups: true\n",
+			"change its version to 2"},
 		"no version":    {"kind: overscan-lineups\nlineups: []\n", "version"},
 		"unknown field": {head + "lineups:\n  - name: Kids\n    colour: red\n", "does not"},
 		"no lineups":    {head + "lineups: []\n", "no lineup"},

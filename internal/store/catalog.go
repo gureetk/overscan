@@ -299,10 +299,33 @@ const MaxNumber = renumberOffset - 1
 // have no entry yet, or an entry without a number. With renumber, it numbers
 // every listed channel again whose number is not pinned, keeping its entry,
 // and takes the numbers of the source's missing channels that are not pinned.
+//
+// A lineup of its own groups (D136) numbers only the channels that it
+// holds, each after the highest number it has, whatever the source's
+// numbers say, and never numbers again; an entry that it no longer holds
+// gives its number up as a missing channel's does.
 func numberChannels(ctx context.Context, tx *sql.Tx, lineupID, sourceID int64, renumber bool) error {
 	var numbers string
 	if err := tx.QueryRowContext(ctx, "SELECT numbers FROM sources WHERE id = ?", sourceID).Scan(&numbers); err != nil {
 		return err
+	}
+	var own bool
+	if err := tx.QueryRowContext(ctx, "SELECT own_groups FROM lineups WHERE id = ?", lineupID).Scan(&own); err != nil {
+		return err
+	}
+	renumber = renumber && !own
+	if own {
+		// A lineup of its own groups numbers only what it holds (D136): an
+		// entry that it no longer holds gives its number up, unless the
+		// number was set by hand or by a rule, and keeps its edits.
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE lineup_entries SET number = NULL WHERE id IN (
+				SELECT e.id FROM lineup_entries e JOIN channels c ON c.id = e.channel_id`+takenJoins+`
+				WHERE e.lineup_id = ? AND c.source_id = ? AND e.number IS NOT NULL AND e.pinned = 0 AND e.rule_pinned = 0
+					AND NOT `+takenEntry+`)`,
+			lineupID, sourceID); err != nil {
+			return err
+		}
 	}
 	if renumber {
 		if _, err := tx.ExecContext(ctx, `
@@ -330,8 +353,8 @@ func numberChannels(ctx context.Context, tx *sql.Tx, lineupID, sourceID int64, r
 	held := map[int]holder{}
 	highest := 0
 	rows, err := tx.QueryContext(ctx, `
-		SELECT e.id, e.number, c.missing_since IS NOT NULL, e.pinned OR e.rule_pinned
-		FROM lineup_entries e JOIN channels c ON c.id = e.channel_id
+		SELECT e.id, e.number, c.missing_since IS NOT NULL OR NOT `+takenEntry+`, e.pinned OR e.rule_pinned
+		FROM lineup_entries e JOIN channels c ON c.id = e.channel_id`+takenJoins+`
 		WHERE e.lineup_id = ? AND e.number < ?`,
 		lineupID, renumberOffset)
 	if err != nil {
@@ -362,22 +385,28 @@ func numberChannels(ctx context.Context, tx *sql.Tx, lineupID, sourceID int64, r
 		SELECT c.id, COALESCE(e.id, 0), c.number, c.position
 		FROM channels c
 		LEFT JOIN lineup_entries e ON e.channel_id = c.id AND e.lineup_id = ?
+		LEFT JOIN categories k ON k.id = c.category_id
+		LEFT JOIN lineup_categories m ON m.lineup_id = ? AND m.source_id = c.source_id AND m.category = COALESCE(k.name, '')
 		WHERE c.source_id = ? AND c.missing_since IS NULL AND COALESCE(e.pinned, 0) = 0 AND COALESCE(e.rule_pinned, 0) = 0
 			AND (? OR e.id IS NULL OR e.number IS NULL)
+			AND (? = 0 OR m.group_id IS NOT NULL OR e.group_id IS NOT NULL)
 		ORDER BY c.position`,
-		lineupID, sourceID, renumber)
+		lineupID, lineupID, sourceID, renumber, own)
 	if err != nil {
 		return err
 	}
 	for rows.Next() {
 		var c candidate
-		var own, position int
-		if err := rows.Scan(&c.channelID, &c.entryID, &own, &position); err != nil {
+		var wanted, position int
+		if err := rows.Scan(&c.channelID, &c.entryID, &wanted, &position); err != nil {
 			rows.Close()
 			return err
 		}
-		c.wants = own
-		if numbers == NumbersPlaylist {
+		c.wants = wanted
+		switch {
+		case own:
+			c.wants = 0
+		case numbers == NumbersPlaylist:
 			c.wants = position
 		}
 		cands = append(cands, c)
@@ -444,17 +473,38 @@ func numberChannels(ctx context.Context, tx *sql.Tx, lineupID, sourceID int64, r
 			return err
 		}
 	}
+	if own {
+		// It has an entry, without a number, for each channel that it does
+		// not hold, so that favourites and edits have somewhere to stay
+		// until a group takes the channel.
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO lineup_entries (lineup_id, channel_id)
+			SELECT ?, c.id FROM channels c
+			WHERE c.source_id = ? AND c.missing_since IS NULL
+				AND NOT EXISTS (SELECT 1 FROM lineup_entries e WHERE e.lineup_id = ? AND e.channel_id = c.id)`,
+			lineupID, sourceID, lineupID); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 // groupCategories puts each live category of a source that has no group in
 // the lineup yet into the group of its name, making one if there is none,
 // hidden if the source makes new categories start hidden (D47). It then
-// removes the groups that Overscan made and that have nothing in them.
+// removes the groups that Overscan made and that have nothing in them. A
+// lineup of its own groups takes only what its groups name (D136), so it
+// gets no group of a category's own.
 func groupCategories(ctx context.Context, tx *sql.Tx, lineupID, sourceID int64) error {
-	var hidden bool
+	var hidden, own bool
 	if err := tx.QueryRowContext(ctx, "SELECT new_categories_hidden FROM sources WHERE id = ?", sourceID).Scan(&hidden); err != nil {
 		return err
+	}
+	if err := tx.QueryRowContext(ctx, "SELECT own_groups FROM lineups WHERE id = ?", lineupID).Scan(&own); err != nil {
+		return err
+	}
+	if own {
+		return removeEmptyGroups(ctx, tx, lineupID)
 	}
 	rows, err := tx.QueryContext(ctx, `
 		SELECT k.name FROM categories k
@@ -550,8 +600,23 @@ const lineupEntryJoins = `
 		JOIN channels c ON c.id = e.channel_id
 		JOIN sources s ON s.id = c.source_id
 		LEFT JOIN categories k ON k.id = c.category_id
-		LEFT JOIN lineup_categories m ON m.lineup_id = e.lineup_id AND m.source_id = c.source_id AND m.category = k.name
+		LEFT JOIN lineup_categories m ON m.lineup_id = e.lineup_id AND m.source_id = c.source_id AND m.category = COALESCE(k.name, '')
 		LEFT JOIN lineup_groups g ON g.id = COALESCE(e.group_id, e.rule_group_id, m.group_id)`
+
+// takenJoins joins an entry e's channel c to its category k and the
+// lineup's group of it m, for takenEntry.
+const takenJoins = `
+		LEFT JOIN categories k ON k.id = c.category_id
+		LEFT JOIN lineup_categories m ON m.lineup_id = e.lineup_id AND m.source_id = c.source_id AND m.category = COALESCE(k.name, '')`
+
+// takenEntry is true of an entry e, of channel c in category k with the
+// lineup's group of it m, that its lineup holds: every one of a lineup
+// that takes every category, and of a lineup of its own groups (D136), one
+// whose category a group takes, or that the administrator moved into a
+// group. A lineup of its own groups keeps the entries of the others, with
+// their edits, for when a group takes their category again.
+const takenEntry = `(m.group_id IS NOT NULL OR e.group_id IS NOT NULL
+			OR NOT EXISTS (SELECT 1 FROM lineups tl WHERE tl.id = e.lineup_id AND tl.own_groups = 1))`
 
 // archiveDaysSQL is the days back that devices can play a channel's past
 // programmes from its source's archive (D81, D82, D84): those its source
@@ -574,12 +639,13 @@ const (
 )
 
 // shownEntry is true of an entry that devices see: numbered, not hidden on
-// its own, by a rule (D107) or by its group, for a channel that its source still lists, from
-// an enabled source, and not one that its source marks for adults, which
-// the setting says to hide (D86).
+// its own, by a rule (D107) or by its group, for a channel that its source
+// still lists, from an enabled source, not one that its source marks for
+// adults, which the setting says to hide (D86), and held by its lineup
+// (D136).
 const shownEntry = `e.number IS NOT NULL AND COALESCE(e.hidden, e.rule_hidden, g.hidden, 0) = 0
 		AND c.missing_since IS NULL AND s.enabled = 1
-		AND NOT (c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultHide + `')`
+		AND NOT (c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultHide + `') AND ` + takenEntry
 
 // LineupChannels returns what a lineup shows, by number.
 func (s *Store) LineupChannels(ctx context.Context, lineupID int64) ([]LineupChannel, error) {

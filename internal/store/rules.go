@@ -325,13 +325,14 @@ type ruleEntry struct {
 
 // ruleEntries reads every entry of a lineup with its channel.
 func ruleEntries(ctx context.Context, tx *sql.Tx, lineupID int64) ([]ruleEntry, error) {
+	// An entry that a lineup of its own groups does not hold (D136) counts
+	// as a missing channel's: no rule merges it.
 	rows, err := tx.QueryContext(ctx, `
-		SELECT e.id, c.id, COALESCE(e.number, 0), e.pinned, c.missing_since IS NOT NULL, c.source_id, c.position,
-			COALESCE(k.name, ''), c.name, c.xmltv_id,
+		SELECT e.id, c.id, COALESCE(e.number, 0), e.pinned, c.missing_since IS NOT NULL OR NOT `+takenEntry+`,
+			c.source_id, c.position, COALESCE(k.name, ''), c.name, c.xmltv_id,
 			e.rule_hidden, e.rule_name, e.rule_group_id, e.rule_logo, e.rule_pinned, e.rule_guide_id, e.rule_guide_shift,
 			e.hidden, e.group_id, s.enabled
-		FROM lineup_entries e JOIN channels c ON c.id = e.channel_id JOIN sources s ON s.id = c.source_id
-			LEFT JOIN categories k ON k.id = c.category_id
+		FROM lineup_entries e JOIN channels c ON c.id = e.channel_id JOIN sources s ON s.id = c.source_id`+takenJoins+`
 		WHERE e.lineup_id = ?`, lineupID)
 	if err != nil {
 		return nil, err

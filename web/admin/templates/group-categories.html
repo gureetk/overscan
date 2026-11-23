@@ -1,0 +1,58 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+{{/* What a group of a lineup takes (D136): the live categories of every
+     source, ticked for those it takes. */}}
+{{define "content"}}
+{{- $d := .Data}}
+<div id="group-categories-main">
+<p class="crumbs"><a href="{{$d.View.In.URL 0}}">Live TV{{if $d.Several}}: {{$d.Lineup.Name}}{{end}}</a> › <a href="{{$d.View.URL 0}}">{{$d.Group.Name}}</a></p>
+<div class="page-head">
+  <div>
+    <h1>What {{$d.Group.Name}} takes</h1>
+    <p class="lead">{{if $d.Lineup.OwnGroups}}{{$d.Group.Name}} holds the channels of the categories ticked here, from any source, and those that a source adds to them later. The lineup holds only what its groups take.{{else}}{{$d.Group.Name}} holds the channels of the categories ticked here, from any source. A category left out goes back to a group of its own name.{{end}} A category is in one group of the lineup at a time: ticking one that another group takes moves it here.</p>
+  </div>
+</div>
+{{template "alerts" .}}
+
+<section class="card" aria-labelledby="take-title">
+  <h2 id="take-title" class="sr">Categories</h2>
+  <form method="get" action="{{$d.SearchURL}}" class="search bring-search">
+    {{- with $d.View.Lineup}}<input type="hidden" name="lineup" value="{{.}}">{{end}}
+    {{template "i-search"}}
+    <input type="search" name="q" value="{{$d.Query}}" placeholder="Find categories by name" aria-label="Find categories by name">
+    <button type="submit" class="small">Find</button>
+  </form>
+  <form method="post" action="{{$d.Action}}" hx-post="{{$d.Action}}" hx-target="#group-categories-main" hx-select="#group-categories-main" hx-swap="outerHTML" class="bring-form">
+    <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+    <input type="hidden" name="back" value="{{$d.View.Back}}">
+    {{- with $d.Query}}<input type="hidden" name="q" value="{{.}}">{{end}}
+    {{- if $d.Categories}}
+    <div class="bring-tools">
+      <input type="search" placeholder="Filter the categories" aria-label="Filter the categories" data-filter="#category-list" data-js-only hidden>
+      <button type="button" class="small" data-tick-shown="#category-list" data-js-only hidden>Tick those shown</button>
+      <button type="button" class="small" data-untick-shown="#category-list" data-js-only hidden>Untick those shown</button>
+      <span class="tally">{{count $d.Mine}} of {{count $d.Total}} ticked</span>
+    </div>
+    <ul id="category-list" class="category-list">
+      {{- range $d.Categories}}
+      <li data-name="{{.Source}} {{.Label}}">
+        <input type="hidden" name="listed" value="{{.Key}}">
+        <label class="check"><input type="checkbox" name="tick" value="{{.Key}}"{{if .Mine}} checked{{end}}> <span class="c-source">{{.Source}}</span> <span class="c-name">{{.Label}}</span></label>
+        <span class="items">{{.ItemsText}}{{if and .GroupID (not .Mine)}} · in {{.Group}}{{end}}</span>
+      </li>
+      {{- end}}
+    </ul>
+    {{- if $d.More}}<p class="hint">Only the first {{len $d.Categories}} of {{count $d.Total}} categories show here: find the others by name.</p>{{end}}
+    {{- else if $d.Query}}
+    <p class="empty">No source has a category with “{{$d.Query}}” in its name.</p>
+    {{- else}}
+    <p class="empty">No categories yet: they show here once Overscan has read the sources. A source that brings only the categories ticked on its page lists only those here.</p>
+    {{- end}}
+    <div class="form-buttons">
+      <button type="submit" class="primary">Save</button>
+      <a class="button" href="{{$d.View.URL 0}}">Cancel</a>
+      <span class="hint">{{if $d.Elsewhere}}It also takes {{count $d.Elsewhere}} {{plural $d.Elsewhere "category"}} not listed here, which saving keeps. {{end}}{{if $d.Lineup.OwnGroups}}A channel that leaves the lineup keeps what you changed about it, in case its category comes back.{{end}}</span>
+    </div>
+  </form>
+</section>
+</div>
+{{end}}

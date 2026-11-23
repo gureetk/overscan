@@ -37,7 +37,7 @@ type LineupInfo struct {
 // Lineups returns every lineup, the first made first.
 func (s *Store) Lineups(ctx context.Context) ([]LineupInfo, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT l.id, l.name, l.created_at,
+		SELECT l.id, l.name, l.created_at, l.own_groups,
 			COALESCE((SELECT group_concat(name, char(31)) FROM (
 				SELECT a.name FROM accounts a WHERE a.lineup_id = l.id ORDER BY a.name COLLATE NOCASE)), ''),
 			(SELECT count(*)`+lineupEntryJoins+` WHERE e.lineup_id = l.id AND `+shownEntry+`),
@@ -51,7 +51,7 @@ func (s *Store) Lineups(ctx context.Context) ([]LineupInfo, error) {
 	for rows.Next() {
 		var l LineupInfo
 		var created, accounts string
-		if err := rows.Scan(&l.ID, &l.Name, &created, &accounts, &l.Shown, &l.Rules); err != nil {
+		if err := rows.Scan(&l.ID, &l.Name, &created, &l.OwnGroups, &accounts, &l.Shown, &l.Rules); err != nil {
 			return nil, fmt.Errorf("store: lineups: %w", err)
 		}
 		if l.CreatedAt, err = parseTime(created); err != nil {
@@ -85,7 +85,9 @@ func lineupIDs(ctx context.Context, tx *sql.Tx) ([]int64, error) {
 }
 
 // numberEverywhere numbers a source's channels again in every lineup, as a
-// change of its numbers setting does (D40).
+// change of its numbers setting does (D40). A lineup of its own groups
+// numbers its channels in its own order, whatever the source's setting
+// (D136), so it numbers only the channels without a number.
 func numberEverywhere(ctx context.Context, tx *sql.Tx, sourceID int64) error {
 	lineups, err := lineupIDs(ctx, tx)
 	if err != nil {
@@ -110,10 +112,11 @@ func lineupNameError(err error) error {
 	return err
 }
 
-// CopyLineup makes a lineup named name as a copy of another: its groups,
-// with their names, marks and the categories they hold, its entries, with
-// their numbers, pins, names, groups, visibility and locks, and its rules,
-// which then run on it. It returns the new lineup's ID.
+// CopyLineup makes a lineup named name as a copy of another: whether it
+// holds only what its groups take (D136), its groups, with their names,
+// marks and the categories they hold, its entries, with their numbers,
+// pins, names, groups, visibility and locks, and its rules, which then run
+// on it. It returns the new lineup's ID.
 func (s *Store) CopyLineup(ctx context.Context, from int64, name string) (int64, error) {
 	fail := func(err error) (int64, error) { return 0, fmt.Errorf("store: copy lineup %d: %w", from, err) }
 	var id int64
@@ -132,7 +135,9 @@ func (s *Store) CopyLineup(ctx context.Context, from int64, name string) (int64,
 		if !exists {
 			return ErrNotFound
 		}
-		if err := tx.QueryRowContext(ctx, "INSERT INTO lineups (name) VALUES (?) RETURNING id", name).Scan(&id); err != nil {
+		if err := tx.QueryRowContext(ctx, `
+			INSERT INTO lineups (name, own_groups) SELECT ?, own_groups FROM lineups WHERE id = ? RETURNING id`,
+			name, from).Scan(&id); err != nil {
 			return lineupNameError(err)
 		}
 		// A group's name is unique in its lineup, so the copy's groups are

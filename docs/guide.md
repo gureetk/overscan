@@ -31,6 +31,7 @@ The admin is at `http://<server>:8080/admin/`. Its pages are *Overview*, *Source
 - **Rules** change many channels at once and keep doing so: hide a category, rename, renumber, give a logo, use another channel's guide or move its times, merge the copies of a channel ([rules.md](rules.md)).
 - **Backups** play in a channel's place when its own stream cannot start: a channel's panel, *Backups* (D109).
 - **Several lineups,** such as one for children: *Lineups* → copy; each account chooses the one its devices see (D106).
+- **A lineup of your own groups** starts empty and holds only what its groups take: *Lineups* → *New lineup of your own groups*, optionally merging the copies of a channel from the start; add a group, then tick the categories it takes, from any source, with its *Categories…* button. A channel that a source adds to one of them joins at the next refresh, numbered after the last. The top of each lineup's page says which accounts see it, and through what (D136).
 - **Export and import** every lineup as one file ([lineup-file.md](lineup-file.md)).
 
 ## Add a box

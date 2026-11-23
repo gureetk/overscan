@@ -117,6 +117,16 @@ func (lv lineupView) EditURL(id int64) template.URL {
 	return template.URL("/admin/lineup?" + v.Encode())
 }
 
+// CategoriesURL returns the address of the page that chooses the
+// categories a group takes (D136).
+func (lv lineupView) CategoriesURL(id int64) template.URL {
+	u := "/admin/lineup/groups/" + strconv.FormatInt(id, 10) + "/categories"
+	if lv.Lineup != 0 {
+		u += "?lineup=" + strconv.FormatInt(lv.Lineup, 10)
+	}
+	return template.URL(u)
+}
+
 // IsGroup reports whether the view shows the group.
 func (lv lineupView) IsGroup(id int64) bool { return lv.Group != nil && *lv.Group == id }
 
@@ -146,14 +156,12 @@ type lineupData struct {
 	Candidates []store.LineupEntry
 	Found      int
 
-	// Lineups are every lineup, and Current the one shown (D106).
+	// Lineups are every lineup, and Current the one shown (D106), which
+	// the accounts of lineupSeen see.
 	Lineups []store.LineupInfo
 	Current store.LineupInfo
+	lineupSeen
 }
-
-// SeenBy names the accounts that see the lineup shown, such as "Household
-// and Sam".
-func (d lineupData) SeenBy() string { return andList(d.Current.Accounts) }
 
 // maxCandidates is how many channels the search for channels to add lists.
 const maxCandidates = 50
@@ -318,6 +326,9 @@ func (a *Admin) lineupData(ctx context.Context, lv lineupView, csrf string, rows
 			d.Current = l
 		}
 	}
+	if d.lineupSeen, err = a.lineupSeen(ctx, lineup); err != nil {
+		return lineupData{}, err
+	}
 	for i, g := range groups {
 		if lv.IsGroup(g.ID) {
 			d.Selected = &groups[i]
@@ -346,7 +357,8 @@ func (a *Admin) lineupData(ctx context.Context, lv lineupView, csrf string, rows
 		return lineupData{}, err
 	}
 	if lv.Add != "" && d.Selected != nil && d.Selected.ID > 0 {
-		q := store.EntryQuery{NotGroup: lv.Group, Text: lv.Add, Limit: maxCandidates}
+		// In a lineup of its own groups, those it does not hold too (D136).
+		q := store.EntryQuery{NotGroup: lv.Group, Text: lv.Add, Limit: maxCandidates, Untaken: true}
 		if d.Candidates, d.Found, err = a.store.LineupEntries(ctx, lineup, q); err != nil {
 			return lineupData{}, err
 		}

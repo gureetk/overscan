@@ -265,6 +265,7 @@ type apiGroupCategory struct {
 	SourceID int64  `json:"source_id"`
 	Source   string `json:"source"`
 	Name     string `json:"name"`
+	Gone     bool   `json:"gone"`
 }
 
 type apiGroup struct {
@@ -286,7 +287,7 @@ func groupBody(g store.LineupGroup) apiGroup {
 		out.FirstNumber = &g.FirstNumber
 	}
 	for _, c := range g.Categories {
-		ac := apiGroupCategory{SourceID: c.SourceID, Source: c.Source, Name: c.Name}
+		ac := apiGroupCategory{SourceID: c.SourceID, Source: c.Source, Name: c.Name, Gone: c.Gone}
 		if c.ID != 0 {
 			ac.ID = &c.ID
 		}
