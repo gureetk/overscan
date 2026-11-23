@@ -37,10 +37,10 @@ you are entitled to use.
 
 ## Status
 
-**Version 1.0.0 is the newest release.** It ends the seventh milestone, and
-adds no feature to 0.5.0. It promises that what is there is safe, documented,
-installable and kept across upgrades: the security review is written up in
-[docs/security.md](docs/security.md), and from 1.0 on an upgrade keeps what a
+**Version 1.1.0 is the newest release.** It ends the eighth milestone,
+playlists, described below. Since 1.0, Overscan promises that what is there is
+safe, documented, installable and kept across upgrades: the security review is
+written up in [docs/security.md](docs/security.md), and an upgrade keeps what a
 household set up, which CI checks with every change from every full release
 since 0.3.0 ([docs/upgrading.md](docs/upgrading.md)).
 
@@ -83,16 +83,16 @@ a channel that sources list more than once; live channels can be made H.264 for
 a device that needs it; and the lineups export to one file, and import from
 it.
 
-Version 1.1.0, in pre-releases now, makes Overscan a household's playlist
-manager. Each source can bring only the categories ticked; a lineup can be made
-of the household's own groups, which take categories from any source and can
-number their channels from a first number; groups sort by name and are renamed
-by find and replace; and a merge can put sources in order, or show the copy with
-the best picture seen. Channels that fail to start as people watch can be
+Since 1.1.0, Overscan can be a household's playlist manager. Each source can
+bring only the categories ticked; a lineup can be made of the household's own
+groups, which take categories from any source and can number their channels
+from a first number; groups sort by name and are renamed by find and replace;
+and a merge can put sources in order, or show the copy with the best picture
+seen. Channels that fail to start as people watch can be
 hidden until they play again, the admin shows what each stream holds, and the
 *Overview* can stop a stream. Overscan never opens a channel just to test it.
 
-Much of what the third to sixth milestones added has been tested against test
+Much of what the third to eighth milestones added has been tested against test
 servers and in a desktop browser, but not yet on a MAG box or with real
 providers, media servers and players, so it may not yet work with yours:
 [docs/compatibility.md](docs/compatibility.md) lists what has been tried.
