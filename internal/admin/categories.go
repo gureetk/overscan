@@ -244,7 +244,7 @@ func (a *Admin) apiSetCategories(w http.ResponseWriter, r *http.Request, _ store
 		return
 	}
 	var c apiCategoriesChange
-	if !readJSON(w, r, &c) {
+	if !readJSONWithin(w, r, &c, maxCategoriesFormBytes) {
 		return
 	}
 	if _, err := a.changeCategories(r.Context(), src, k, c); a.editAnswer(w, err) {

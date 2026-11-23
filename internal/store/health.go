@@ -72,15 +72,24 @@ func (s *Store) NoteStreamPlayed(ctx context.Context, channelID int64, at time.T
 	return wasHeld, nil
 }
 
+// keepPicture is true, in NoteStreamDetails's update, when the new read
+// found the same video codec as before but not its picture.
+const keepPicture = `(excluded.height = 0 AND excluded.video <> '' AND excluded.video = video)`
+
 // NoteStreamDetails notes what a channel's stream held, as the hub read it
-// at at.
+// at at. A read that found the video's codec but not its picture keeps
+// the picture read before with the same codec, so that a stream whose
+// parameters came late does not lose what was known of it.
 func (s *Store) NoteStreamDetails(ctx context.Context, channelID int64, d streaminfo.Details, at time.Time) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO channel_health (channel_id, video, width, height, interlaced, bit_depth, frame_rate, dynamic_range, audio, seen_at)
 		SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10 WHERE EXISTS (SELECT 1 FROM channels WHERE id = ?1)
-		ON CONFLICT (channel_id) DO UPDATE SET video = excluded.video, width = excluded.width, height = excluded.height,
-			interlaced = excluded.interlaced, bit_depth = excluded.bit_depth, frame_rate = excluded.frame_rate,
-			dynamic_range = excluded.dynamic_range, audio = excluded.audio, seen_at = excluded.seen_at`,
+		ON CONFLICT (channel_id) DO UPDATE SET video = excluded.video, audio = excluded.audio, seen_at = excluded.seen_at,
+			width = iif(`+keepPicture+`, width, excluded.width), height = iif(`+keepPicture+`, height, excluded.height),
+			interlaced = iif(`+keepPicture+`, interlaced, excluded.interlaced),
+			bit_depth = iif(`+keepPicture+`, bit_depth, excluded.bit_depth),
+			frame_rate = iif(`+keepPicture+`, frame_rate, excluded.frame_rate),
+			dynamic_range = iif(`+keepPicture+`, dynamic_range, excluded.dynamic_range)`,
 		channelID, d.Video, d.Width, d.Height, d.Interlaced, d.BitDepth, d.FrameRate, d.DynamicRange,
 		strings.Join(d.Audio, ","), formatTime(at))
 	if err != nil {

@@ -217,7 +217,8 @@ func (w *GuideWriter) flush(ctx context.Context) error {
 // now, the programmes that have ended that the new one lacks (D83): those
 // that ended within behind of the commit, or within their channel's days of
 // archive where it keeps more, and before the new generation's first
-// programme on their channel. A guide that lists only what is to come then
+// programme on their channel, for channels that their source still lists
+// and brings (D135). A guide that lists only what is to come then
 // still shows what was on, and its archive can be played.
 func (w *GuideWriter) KeepPast(behind time.Duration) { w.keep = behind }
 
@@ -252,7 +253,7 @@ func (w *GuideWriter) carryPast(ctx context.Context, now time.Time) (int, int, e
 		INSERT INTO programmes (source_id, generation, channel_id, start, stop, title, subtitle, description, category)
 		SELECT o.source_id, ?, o.channel_id, o.start, o.stop, o.title, o.subtitle, o.description, o.category
 		FROM programmes o JOIN channels c ON c.id = o.channel_id
-		WHERE o.source_id = ? AND o.generation = ? AND o.stop <= ?
+		WHERE o.source_id = ? AND o.generation = ? AND o.stop <= ? AND c.missing_since IS NULL
 			AND o.stop > ? - max(?, c.archive_days * 86400)
 			AND o.stop <= COALESCE((SELECT min(n.start) FROM programmes n
 				WHERE n.channel_id = o.channel_id AND n.generation = ?), ?)`,

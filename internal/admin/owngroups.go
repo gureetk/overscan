@@ -418,7 +418,7 @@ func (a *Admin) apiSetGroupCategories(w http.ResponseWriter, r *http.Request, _ 
 			Name     string `json:"name"`
 		} `json:"categories"`
 	}
-	if !readJSON(w, r, &body) {
+	if !readJSONWithin(w, r, &body, maxCategoriesFormBytes) {
 		return
 	}
 	if len(body.Categories) > store.MaxGroupCategories {

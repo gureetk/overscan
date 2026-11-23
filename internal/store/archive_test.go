@@ -296,4 +296,17 @@ func TestGuideKeepsThePast(t *testing.T) {
 	if got := count(alpha); got != 1 {
 		t.Errorf("without keeping the past, Alpha has %d programmes", got)
 	}
+
+	// The past of a channel that its source no longer lists, or no longer
+	// brings (D135), is not carried over: it has no guide.
+	writeGuide(t, s, ids["one"], now, 24*time.Hour, both, archiveDay.Add(-time.Hour), archiveDay.Add(time.Hour))
+	if _, err := s.ApplyCatalog(ctx, ids["one"], []CatalogChannel{
+		{IdentityKey: "a", Name: "Alpha", StreamURL: "http://streams.example/a.ts", ArchiveDays: 3},
+	}, now); err != nil {
+		t.Fatal(err)
+	}
+	writeGuide(t, s, ids["one"], now.Add(time.Hour), 24*time.Hour, []int64{alpha.ChannelID}, archiveDay.Add(2*time.Hour))
+	if g, err := s.SourceGuide(ctx, ids["one"]); err != nil || g.Channels != 1 || g.Programmes != 2 {
+		t.Errorf("guide state without Bravo %+v, %v", g, err)
+	}
 }

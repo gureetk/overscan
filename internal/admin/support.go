@@ -183,6 +183,10 @@ func (a *Admin) bundleSources(ctx context.Context, now time.Time) (string, error
 	if err != nil {
 		return "", err
 	}
+	choices, err := a.store.CategoryChoices(ctx)
+	if err != nil {
+		return "", err
+	}
 	var b strings.Builder
 	for _, src := range srcs {
 		row := sourceRow{Source: src, Now: now, Films: reads[src.ID][store.KindMovie], Series: reads[src.ID][store.KindSeries]}
@@ -228,6 +232,20 @@ func (a *Admin) bundleSources(ctx context.Context, now time.Time) (string, error
 			fmt.Fprintf(tw, "  Films\t%s\n", row.FilmsLine())
 			fmt.Fprintf(tw, "  Series\t%s\n", row.SeriesLine())
 		}
+		// What it brings (D135): every category, or the ticked ones.
+		var brings []string
+		for _, k := range []struct{ kind, name string }{{store.KindLive, "live"}, {store.KindMovie, "films"}, {store.KindSeries, "series"}} {
+			c := choices[src.ID][k.kind]
+			switch {
+			case !c.OnlyTicked:
+				brings = append(brings, k.name+": every category")
+			case c.TickNew:
+				brings = append(brings, k.name+": those ticked, new ones ticked")
+			default:
+				brings = append(brings, k.name+": those ticked")
+			}
+		}
+		fmt.Fprintf(tw, "  Brings\t%s\n", strings.Join(brings, "; "))
 		if err := tw.Flush(); err != nil {
 			return "", err
 		}
@@ -417,8 +435,26 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 			householdRules = l.Rules
 		}
 	}
-	fmt.Fprintf(&b, "Lineups: %d; accounts that see another than the household's: %d (this file describes the household's)\n",
-		len(lineups), otherLineup)
+	ownGroups := 0
+	for _, l := range lineups {
+		if l.OwnGroups {
+			ownGroups++
+		}
+	}
+	fmt.Fprintf(&b, "Lineups: %d, %d of their own groups; accounts that see another than the household's: %d (this file describes the household's)\n",
+		len(lineups), ownGroups, otherLineup)
+	numbered := 0
+	for _, g := range groups {
+		if g.NumbersFrom > 0 {
+			numbered++
+		}
+	}
+	fmt.Fprintf(&b, "Groups with a first number in the household's lineup: %d\n", numbered)
+	failing, held, err := a.store.HealthCounts(ctx)
+	if err != nil {
+		return "", err
+	}
+	fmt.Fprintf(&b, "Channels that failed to start the last time they were played: %d shown, %d hidden until they play again\n", failing, held)
 	fmt.Fprintf(&b, "Rules: %d in all lineups; %d in the household's\n", allRules, householdRules)
 	withBackups, err := a.store.ChannelsWithBackups(ctx, lineup)
 	if err != nil {

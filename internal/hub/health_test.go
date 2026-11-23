@@ -107,6 +107,21 @@ func TestChannelHealthFromWhatHappens(t *testing.T) {
 		t.Errorf("logs: %s", logs)
 	}
 
+	// A recording's stream is called off rather than stopped: the
+	// recorder would play it again.
+	rec := h.play(h.link(-5, "live/1"))
+	defer rec.Body.Close()
+	var recID string
+	for _, st := range h.hub.Streams() {
+		if st.DeviceID == -5 {
+			recID = st.ID
+		}
+	}
+	if recID == "" || h.hub.StopStream(recID, "stopped in the admin") {
+		t.Errorf("a recording's stream %q stopped", recID)
+	}
+	rec.Body.Close()
+
 	// A stream that fails to start.
 	missing := get(t, h.link(7, "missing"))
 	missing.Body.Close()

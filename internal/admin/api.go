@@ -222,11 +222,18 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // readJSON decodes a request's JSON body into v, answering for the request
 // if it cannot.
 func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
+	return readJSONWithin(w, r, v, maxJSONBytes)
+}
+
+// readJSONWithin is readJSON for a body of at most limit bytes: the lists
+// of a source's categories, which the page's forms send within the same
+// limit (maxCategoriesFormBytes).
+func readJSONWithin(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
 	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
 		apiError(w, http.StatusUnsupportedMediaType, "not_json", "Send the body as application/json.")
 		return false
 	}
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBytes))
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
 		var tooBig *http.MaxBytesError

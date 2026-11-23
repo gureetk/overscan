@@ -169,7 +169,11 @@ func (a *Admin) stopStream(w http.ResponseWriter, r *http.Request, s store.Admin
 	}
 	notice := "That stream had already ended."
 	for _, row := range rows {
-		if row.ID == id && a.streams.StopStream(id, stoppedReason) {
+		switch {
+		case row.ID != id:
+		case row.DeviceID < 0:
+			notice = "A recording is called off on Settings, under Recordings."
+		case a.streams.StopStream(id, stoppedReason):
 			notice = "Stopped " + row.Channel + " on " + row.Device + "."
 		}
 	}
@@ -313,7 +317,16 @@ func (a *Admin) apiSetAllHealth(w http.ResponseWriter, r *http.Request, _ store.
 }
 
 func (a *Admin) apiStopStream(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
-	if a.streams == nil || !a.streams.StopStream(r.PathValue("id"), "stopped through the API") {
+	id := r.PathValue("id")
+	if a.streams != nil {
+		for _, s := range a.streams.Streams() {
+			if s.ID == id && s.DeviceID < 0 {
+				apiError(w, http.StatusConflict, "recording", "A recording's stream is not stopped: call the recording off with POST recordings/{id}/cancel.")
+				return
+			}
+		}
+	}
+	if a.streams == nil || !a.streams.StopStream(id, "stopped through the API") {
 		apiError(w, http.StatusNotFound, "not_found", "There is no such stream; it may have ended.")
 		return
 	}

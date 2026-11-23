@@ -91,7 +91,9 @@ func streamID(s *session) string { return strconv.FormatUint(s.nonce, 16) }
 
 // StopStream ends the stream with the given ID, as Stream.ID gives it, for
 // the reason given, which the log says; for a screen of a shared tuner, the
-// screen alone (D93). It reports whether there was such a stream.
+// screen alone (D93). It reports whether there was such a stream. A
+// recording's stream is not stopped, since the recorder would play it
+// again: a recording is called off instead (D89).
 func (h *Hub) StopStream(id, reason string) bool {
 	nonce, err := strconv.ParseUint(id, 16, 64)
 	if err != nil {
@@ -100,7 +102,7 @@ func (h *Hub) StopStream(id, reason string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	s, ok := h.sessions[nonce]
-	if !ok || s.ended || s.shared {
+	if !ok || s.ended || s.shared || s.deviceID < 0 {
 		return false
 	}
 	h.end(s, reason)

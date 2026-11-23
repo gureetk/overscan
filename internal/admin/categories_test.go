@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -95,6 +96,21 @@ func TestSourceCategoriesAPI(t *testing.T) {
 	apiErrorOf(t, ta.apiDo("PUT", base+"live", `{"ticked": {"News": "yes"}}`, c, h...), http.StatusBadRequest, "bad_json")
 	apiErrorOf(t, ta.apiDo("PUT", base+"live", `{"every": true}`, c, h...), http.StatusBadRequest, "bad_json")
 	apiErrorOf(t, ta.apiDo("PUT", base+"live", `{"only_ticked": false}`, c), http.StatusForbidden, "csrf")
+	// A long list of ticks fits, as on the page, up to 1 MiB.
+	ticks := func(n int) string {
+		var b strings.Builder
+		b.WriteString(`{"ticked": {"Sports": false`)
+		for i := range n {
+			fmt.Fprintf(&b, `, "A category of a long name, number %06d": true`, i)
+		}
+		return b.String() + "}}"
+	}
+	if body := ticks(2000); len(body) <= maxJSONBytes {
+		t.Fatalf("the long list is %d bytes", len(body))
+	} else if rec := ta.apiDo("PUT", base+"live", body, c, h...); rec.Code != http.StatusOK {
+		t.Errorf("a long list: %d %s", rec.Code, rec.Body)
+	}
+	apiErrorOf(t, ta.apiDo("PUT", base+"live", ticks(30000), c, h...), http.StatusRequestEntityTooLarge, "too_large")
 
 	// The read: the refresher's, with what it left out.
 	rec = ta.apiDo("POST", base+"live/read", "", c, h...)

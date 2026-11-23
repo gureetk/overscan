@@ -153,7 +153,7 @@
         <td><div class="chips">{{.Source}}{{if .HLS}}<span class="badge" title="The source sends HLS">HLS</span>{{end}}{{if .Repaired}}<span class="badge accent" title="It goes through ffmpeg, which rebuilds its timestamps">Repaired</span>{{end}}{{if .Timeshift}}<span class="badge" title="It plays through a buffer on this server, so that the box can pause it and go back">Timeshift</span>{{end}}{{if .Shared}}<span class="badge" title="It shares one connection to its source with the other screens that play this channel">Shared</span>{{end}}{{if and .Converted (not .Transcoded)}}<span class="badge accent" title="It goes through ffmpeg, which converts what the box cannot play">Converted</span>{{end}}{{if .Transcoded}}<span class="badge accent" title="{{if eq .TranscodedBy "overscan"}}This server's ffmpeg transcodes{{else}}Its source's server transcodes{{end}} the picture, which the box cannot play">Transcoded</span>{{end}}</div></td>
         <td>{{.Since}}</td>
         <td class="right">{{.Received}}</td>
-        <td class="right">{{if .ID}}<form method="post" action="/admin/streams/{{.ID}}/stop" hx-post="/admin/streams/{{.ID}}/stop" hx-target="#overview" hx-select="#overview" hx-swap="outerHTML">
+        <td class="right">{{if and .ID (ge .DeviceID 0)}}<form method="post" action="/admin/streams/{{.ID}}/stop" hx-post="/admin/streams/{{.ID}}/stop" hx-target="#overview" hx-select="#overview" hx-swap="outerHTML">
           <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
           <button type="submit" class="quiet small danger" title="End this stream. The device can play it again.">Stop</button>
         </form>{{end}}</td>

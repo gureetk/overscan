@@ -29,6 +29,10 @@ const (
 type features struct {
 	households bool // v0.4.0: profiles, end dates, messages, themes, the shared tuner
 	hub        bool // v0.5.0: accounts with logins, lineups, rules, backups, outputs
+	// playlists is v1.1.0's: the categories a source brings, lineups of
+	// the household's own groups, groups' first numbers, merges by source
+	// and by the best picture, and channels hidden until they play.
+	playlists bool
 }
 
 func featuresOf(version string) features {
@@ -41,7 +45,7 @@ func featuresOf(version string) features {
 		minor, _ = strconv.Atoi(parts[1])
 	}
 	at := func(want int) bool { return major > 0 || minor >= want }
-	return features{households: at(4), hub: at(5)}
+	return features{households: at(4), hub: at(5), playlists: major > 1 || major == 1 && minor >= 1}
 }
 
 // household holds what the setup made, by name, so that the probes can
@@ -57,6 +61,7 @@ type household struct {
 	episodes []int64
 	guests   int64 // the account "Guests"
 	kids     int64 // the lineup "Kids"
+	mine     int64 // the lineup "Mine", of the household's own groups
 	token    string
 	box      *box
 	client   *stalkerClient
@@ -171,6 +176,12 @@ func (h *household) setUp(a *admin, base string, since time.Time) error {
 			name string
 			run  func() error
 		}{"accounts, lineups, rules and backups", func() error { return h.setUpHub(a) }})
+	}
+	if h.f.playlists {
+		steps = append(steps, struct {
+			name string
+			run  func() error
+		}{"what sources bring, own groups, first numbers and channels hidden until they play", func() error { return h.setUpPlaylists(a) }})
 	}
 	for _, s := range steps {
 		if err := s.run(); err != nil {
@@ -602,6 +613,60 @@ func (h *household) setUpHub(a *admin) error {
 	return nil
 }
 
+// setUpPlaylists sets up what v1.1.0 brought: a source that brings only
+// its ticked categories (D135), a lineup of the household's own groups
+// whose group takes categories of two sources (D136) and numbers from 300
+// (D137), a merge that puts a source first and prefers the best picture,
+// and a channel hidden until it plays again (D138).
+func (h *household) setUpPlaylists(a *admin) error {
+	var channels struct {
+		Channels []struct {
+			ChannelID   int64  `json:"channel_id"`
+			ChannelName string `json:"channel_name"`
+		} `json:"channels"`
+	}
+	if err := a.call("GET", "lineup/channels?limit=1000", nil, &channels); err != nil {
+		return err
+	}
+	var summit int64
+	for _, c := range channels.Channels {
+		if c.ChannelName == "Summit News" {
+			summit = c.ChannelID
+		}
+	}
+	if summit == 0 {
+		return errors.New("the lineup has no channel Summit News")
+	}
+	var mine, desk idName
+	if err := a.call("POST", "lineups", map[string]any{"name": "Mine", "own_groups": true}, &mine); err != nil {
+		return err
+	}
+	h.mine = mine.ID
+	in := "?lineup=" + strconv.FormatInt(h.mine, 10)
+	if err := a.call("POST", "lineup/groups"+in, map[string]any{"name": "Desk"}, &desk); err != nil {
+		return err
+	}
+	calls := []struct {
+		method, path string
+		body         any
+	}{
+		{"PUT", fmt.Sprintf("sources/%d/categories/live", h.sources["two"]),
+			map[string]any{"only_ticked": true, "tick_new": true, "ticked": map[string]bool{"Extra": true}}},
+		{"PUT", fmt.Sprintf("lineup/groups/%d/categories%s", desk.ID, in), map[string]any{"categories": []map[string]any{
+			{"source_id": h.sources["main"], "name": "News"}, {"source_id": h.sources["two"], "name": "Extra"}}}},
+		{"PATCH", fmt.Sprintf("lineup/groups/%d%s", desk.ID, in), map[string]any{"numbers_from": 300}},
+		{"POST", "lineup/rules" + in, map[string]any{"match": map[string]any{}, "action": "merge", "copies": "guide", "prefer": "best",
+			"sources": []int64{h.sources["two"], h.sources["main"]}}},
+		{"PUT", fmt.Sprintf("health/%d", summit), map[string]any{"hidden_until_played": true}},
+	}
+	for _, c := range calls {
+		if err := a.call(c.method, c.path, c.body, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // A probe is one request whose answer the upgrade must keep.
 type probe struct {
 	name string
@@ -638,6 +703,13 @@ func (h *household) probes(a *admin, base string) []probe {
 		for _, p := range []string{"accounts", fmt.Sprintf("accounts/%d", h.guests), fmt.Sprintf("accounts/%d/token", h.guests), "lineups",
 			"lineup/rules", "lineup/groups?lineup=" + kids, "lineup/channels?limit=1000&lineup=" + kids, "lineup/rules?lineup=" + kids,
 			fmt.Sprintf("lineup/channels/%d/backups", h.entries["Granite News"])} {
+			adminGet(p)
+		}
+	}
+	if h.f.playlists {
+		mine := strconv.FormatInt(h.mine, 10)
+		for _, p := range []string{"health", fmt.Sprintf("sources/%d/categories/live", h.sources["two"]), "lineup/groups?lineup=" + mine,
+			"lineup/channels?limit=1000&lineup=" + mine, "lineup/rules?lineup=" + mine} {
 			adminGet(p)
 		}
 	}

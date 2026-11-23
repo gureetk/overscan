@@ -96,6 +96,25 @@ func TestChannelHealth(t *testing.T) {
 	if h, err := s.HealthOf(ctx, bad); err != nil || !reflect.DeepEqual(h.Details, d) || !h.SeenAt.Equal(at) {
 		t.Errorf("its details %+v, %v", h, err)
 	}
+	// A later read that found the codec but not the picture keeps the
+	// picture; one of another codec does not.
+	if err := s.NoteStreamDetails(ctx, bad, streaminfo.Details{Video: "HEVC", Audio: []string{"AAC"}}, at.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	kept := d
+	kept.Audio = []string{"AAC"}
+	if h, err := s.HealthOf(ctx, bad); err != nil || !reflect.DeepEqual(h.Details, kept) || !h.SeenAt.Equal(at.Add(time.Hour)) {
+		t.Errorf("its details kept %+v, %v", h, err)
+	}
+	if err := s.NoteStreamDetails(ctx, bad, streaminfo.Details{Video: "H.264", Audio: []string{"AAC"}}, at.Add(2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if h, err := s.HealthOf(ctx, bad); err != nil || !reflect.DeepEqual(h.Details, streaminfo.Details{Video: "H.264", Audio: []string{"AAC"}}) {
+		t.Errorf("another codec %+v, %v", h, err)
+	}
+	if err := s.NoteStreamDetails(ctx, bad, d, at); err != nil {
+		t.Fatal(err)
+	}
 	if h, err := s.HealthOf(ctx, channelID(t, s, "two News 1")); err != nil || !reflect.DeepEqual(h, ChannelHealth{}) {
 		t.Errorf("a channel never played: %+v, %v", h, err)
 	}
