@@ -126,7 +126,14 @@ func Marshal(f File, header string) ([]byte, error) {
 
 // Parse reads a file, and checks what it holds as the admin checks what
 // it is given: an error says what is wrong, and where.
-func Parse(data []byte) (File, error) {
+func Parse(data []byte) (f File, err error) {
+	// A mistake in the YAML library that a file finds is that file's
+	// mistake too.
+	defer func() {
+		if p := recover(); p != nil {
+			f, err = File{}, bad("The file is not YAML that Overscan reads.")
+		}
+	}()
 	if len(data) > MaxBytes {
 		return File{}, bad("The file is larger than %d MB, which an import takes at most: split it into files of fewer lineups.", MaxBytes>>20)
 	}
@@ -155,13 +162,18 @@ func Parse(data []byte) (File, error) {
 	}
 	body := doc.Docs[0].Body
 	// An exported file has no anchors, aliases or merges, and refusing them
-	// keeps a small file from growing into a huge one as it is read.
+	// keeps a small file from growing into a huge one as it is read. Nor
+	// does it have tags, which the YAML library reads less carefully.
 	var shared error
 	ast.Walk(visitor(func(n ast.Node) {
 		switch n.Type() {
 		case ast.AnchorType, ast.AliasType, ast.MergeKeyType:
 			if shared == nil {
 				shared = bad("The file uses YAML's anchors, aliases or merges, which a lineup file never has.")
+			}
+		case ast.TagType:
+			if shared == nil {
+				shared = bad("The file uses YAML's tags, such as !!str, which a lineup file never has.")
 			}
 		}
 	}), body)
@@ -181,7 +193,6 @@ func Parse(data []byte) (File, error) {
 	case head.Version < 1:
 		return File{}, bad("The file does not say its version, as a lineup file does.")
 	}
-	var f File
 	if err := yaml.NodeToValue(body, &f, yaml.DisallowUnknownField()); err != nil {
 		return File{}, bad("The file holds something that a lineup file does not: %s", firstLine(err))
 	}
