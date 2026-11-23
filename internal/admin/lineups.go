@@ -198,6 +198,14 @@ func (a *Admin) lineupsAction(w http.ResponseWriter, r *http.Request, s store.Ad
 	}
 	var done string
 	switch r.PathValue("action") {
+	case "new":
+		var id int64
+		name := strings.TrimSpace(r.PostFormValue("name"))
+		if id, err = a.newLineup(ctx, name, r.PostFormValue("merge")); err == nil {
+			lv = lineupView{Lineup: id, Page: 1}
+			r = r.WithContext(inLineup(ctx, id))
+			done = "Made the lineup " + name + ". Add a group, then choose the categories it takes. No account sees it yet: choose it for one on the Accounts page."
+		}
 	case "copy":
 		var id int64
 		if id, err = a.copyLineup(ctx, shown, r.PostFormValue("name")); err == nil {
@@ -230,13 +238,28 @@ type apiLineup struct {
 	ID        int64     `json:"id"`
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
-	Accounts  []string  `json:"accounts"`
-	Shown     int       `json:"shown"`
-	Rules     int       `json:"rules"`
+	// OwnGroups is set for a lineup that holds only what its groups take
+	// (D136).
+	OwnGroups bool        `json:"own_groups"`
+	Accounts  []string    `json:"accounts"`
+	Viewers   []apiViewer `json:"viewers"`
+	Shown     int         `json:"shown"`
+	Rules     int         `json:"rules"`
 }
 
-func lineupBody(l store.LineupInfo) apiLineup {
-	return apiLineup{ID: l.ID, Name: l.Name, CreatedAt: l.CreatedAt.UTC(), Accounts: l.Accounts, Shown: l.Shown, Rules: l.Rules}
+// lineupBody returns a lineup as the API shows it, with the accounts that
+// see it.
+func (a *Admin) lineupBody(ctx context.Context, l store.LineupInfo) (apiLineup, error) {
+	out := apiLineup{ID: l.ID, Name: l.Name, CreatedAt: l.CreatedAt.UTC(), OwnGroups: l.OwnGroups, Accounts: l.Accounts,
+		Viewers: []apiViewer{}, Shown: l.Shown, Rules: l.Rules}
+	viewers, err := a.store.LineupViewers(ctx, l.ID)
+	if err != nil {
+		return out, err
+	}
+	for _, v := range viewers {
+		out.Viewers = append(out.Viewers, viewerBody(v))
+	}
+	return out, nil
 }
 
 func (a *Admin) apiLineups(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
@@ -246,7 +269,9 @@ func (a *Admin) apiLineups(w http.ResponseWriter, r *http.Request, _ store.Admin
 	}
 	out := make([]apiLineup, len(all))
 	for i, l := range all {
-		out[i] = lineupBody(l)
+		if out[i], err = a.lineupBody(r.Context(), l); a.apiFailed(w, err) {
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, struct {
 		Lineups []apiLineup `json:"lineups"`
@@ -261,19 +286,42 @@ func (a *Admin) writeLineup(w http.ResponseWriter, r *http.Request, status int, 
 	}
 	for _, l := range all {
 		if l.ID == id {
-			writeJSON(w, status, lineupBody(l))
+			body, err := a.lineupBody(r.Context(), l)
+			if a.apiFailed(w, err) {
+				return
+			}
+			writeJSON(w, status, body)
 			return
 		}
 	}
 	apiError(w, http.StatusNotFound, "not_found", "There is no such lineup.")
 }
 
+// apiCopyLineup makes a lineup: a copy of another, or an empty one of its
+// own groups (D136).
 func (a *Admin) apiCopyLineup(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
 	var body struct {
-		Name   string `json:"name"`
-		CopyOf int64  `json:"copy_of"`
+		Name      string `json:"name"`
+		CopyOf    int64  `json:"copy_of"`
+		OwnGroups bool   `json:"own_groups"`
+		Merge     string `json:"merge"`
 	}
 	if !readJSON(w, r, &body) {
+		return
+	}
+	switch {
+	case body.OwnGroups && body.CopyOf != 0:
+		apiError(w, http.StatusBadRequest, "bad_request", "A lineup is a copy of another or starts empty with own_groups, not both.")
+		return
+	case body.OwnGroups:
+		id, err := a.newLineup(r.Context(), body.Name, body.Merge)
+		if a.editAnswer(w, err) {
+			return
+		}
+		a.writeLineup(w, r, http.StatusCreated, id)
+		return
+	case body.Merge != "":
+		apiError(w, http.StatusBadRequest, "bad_request", "merge goes with own_groups; a copy keeps the rules of the lineup it copies.")
 		return
 	}
 	from := body.CopyOf

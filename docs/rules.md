@@ -2,7 +2,7 @@
 
 A rule changes many channels of a lineup at once: it shows, hides, renames, moves, numbers or gives a logo to the channels that it matches, gives them another channel's guide, moves their guide's times, or merges the copies of a channel into one. Rules run again after every refresh of a source, so they keep up with the channels that a provider adds, renames or moves ([D107](decisions.md)). The administrator keeps them on the *Live TV* page's *Rules* tab, for the lineup that the page shows; the admin API's `lineup/rules` paths do the same ([api/admin.yaml](api/admin.yaml)).
 
-Rules sit beside the edits made by hand on the *Channels* tab ([D47](decisions.md)), and never change them: a name, a group, a visibility or a number set on a channel by hand wins over every rule. The *Channels* tab marks a channel that a rule changes with *Rule*, and says what the rules do to it.
+Rules sit beside the edits made by hand on the *Channels* tab ([D47](decisions.md)), and never change them: a name, a group, a visibility or a number set on a channel by hand wins over every rule. The *Channels* tab marks a channel that a rule changes with *Rule*, and says what the rules do to it. In a lineup of your own groups, rules act only on the channels that its groups take: a rule cannot bring in a channel whose category no group takes ([D136](decisions.md)).
 
 ## What a rule matches
 

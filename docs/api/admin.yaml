@@ -1308,12 +1308,14 @@ paths:
     post:
       tags: [lineups]
       operationId: copyLineup
-      summary: Make a lineup as a copy of another
+      summary: Make a lineup, as a copy of another or empty
       description: >-
         The copy has the groups, the categories they hold, and the channels of the lineup that `copy_of` names, or
         else the one that the `lineup` parameter names, or else the household account's, with their numbers, pins,
-        names, groups, visibility and locks; from then on it has edits of its own. No account sees it until one
-        is given it. A server has at most 20 lineups (`too_many_lineups`, 409).
+        names, groups, visibility and locks; from then on it has edits of its own. With `own_groups`, the lineup
+        starts empty instead, and holds only what its groups take (D136); `merge` gives it a rule that merges the
+        copies of a channel (D113), by their guide or by their names, which can be changed or removed like any
+        other. No account sees it until one is given it. A server has at most 20 lineups (`too_many_lineups`, 409).
       parameters:
         - $ref: "#/components/parameters/Lineup"
       security:
@@ -1334,6 +1336,13 @@ paths:
                 copy_of:
                   type: integer
                   minimum: 1
+                own_groups:
+                  type: boolean
+                  description: Start empty, holding only what its groups take; not with `copy_of`.
+                merge:
+                  type: string
+                  enum: ["", guide, name]
+                  description: With `own_groups`, merge the copies of a channel from the start, by their guide or by their names.
       responses:
         "201":
           description: The new lineup.
@@ -1700,6 +1709,110 @@ paths:
         "415":
           $ref: "#/components/responses/NotJSON"
 
+  /lineup/groups/{id}/categories:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/Lineup"
+    put:
+      tags: [lineup]
+      operationId: setGroupCategories
+      summary: Choose the categories a group takes
+      description: >-
+        The group takes exactly these live categories, of any source, and the channels that they bring now and
+        later (D136): those that another group of the lineup took move to it, and those it took that the list
+        leaves out leave it. In a lineup of its own groups, their channels then leave the lineup, keeping their
+        edits for when a group takes them again; in one that takes every category, each goes back to a group of
+        its own name. A category is one that `GET /lineup/categories` lists, or one the group takes already; `name`
+        "" is a source's channels without a category. At most 1,000.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [categories]
+              properties:
+                categories:
+                  type: array
+                  maxItems: 1000
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [source_id, name]
+                    properties:
+                      source_id:
+                        type: integer
+                      name:
+                        type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/Group"
+        "400":
+          $ref: "#/components/responses/EditMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+  /lineup/categories:
+    parameters:
+      - $ref: "#/components/parameters/Lineup"
+    get:
+      tags: [lineup]
+      operationId: listLineupCategories
+      summary: List every source's live categories, for the lineup's groups
+      description: >-
+        The live categories that each source brings (D135), as its reads list them, by source and in each
+        source's order, with the group of the lineup that takes each: at most 2,000, with how many match in all.
+      parameters:
+        - name: q
+          in: query
+          description: Only the categories whose names hold this text, in any case.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The categories.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [categories, total]
+                properties:
+                  categories:
+                    type: array
+                    items:
+                      type: object
+                      required: [source_id, source, name, channels, group_id, group]
+                      properties:
+                        source_id:
+                          type: integer
+                        source:
+                          type: string
+                        name:
+                          type: string
+                          description: '"" for the source''s channels without a category.'
+                        channels:
+                          type: integer
+                          description: The channels it held at the last read that listed it.
+                        group_id:
+                          type: [integer, "null"]
+                          description: The group of the lineup that takes it; null if none.
+                        group:
+                          type: string
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NoSuchLineup"
   /lineup/categories/{id}:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -3142,7 +3255,7 @@ components:
   schemas:
     LineupSummary:
       type: object
-      required: [id, name, created_at, accounts, shown, rules]
+      required: [id, name, created_at, own_groups, accounts, viewers, shown, rules]
       properties:
         id:
           type: integer
@@ -3151,11 +3264,39 @@ components:
         created_at:
           type: string
           format: date-time
+        own_groups:
+          type: boolean
+          description: >-
+            It holds only what its groups take (D136); false for a lineup that takes every category of every
+            source as groups of their own, as every lineup made before did.
         accounts:
           type: array
           description: The names of the accounts that see it.
           items:
             type: string
+        viewers:
+          type: array
+          description: The accounts that see it, by name, with how their devices and players reach it.
+          items:
+            type: object
+            required: [account_id, account, boxes, stalker_clients, playlist, xtream_login]
+            properties:
+              account_id:
+                type: integer
+              account:
+                type: string
+              boxes:
+                type: integer
+                description: Its approved boxes that run Overscan's page.
+              stalker_clients:
+                type: integer
+                description: Its approved Stalker clients.
+              playlist:
+                type: boolean
+                description: Its playlist and guide are on and it has a token (D103); they answer while the server's outputs are on.
+              xtream_login:
+                type: boolean
+                description: Its Xtream login is on and it has a username (D104); it answers while the server's outputs are on.
         shown:
           type: integer
           description: How many channels it shows.
@@ -3586,13 +3727,17 @@ components:
             properties:
               id:
                 type: [integer, "null"]
-                description: The category's ID, for moving it; null if its source no longer has it.
+                description: The category's ID, for moving it; null if its source no longer has it, and for the channels without a category.
               source_id:
                 type: integer
               source:
                 type: string
               name:
                 type: string
+                description: '"" for the source''s channels without a category.'
+              gone:
+                type: boolean
+                description: Its source no longer has the category.
     Channel:
       type: object
       required: [id, channel_id, source_id, source, number, pinned, name, channel_name, renamed, group_id, group, moved, category, visibility, hidden, missing, left_out, locked, group_locked, repair, repair_own, adult, radio, rules, backups]

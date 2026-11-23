@@ -1,7 +1,8 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
-{{/* The top of the Live TV pages: its channels and its rules (D107), and
-     the lineup shown, once there are several (D106). .D is the page's
-     data, .Tab "channels" or "rules". */}}
+{{/* The top of the Live TV pages: its channels and its rules (D107), the
+     lineup shown, once there are several (D106), and the accounts that see
+     it, with how (D136). .D is the page's data, .Tab "channels" or
+     "rules". */}}
 {{define "lineup-nav"}}
 <nav class="lineup-tabs" aria-label="Live TV">
   <a href="{{.D.View.In.URL 0}}"{{if eq .Tab "channels"}} aria-current="page"{{end}}>Channels</a>
@@ -15,6 +16,6 @@
   </select>
   <button type="submit" class="small js-hide">Show</button>
 </form>
-<p class="hint">{{if .D.Current.Accounts}}Seen by {{.D.SeenBy}}.{{else}}No account sees it yet: choose it for one on the <a href="/admin/accounts">Accounts</a> page.{{end}}</p>
 {{- end}}
+<p class="hint seen-by">{{with .D.SeenLines}}Seen by {{range $i, $v := .}}{{if $i}}; {{end}}<a href="/admin/accounts/{{$v.AccountID}}">{{$v.Account}}</a>, through {{$v.Ways}}{{end}}.{{else}}No account sees it yet: choose it for one on the <a href="/admin/accounts">Accounts</a> page.{{end}}</p>
 {{- end}}

@@ -126,6 +126,9 @@ func (a *Admin) Handler() http.Handler {
 	mux.Handle("POST /admin/lineup/groups", a.page(a.lineupRoute(a.createGroupForm)))
 	mux.Handle("POST /admin/lineup/groups/{id}/{action}", a.page(a.lineupRoute(a.groupAction)))
 	mux.Handle("POST /admin/lineup/categories", a.page(a.lineupRoute(a.moveCategoryForm)))
+	// Every source's categories, to choose those a group takes (D136).
+	mux.Handle("GET /admin/lineup/groups/{id}/categories", a.page(a.lineupRoute(a.groupCategoriesPage)))
+	mux.Handle("POST /admin/lineup/groups/{id}/categories", a.pageWithin(maxCategoriesFormBytes, a.lineupRoute(a.groupCategoriesForm)))
 	mux.Handle("POST /admin/lineups/{action}", a.page(a.lineupRoute(a.lineupsAction)))
 	mux.Handle("GET /admin/lineups/export", a.page(a.exportLineupsForm))
 	mux.Handle("POST /admin/lineups/import", a.pageWithin(maxUploadBytes, a.lineupRoute(a.importLineupsForm)))
@@ -198,7 +201,7 @@ type view struct {
 
 // pageNames are the pages in admin/templates, each of which defines
 // "content" for the layout.
-var pageNames = []string{"sign-in", "home", "password", "message", "devices", "accounts", "account", "lineup", "rules", "library", "sources", "categories", "capture", "settings"}
+var pageNames = []string{"sign-in", "home", "password", "message", "devices", "accounts", "account", "lineup", "rules", "library", "sources", "categories", "group-categories", "capture", "settings"}
 
 // pageParts are the parts in admin/templates that pages share, by page.
 var pageParts = map[string][]string{"lineup": {"lineup-nav"}, "rules": {"lineup-nav"}, "accounts": {"account-parts"}, "account": {"account-parts"}}

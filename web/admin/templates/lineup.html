@@ -19,6 +19,21 @@
         <input name="name" maxlength="50" placeholder="Name of the copy" aria-label="Name of a copy of {{.Data.Current.Name}}" required>
         <button type="submit">Copy this lineup</button>
       </form>
+      <form method="post" action="/admin/lineups/new" hx-post="/admin/lineups/new" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" class="new-lineup">
+        <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+        <input type="hidden" name="back" value="{{.Data.View.Back}}">
+        <div class="row-form">
+          <input name="name" maxlength="50" placeholder="Name of the new lineup" aria-label="Name of a new lineup of your own groups" required>
+          <button type="submit">New lineup of your own groups</button>
+        </div>
+        <label class="merge-choice">Copies of a channel
+          <select name="merge">
+            <option value="">Stay apart</option>
+            <option value="guide">Merge, by their guide</option>
+            <option value="name">Merge, by their names</option>
+          </select>
+        </label>
+      </form>
       {{- if gt (len .Data.Lineups) 1}}
       <form method="post" action="/admin/lineups/rename" hx-post="/admin/lineups/rename" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" class="row-form">
         <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
@@ -34,7 +49,7 @@
       </form>
       {{- end}}
       {{- end}}
-      <p class="hint">A lineup is what an account's devices and players see of live TV. A copy starts with this lineup's channels, groups, numbers and edits, and then has its own; a source's new channels join every lineup. Each account chooses its lineup on the Accounts page.</p>
+      <p class="hint">A lineup is what an account's devices and players see of live TV. A copy starts with this lineup's channels, groups, numbers and edits, and then has its own. A new lineup of your own groups starts empty, and holds only the categories that its groups take, from any source; merged copies of a channel play as one, the others as its backups, and a rule on its Rules tab can be changed or removed. Each account chooses its lineup on the Accounts page.</p>
       <div class="lineup-file">
         <a class="button small" href="/admin/lineups/export" download>{{template "i-download"}}Export every lineup</a>
         <form method="post" action="/admin/lineups/import" enctype="multipart/form-data" hx-post="/admin/lineups/import" hx-encoding="multipart/form-data" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" class="row-form">
@@ -164,7 +179,7 @@
       <button type="reset" class="icon untick" aria-label="Untick all" title="Untick all">{{template "i-close"}}</button>
     </form>
     {{- else}}
-    <p class="empty">{{if .Data.View.Query}}No channel here has “{{.Data.View.Query}}” in its name.{{else if .Data.All}}No channels here.{{else}}No channels yet. They appear here when a source has been read.{{end}}</p>
+    <p class="empty">{{if .Data.View.Query}}No channel here has “{{.Data.View.Query}}” in its name.{{else if and .Data.Current.OwnGroups .Data.Selected (not .Data.Selected.Categories)}}No channels here yet: choose the categories it takes with Categories…, or add channels one by one.{{else if .Data.All}}No channels here.{{else if .Data.Current.OwnGroups}}This lineup holds only what its groups take, and they take nothing yet. Add a group with the + beside Groups, then choose the categories it takes with its Categories… button.{{else}}No channels yet. They appear here when a source has been read.{{end}}</p>
     {{- end}}
     </div>
   </section>
@@ -194,7 +209,7 @@
       </details>
     </div>
     <p class="hint">{{if .G.Channels}}{{.G.Shown}} of {{.G.Channels}} {{if eq .G.Channels 1}}channel{{else}}channels{{end}} shown.{{else}}No channels in it.{{end}}
-      {{- if .G.Categories}} From {{range $i, $c := .G.Categories}}{{if $i}}, {{end}}{{$c.Source}}: {{$c.Name}}{{if not $c.ID}} (gone){{end}}{{end}}.{{end}}</p>
+      {{- if .G.Categories}} From {{range $i, $c := .G.Categories}}{{if $i}}, {{end}}{{$c.Source}}: {{if $c.Name}}{{$c.Name}}{{else}}without a category{{end}}{{if $c.Gone}} (gone){{end}}{{end}}.{{else if .D.Current.OwnGroups}} It takes no category yet.{{end}}</p>
   </div>
   <div class="group-actions">
     <details class="popover">
@@ -219,6 +234,7 @@
       <input type="hidden" name="back" value="{{.D.View.Back}}">
       <button type="submit" class="small"{{if not .G.Locked}} title="Its channels need the parental PIN to play"{{end}}>{{template "i-lock"}}{{if .G.Locked}}Unlock the group{{else}}Lock the group{{end}}</button>
     </form>
+    <a class="button small{{if and .D.Current.OwnGroups (not .G.Categories)}} primary{{end}}" href="{{.D.View.CategoriesURL .G.ID}}">{{template "i-lineup"}}Categories…</a>
     {{template "add-channels" .}}
     <details class="popover">
       <summary class="button small icon" aria-label="More for the group: merge it, move a category, delete it" title="Merge, move a category, delete">{{template "i-more"}}</summary>
@@ -277,7 +293,7 @@
   </form>
   <div id="add-results">
   {{- if not .D.View.Add}}
-    <p class="hint">Type part of a channel's name to find it in the other groups, then tick it to add it here.</p>
+    <p class="hint">Type part of a channel's name to find it in the other groups{{if .D.Current.OwnGroups}}, or among the channels that the lineup does not hold{{end}}, then tick it to add it here.</p>
   {{- else if .D.Candidates}}
     <form method="post" action="/admin/lineup/channels" hx-post="/admin/lineup/channels" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML">
       <input type="hidden" name="csrf" value="{{.CSRF}}">
@@ -286,7 +302,7 @@
       <input type="hidden" name="group" value="{{.G.ID}}">
       <ul class="plain candidates">
         {{- range .D.Candidates}}
-        <li><label{{if .Hidden}} class="is-hidden"{{end}}><input type="checkbox" name="ids" value="{{.ID}}"> <span class="num">{{if .Number}}{{.Number}}{{else}}–{{end}}</span> <span class="c-name">{{.Name}}</span> <span class="muted">{{if .Group}}in {{.Group}}{{else}}in no group{{end}}{{if .LeftOut}}, left out{{else if .Missing}}, missing{{else if .Hidden}}, hidden{{end}}</span></label></li>
+        <li><label{{if .Hidden}} class="is-hidden"{{end}}><input type="checkbox" name="ids" value="{{.ID}}"> <span class="num">{{if .Number}}{{.Number}}{{else}}–{{end}}</span> <span class="c-name">{{.Name}}</span> <span class="muted">{{if .Untaken}}not in this lineup{{else if .Group}}in {{.Group}}{{else}}in no group{{end}}{{if .LeftOut}}, left out{{else if .Missing}}, missing{{else if .Hidden}}, hidden{{end}}</span></label></li>
         {{- end}}
       </ul>
       {{- if gt .D.Found (len .D.Candidates)}}

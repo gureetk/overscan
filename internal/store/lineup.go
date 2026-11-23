@@ -48,10 +48,11 @@ type LineupGroup struct {
 
 // GroupCategory is a source's category that a group holds.
 type GroupCategory struct {
-	ID       int64 // 0 if the source no longer has the category
+	ID       int64 // 0 if the source no longer has the category, or for the channels without one
 	SourceID int64
 	Source   string
-	Name     string
+	Name     string // "" for the source's channels without a category (D136)
+	Gone     bool   // the source no longer has the category
 }
 
 // LineupGroups returns a lineup's groups: those with channels that devices
@@ -86,7 +87,7 @@ func (s *Store) LineupGroups(ctx context.Context, lineupID int64) ([]LineupGroup
 			COALESCE(sum(e.number IS NOT NULL AND COALESCE(e.hidden, e.rule_hidden, g.hidden, 0) = 0
 				AND NOT (c.adult = 1 AND `+adultMarksSQL+` = '`+AdultHide+`')), 0),
 			COALESCE(min(CASE WHEN COALESCE(e.hidden, e.rule_hidden, g.hidden, 0) = 0 THEN e.number END), 0)`+lineupEntryJoins+`
-		WHERE e.lineup_id = ? AND c.missing_since IS NULL AND s.enabled = 1
+		WHERE e.lineup_id = ? AND c.missing_since IS NULL AND s.enabled = 1 AND `+takenEntry+`
 		GROUP BY COALESCE(g.id, 0)`,
 		lineupID)
 	if err != nil {
@@ -113,7 +114,7 @@ func (s *Store) LineupGroups(ctx context.Context, lineupID int64) ([]LineupGroup
 	}
 
 	rows, err = s.db.QueryContext(ctx, `
-		SELECT m.group_id, COALESCE(k.id, 0), m.source_id, src.name, m.category
+		SELECT m.group_id, COALESCE(k.id, 0), m.source_id, src.name, m.category, k.id IS NULL AND m.category <> ''
 		FROM lineup_categories m
 		JOIN sources src ON src.id = m.source_id
 		LEFT JOIN categories k ON k.source_id = m.source_id AND k.kind = 'live' AND k.name = m.category
@@ -126,7 +127,7 @@ func (s *Store) LineupGroups(ctx context.Context, lineupID int64) ([]LineupGroup
 	for rows.Next() {
 		var groupID int64
 		var c GroupCategory
-		if err := rows.Scan(&groupID, &c.ID, &c.SourceID, &c.Source, &c.Name); err != nil {
+		if err := rows.Scan(&groupID, &c.ID, &c.SourceID, &c.Source, &c.Name, &c.Gone); err != nil {
 			rows.Close()
 			return fail(err)
 		}
@@ -286,8 +287,8 @@ func (s *Store) DeleteLineupGroup(ctx context.Context, lineupID, groupID int64) 
 		var n int
 		if err := tx.QueryRowContext(ctx, `
 			SELECT (SELECT count(*) FROM lineup_categories m
-					JOIN categories k ON k.source_id = m.source_id AND k.kind = 'live' AND k.name = m.category
-					WHERE m.group_id = ?1)
+					LEFT JOIN categories k ON k.source_id = m.source_id AND k.kind = 'live' AND k.name = m.category
+					WHERE m.group_id = ?1 AND (k.id IS NOT NULL OR m.category = ''))
 				+ (SELECT count(*) FROM lineup_entries WHERE group_id = ?1 OR rule_group_id = ?1)`,
 			groupID).Scan(&n); err != nil {
 			return err
@@ -349,7 +350,10 @@ type LineupEntry struct {
 	Missing     bool // its source no longer lists it, or no longer brings its category
 	// LeftOut is set when it is missing because its source no longer
 	// brings its category (D135).
-	LeftOut     bool
+	LeftOut bool
+	// Untaken is set when its lineup holds only what its groups take, and
+	// no group takes it (D136).
+	Untaken     bool
 	Logo        string
 	Locked      bool  // the administrator locked it (D55)
 	GroupLocked bool  // its group is locked
@@ -382,15 +386,22 @@ type EntryQuery struct {
 	Group    *int64 // only the entries in this group (0: in none); nil for all
 	NotGroup *int64 // only the entries in other groups than this, or in none
 	Text     string // only the entries whose name holds this, in any case
-	Offset   int
-	Limit    int // 0 for no limit
+	// Untaken adds the entries that a lineup of its own groups does not
+	// hold (D136).
+	Untaken bool
+	Offset  int
+	Limit   int // 0 for no limit
 }
 
 // LineupEntries returns the entries of a lineup that the query picks, by
 // number, with the unnumbered last, and how many there are in all. Entries
-// of disabled sources are left out.
+// of disabled sources are left out, and so are those that a lineup of its
+// own groups does not hold (D136), unless the query asks for them.
 func (s *Store) LineupEntries(ctx context.Context, lineupID int64, q EntryQuery) ([]LineupEntry, int, error) {
 	where := " WHERE e.lineup_id = ? AND s.enabled = 1"
+	if !q.Untaken {
+		where += " AND " + takenEntry
+	}
 	args := []any{lineupID}
 	if q.Group != nil {
 		where += " AND COALESCE(g.id, 0) = ?"
@@ -460,7 +471,7 @@ const entrySelect = `
 			COALESCE((SELECT COALESCE(m.name, m.rule_name, mc.name)
 				FROM lineup_entry_rule_backups rb JOIN lineup_entries m ON m.id = rb.entry_id JOIN channels mc ON mc.id = m.channel_id
 				WHERE rb.channel_id = e.channel_id AND m.lineup_id = e.lineup_id LIMIT 1), ''),
-			` + leftOutSQL
+			` + leftOutSQL + `, NOT ` + takenEntry
 
 // leftOutSQL is true of a channel c, in its category k, that is missing
 // because its source no longer brings its category (D135).
@@ -478,7 +489,7 @@ func scanEntry(row rowScanner) (LineupEntry, error) {
 		&e.Renamed, &e.GroupID, &e.Group, &e.Moved, &e.Category, &e.Visibility, &e.Hidden, &e.Missing, &e.Logo,
 		&e.Locked, &e.GroupLocked, &e.Repair, &own, &e.Adult, &e.AdultLocked, &e.AdultHidden, &e.Radio,
 		&e.RuleRenamed, &e.RuleMoved, &e.RuleShown, &e.RuleHidden, &e.RuleLogo, &e.RuleNumbered, &e.RuleGuide, &shift,
-		&e.Backups, &e.RuleBackups, &e.MergedInto, &e.LeftOut)
+		&e.Backups, &e.RuleBackups, &e.MergedInto, &e.LeftOut, &e.Untaken)
 	if own.Valid {
 		e.RepairOwn = &own.Bool
 	}
@@ -537,6 +548,9 @@ func (s *Store) SetEntriesGroup(ctx context.Context, lineupID int64, entryIDs []
 			if err := mustAffect(res); err != nil {
 				return err
 			}
+		}
+		if err := numberOwnLineup(ctx, tx, lineupID); err != nil {
+			return err
 		}
 		return removeEmptyGroups(ctx, tx, lineupID)
 	})
@@ -668,10 +682,15 @@ func pinNumber(ctx context.Context, tx *sql.Tx, lineupID, entryID int64, number 
 
 // ResetEntryNumber returns a pinned entry to D40's numbering: it takes the
 // number its channel wants if no listed channel holds it, and otherwise keeps
-// the number it has, unpinned.
+// the number it has, unpinned. In a lineup of its own groups, it keeps the
+// number it has, unpinned, if the lineup holds it, and gives it up if not
+// (D136).
 func (s *Store) ResetEntryNumber(ctx context.Context, lineupID, entryID int64) error {
 	return s.inTx(ctx, func(tx *sql.Tx) error {
 		if err := resetNumber(ctx, tx, lineupID, entryID); err != nil {
+			return err
+		}
+		if err := numberOwnLineup(ctx, tx, lineupID); err != nil {
 			return err
 		}
 		// A rule may number it now (D107).
@@ -680,6 +699,17 @@ func (s *Store) ResetEntryNumber(ctx context.Context, lineupID, entryID int64) e
 }
 
 func resetNumber(ctx context.Context, tx *sql.Tx, lineupID, entryID int64) error {
+	var own bool
+	if err := tx.QueryRowContext(ctx, "SELECT own_groups FROM lineups WHERE id = ?", lineupID).Scan(&own); err != nil {
+		return err
+	}
+	if own {
+		res, err := tx.ExecContext(ctx, "UPDATE lineup_entries SET pinned = 0 WHERE id = ? AND lineup_id = ?", entryID, lineupID)
+		if err != nil {
+			return err
+		}
+		return mustAffect(res)
+	}
 	{
 		var cur sql.NullInt64
 		var pinned, missing bool

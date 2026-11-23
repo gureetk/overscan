@@ -57,6 +57,10 @@ type Lineup struct {
 	ID        int64
 	Name      string
 	CreatedAt time.Time
+	// OwnGroups is set for a lineup that holds only what its groups take
+	// (D136); otherwise it takes every category of every source, each in a
+	// group, as before.
+	OwnGroups bool
 }
 
 // Account returns the account with the given ID, or ErrNotFound.
@@ -155,8 +159,8 @@ func (s *Store) Lineup(ctx context.Context, id int64) (Lineup, error) {
 	var l Lineup
 	var created string
 	err := s.db.QueryRowContext(ctx,
-		"SELECT id, name, created_at FROM lineups WHERE id = ?", id,
-	).Scan(&l.ID, &l.Name, &created)
+		"SELECT id, name, created_at, own_groups FROM lineups WHERE id = ?", id,
+	).Scan(&l.ID, &l.Name, &created, &l.OwnGroups)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Lineup{}, ErrNotFound
 	}
