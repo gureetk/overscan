@@ -81,6 +81,7 @@ func (h *Hub) getFailed(w http.ResponseWriter, s *session, err error) {
 	src := h.source(s.sourceID).Name
 	if s.kind == kindEntry {
 		h.markFailing(s.channelID)
+		h.noteFailed(s)
 	}
 	var refused *statusError
 	if errors.As(err, &refused) {
@@ -172,6 +173,7 @@ func (h *Hub) serve(ctx context.Context, w http.ResponseWriter, s *session, targ
 			}
 			dst.flush()
 			s.bytes.Add(int64(n))
+			h.passed(s, buf[:n])
 			sent += int64(n)
 		}
 		if rerr != nil {

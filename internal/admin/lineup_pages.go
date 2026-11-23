@@ -149,6 +149,7 @@ type lineupData struct {
 	Locks  int  // locked groups, and channels locked one by one
 
 	CanRepair     bool // channels set to be repaired go through ffmpeg (D57)
+	Now           time.Time
 	RepairDefault bool // channels are repaired unless they say otherwise (D58)
 
 	// Channels in other groups whose names hold View.Add, to add to the
@@ -169,7 +170,7 @@ const maxCandidates = 50
 // Row returns what an entry's row, or its panel, needs.
 func (d lineupData) Row(e store.LineupEntry) entryRow {
 	return entryRow{E: e, View: d.View, CSRF: d.CSRF, Groups: d.ByName, Home: d.homeGroup[fmt.Sprint(e.SourceID, "/", e.Category)],
-		Open: e.ID == d.Edit, InGroup: d.View.Group != nil, CanRepair: d.CanRepair, RepairDefault: d.RepairDefault}
+		Open: e.ID == d.Edit, InGroup: d.View.Group != nil, CanRepair: d.CanRepair, RepairDefault: d.RepairDefault, Now: d.Now}
 }
 
 // Shown counts the channels that devices see.
@@ -227,11 +228,36 @@ type entryRow struct {
 
 	CanRepair     bool
 	RepairDefault bool
+	Now           time.Time
 
 	// Backups are, for the entry open in the panel, the channels whose
 	// streams play when its own cannot start (D109), and RuleBackups those
 	// that merge rules give it (D113).
 	Backups, RuleBackups []store.EntryBackup
+}
+
+// FailedText says when the entry's stream last failed to start (D138).
+func (r entryRow) FailedText() string {
+	h := r.E.Health
+	out := "Its stream failed to start " + ago(h.FailedAt, r.Now)
+	if h.Failures > 1 {
+		out += fmt.Sprintf(", %d times in a row", h.Failures)
+	}
+	return out
+}
+
+// StreamText says what the entry's stream held when it last played, as the
+// hub read it (D138); "" if not known.
+func (r entryRow) StreamText() string {
+	h := r.E.Health
+	out := h.Details.Summary()
+	if out == "" {
+		return ""
+	}
+	if fps := h.Details.FrameRate; fps > 0 {
+		out += "; " + strconv.FormatFloat(fps, 'f', -1, 64) + " frames a second"
+	}
+	return out + "; seen " + ago(h.SeenAt, r.Now)
 }
 
 // MaxBackups is how many backups a channel can have.
@@ -314,7 +340,7 @@ func (a *Admin) lineupData(ctx context.Context, lv lineupView, csrf string, rows
 	if err != nil {
 		return lineupData{}, err
 	}
-	d := lineupData{View: lv, Groups: groups, CSRF: csrf, homeGroup: map[string]string{}, CanRepair: a.canRepair()}
+	d := lineupData{View: lv, Groups: groups, CSRF: csrf, homeGroup: map[string]string{}, CanRepair: a.canRepair(), Now: a.now()}
 	if d.RepairDefault, err = a.store.RepairDefault(ctx); err != nil {
 		return lineupData{}, err
 	}

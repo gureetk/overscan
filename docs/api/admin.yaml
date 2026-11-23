@@ -83,6 +83,11 @@ tags:
     description: Where channels come from.
   - name: streams
     description: What is playing now, through the stream hub.
+  - name: health
+    description: >-
+      Channels whose streams failed to start the last time that they were
+      played, and what each channel's stream held when it last played, as
+      the hub saw it pass (D138). Overscan never opens a channel to test it.
   - name: capture
     description: >-
       Requests from boxes and clients that Overscan does not support yet
@@ -251,6 +256,150 @@ paths:
                       $ref: "#/components/schemas/Stream"
         "401":
           $ref: "#/components/responses/Unauthenticated"
+
+  /streams/{id}/stop:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The stream's `id`, as `GET /streams` gives it.
+        schema:
+          type: string
+    post:
+      tags: [streams]
+      operationId: stopStream
+      summary: Stop a stream
+      description: >-
+        Ends the stream, as the admin's Overview does (D138); the log says
+        it was stopped through the API. The device can play it again. For a
+        screen of a shared tuner, the screen alone.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "204":
+          description: Stopped.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          description: There is no such stream, or it has ended (`not_found`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /health:
+    get:
+      tags: [health]
+      operationId: listFailedChannels
+      summary: List the channels that failed
+      description: >-
+        The channels whose streams failed to start the last time that they
+        were played, and those hidden until they play again, those that
+        failed last first: at most 500, and how many there are. Channels
+        that their sources no longer list, and those of sources turned off,
+        are left out.
+      responses:
+        "200":
+          description: The channels.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [channels, total]
+                properties:
+                  channels:
+                    type: array
+                    maxItems: 500
+                    items:
+                      $ref: "#/components/schemas/FailedChannel"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    patch:
+      tags: [health]
+      operationId: holdFailedChannels
+      summary: Hide every channel that failed, or show them all again
+      description: >-
+        With `hidden_until_played` true, hides every channel that the list
+        holds until it plays again; with false, shows every hidden one
+        again. Each lineup's rules run again.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HoldChannels"
+      responses:
+        "200":
+          description: How many channels changed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [changed]
+                properties:
+                  changed:
+                    type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+
+  /health/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The channel's ID, its `channel_id` (not a lineup entry's).
+        schema:
+          type: integer
+    put:
+      tags: [health]
+      operationId: holdChannel
+      summary: Hide a channel until it plays again, or show it again
+      description: >-
+        Hidden, devices do not see the channel in any lineup until its
+        stream plays again: as another channel's backup or a merged copy
+        (D109, D113), or once it is shown again. Each lineup's rules run
+        again, so a merge shows another copy and a group with a first
+        number numbers without it (D137).
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HoldChannels"
+      responses:
+        "200":
+          description: The channel's health.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelHealth"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "415":
+          $ref: "#/components/responses/NotJSON"
 
   /capture:
     get:
@@ -3867,7 +4016,7 @@ components:
                 description: Its source no longer has the category.
     Channel:
       type: object
-      required: [id, channel_id, source_id, source, number, pinned, name, channel_name, renamed, group_id, group, moved, category, visibility, hidden, missing, left_out, locked, group_locked, repair, repair_own, adult, radio, rules, backups]
+      required: [id, channel_id, source_id, source, number, pinned, name, channel_name, renamed, group_id, group, moved, category, visibility, hidden, missing, left_out, locked, group_locked, repair, repair_own, adult, radio, rules, backups, health]
       properties:
         id:
           type: integer
@@ -3906,7 +4055,9 @@ components:
           $ref: "#/components/schemas/Visibility"
         hidden:
           type: boolean
-          description: Devices do not see it, for whatever reason.
+          description: >-
+            Devices do not see it, for whatever reason: hidden by hand, with
+            its group, by a rule, or until its stream plays again (D138).
         missing:
           type: boolean
           description: Its source no longer lists it, or no longer brings its category; it is kept for 7 days, with its edits.
@@ -3955,6 +4106,8 @@ components:
         merged_into:
           type: [string, "null"]
           description: The channel that a merge rule makes it a backup of, by its name in the lineup; null if none (D113).
+        health:
+          $ref: "#/components/schemas/ChannelHealth"
     RuleMatch:
       type: object
       additionalProperties: false
@@ -4425,8 +4578,11 @@ components:
           description: The server's IANA time zone; empty if it gives none.
     Stream:
       type: object
-      required: [kind, device_id, device, entry_id, item_id, channel, source_id, source, started_at, bytes, hls, playing]
+      required: [id, kind, device_id, device, entry_id, item_id, channel, source_id, source, started_at, bytes, hls, playing, details]
       properties:
+        id:
+          type: string
+          description: Names the stream, to stop it with `POST /streams/{id}/stop` (D138).
         kind:
           type: string
           enum: [live, movie, episode, archive]
@@ -4502,6 +4658,94 @@ components:
           type: string
           format: date-time
           description: For a past programme, when it began.
+        details:
+          type: string
+          description: >-
+            What a channel's stream holds, as the hub read it passing through,
+            such as "1080i H.264, AC-3" or "2160p HEVC HDR10, AAC" (D138);
+            empty until known, and for a film or an episode.
+    ChannelHealth:
+      type: object
+      required: [failed_at, failures, played_at, hidden_until_played, stream]
+      description: What Overscan has seen of a channel's stream as people watched (D138).
+      properties:
+        failed_at:
+          type: [string, "null"]
+          format: date-time
+          description: When its stream last failed to start; null if never.
+        failures:
+          type: integer
+          description: How many times in a row it failed to start; 0 once it plays.
+        played_at:
+          type: [string, "null"]
+          format: date-time
+          description: When its stream last started; null if not seen.
+        hidden_until_played:
+          type: boolean
+          description: Devices do not see it until its stream plays again.
+        stream:
+          oneOf:
+            - $ref: "#/components/schemas/StreamDetails"
+            - type: "null"
+          description: What its stream held when last read; null if never read.
+    StreamDetails:
+      type: object
+      required: [video, width, height, interlaced, bit_depth, frame_rate, dynamic_range, audio, summary, seen_at]
+      description: >-
+        What the hub read of a channel's stream from its first megabytes, in
+        Go, as it passed: the video's parameters and the audio's codecs. Empty
+        strings and zeros for what it could not read.
+      properties:
+        video:
+          type: string
+          description: The video's codec, such as "H.264", "HEVC" or "MPEG-2".
+        width:
+          type: integer
+        height:
+          type: integer
+        interlaced:
+          type: boolean
+        bit_depth:
+          type: integer
+        frame_rate:
+          type: number
+          description: Frames a second.
+        dynamic_range:
+          type: string
+          enum: ["", SDR, HDR10, HLG]
+        audio:
+          type: array
+          items:
+            type: string
+          description: Each audio track's codec, such as "AAC" or "AC-3".
+        summary:
+          type: string
+          description: All of it in a few words, such as "1080i H.264, AC-3".
+        seen_at:
+          type: string
+          format: date-time
+    FailedChannel:
+      allOf:
+        - type: object
+          required: [channel_id, name, source_id, source]
+          properties:
+            channel_id:
+              type: integer
+            name:
+              type: string
+              description: The channel's name, as its source gives it.
+            source_id:
+              type: integer
+            source:
+              type: string
+        - $ref: "#/components/schemas/ChannelHealth"
+    HoldChannels:
+      type: object
+      additionalProperties: false
+      required: [hidden_until_played]
+      properties:
+        hidden_until_played:
+          type: boolean
     Recording:
       type: object
       required: [id, device_id, entry_id, channel, title, start, stop, state, bytes]

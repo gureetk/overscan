@@ -32,9 +32,9 @@ import (
 // Kind and Version name the file's format: Version is the latest that
 // Overscan reads. A file of a later version is refused, so that nothing in
 // it is dropped without a word. Version 2 adds a lineup's own_groups, a
-// group's numbers_from and a merge rule's sources; a file is written as
-// version 1 when it holds nothing of version 2, so that an Overscan that
-// reads only version 1 imports it too.
+// group's numbers_from, and a merge rule's sources and prefer: best; a
+// file is written as version 1 when it holds nothing of version 2, so that
+// an Overscan that reads only version 1 imports it too.
 const (
 	Kind    = "overscan-lineups"
 	Version = 2
@@ -136,7 +136,7 @@ func (f File) Needs() int {
 			}
 		}
 		for _, r := range l.Rules {
-			if len(r.SourceNames) > 0 || len(r.Sources) > 0 {
+			if len(r.SourceNames) > 0 || len(r.Sources) > 0 || r.Prefer == rules.Best {
 				return 2
 			}
 		}
@@ -233,7 +233,7 @@ func Parse(data []byte) (f File, err error) {
 		return File{}, bad("The file holds something that a lineup file does not: %s", firstLine(err))
 	}
 	if need := f.Needs(); need > f.Version {
-		return File{}, bad("The file says version %d, but holds own_groups, numbers_from or a merge's sources, which version %d of lineup files added: change its version to %d.",
+		return File{}, bad("The file says version %d, but holds own_groups, numbers_from, or a merge's sources or prefer: best, which version %d of lineup files added: change its version to %d.",
 			f.Version, need, need)
 	}
 	return f, f.Check()

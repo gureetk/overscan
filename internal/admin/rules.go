@@ -132,7 +132,10 @@ func describeRule(r rules.Rule, sources map[int64]string) string {
 			}
 			by = append(by, "from "+strings.Join(from, ", then from "))
 		}
-		if r.Prefer != "" {
+		switch {
+		case r.Prefer == rules.Best:
+			by = append(by, "with the best picture seen")
+		case r.Prefer != "":
 			by = append(by, "in "+r.Prefer)
 		}
 		if len(by) > 0 {

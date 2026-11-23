@@ -30,6 +30,9 @@ type Streams interface {
 	// StopSources ends what an account plays from sources it no longer
 	// uses (D114).
 	StopSources(accountID int64, u store.Sources, reason string) int
+	// StopStream ends the stream that Stream.ID names, and reports
+	// whether there was one (D138).
+	StopStream(id, reason string) bool
 }
 
 // UseStreams gives the admin what lists the streams playing. Without it, the
@@ -194,10 +197,13 @@ type overviewData struct {
 	Waiting                    []deviceRow // pending, or asking to pair again
 	Approved, Pending, Blocked int
 	Shown, Channels, Groups    int
-	Captured                   int  // kinds of request in the capture log
-	PINSet                     bool // the household has a parental PIN (D55)
-	Locks                      int  // locked groups, and channels locked one by one
-	RepairDefault, CanRepair   bool // every channel is repaired; there is an ffmpeg to do it
+	Captured                   int // kinds of request in the capture log
+	// Failing counts the channels that failed to start the last time that
+	// they were played, and Held those hidden until they play again (D138).
+	Failing, Held            int
+	PINSet                   bool // the household has a parental PIN (D55)
+	Locks                    int  // locked groups, and channels locked one by one
+	RepairDefault, CanRepair bool // every channel is repaired; there is an ffmpeg to do it
 	// Ended is when the household's account ended, if it has (D95).
 	Ended        time.Time
 	Started, Now time.Time
@@ -335,6 +341,9 @@ func (a *Admin) overview(ctx context.Context) (overviewData, error) {
 		return d, err
 	}
 	d.Captured = len(captures)
+	if d.Failing, d.Held, err = a.store.HealthCounts(ctx); err != nil {
+		return d, err
+	}
 	if d.PINSet, err = a.pinSet(ctx); err != nil {
 		return d, err
 	}
@@ -464,6 +473,8 @@ func (a *Admin) clearCapture(w http.ResponseWriter, r *http.Request, s store.Adm
 
 // apiStream is a stream as the API describes it.
 type apiStream struct {
+	// ID names the stream, to stop it (D138).
+	ID        string    `json:"id"`
 	Kind      string    `json:"kind"`
 	DeviceID  int64     `json:"device_id"`
 	Device    string    `json:"device"`
@@ -494,6 +505,9 @@ type apiStream struct {
 	// plays from its source's archive (D81), its title and when it began.
 	Programme string     `json:"programme,omitempty"`
 	AiredAt   *time.Time `json:"aired_at,omitempty"`
+	// Details names what a channel's stream holds, as the hub read it
+	// passing through, such as "1080i H.264, AC-3" (D138); "" until known.
+	Details string `json:"details"`
 }
 
 func (a *Admin) apiStreams(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
@@ -503,7 +517,7 @@ func (a *Admin) apiStreams(w http.ResponseWriter, r *http.Request, _ store.Admin
 	}
 	out := make([]apiStream, len(rows))
 	for i, s := range rows {
-		out[i] = apiStream{Kind: s.Kind, DeviceID: s.DeviceID, Device: s.Device, AccountID: s.AccountID, EntryID: s.EntryID, ItemID: s.ItemID,
+		out[i] = apiStream{ID: s.ID, Details: s.Details, Kind: s.Kind, DeviceID: s.DeviceID, Device: s.Device, AccountID: s.AccountID, EntryID: s.EntryID, ItemID: s.ItemID,
 			Channel: s.Channel, SourceID: s.SourceID, Source: s.Source, StartedAt: s.Started.UTC().Truncate(time.Second),
 			Bytes: s.Bytes, HLS: s.HLS, Repaired: s.Repaired, Converted: s.Converted, Transcoded: s.Transcoded,
 			TranscodedBy: s.TranscodedBy, Playing: s.Playing, Timeshift: s.Timeshift, Shared: s.Shared, Programme: s.Programme}

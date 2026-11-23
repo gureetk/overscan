@@ -40,6 +40,7 @@ import (
 	"overscan.gureet.ca/internal/catchup"
 	"overscan.gureet.ca/internal/media"
 	"overscan.gureet.ca/internal/store"
+	"overscan.gureet.ca/internal/streaminfo"
 	"overscan.gureet.ca/internal/streamprofile"
 	"overscan.gureet.ca/internal/subtitles"
 )
@@ -143,6 +144,9 @@ type Hub struct {
 	// "" if there are none. tuners are the buffers' tuners that run.
 	shiftDir string
 	tuners   sync.WaitGroup
+
+	// notes are the writes of channel health to the store that run (D138).
+	notes sync.WaitGroup
 
 	// players are the players that the outputs serve, by account, address
 	// and user agent, and by device ID (D103).
@@ -323,6 +327,7 @@ const (
 
 // Stream is a session as the admin shows it.
 type Stream struct {
+	ID        string // what StopStream knows it by
 	Kind      string // PlaysChannel, PlaysMovie, PlaysEpisode or PlaysArchive
 	DeviceID  int64
 	AccountID int64 // the account of the device or player, or of the box that asked for a recording; 0 if none (D102)
@@ -356,6 +361,9 @@ type Stream struct {
 	// began.
 	Programme string
 	Aired     time.Time
+	// Details says what a live channel's stream holds, such as "1080i
+	// H.264, AC-3", once the hub has read it (D138); "" until then.
+	Details string
 }
 
 // Who transcodes a stream's video (Stream.TranscodedBy).
@@ -381,10 +389,13 @@ func (h *Hub) Streams() []Stream {
 			from = s.tuner
 		}
 		st := Stream{
-			Kind: PlaysChannel, DeviceID: s.deviceID, AccountID: s.account, EntryID: s.entryID, SourceID: s.sourceID, Source: h.source(s.sourceID).Name,
+			ID: streamID(s), Kind: PlaysChannel, DeviceID: s.deviceID, AccountID: s.account, EntryID: s.entryID, SourceID: s.sourceID, Source: h.source(s.sourceID).Name,
 			Channel: s.channel, Started: s.started, Bytes: from.bytes.Load(), HLS: from.hls, Repaired: from.repairing.Load() > 0,
 			Converted: s.converting.Load() > 0, Playing: s.active(now), Timeshift: s.shift != nil || s.canShift,
 			Shared: s.tuner != nil,
+		}
+		if d := from.details.Load(); d != nil {
+			st.Details = d.Summary()
 		}
 		if IsPlayer(s.deviceID) {
 			st.Player = "A player"
@@ -434,6 +445,7 @@ func (h *Hub) Run(ctx context.Context) {
 			}
 			h.mu.Unlock()
 			h.tuners.Wait()
+			h.notes.Wait()
 			return
 		case <-t.C:
 			h.mu.Lock()
@@ -539,6 +551,14 @@ type session struct {
 	cancel    context.CancelFunc
 	bytes     atomic.Int64
 	upstream  atomic.Int32 // its answers from its source that are open
+	// played says that its stream reached its player, for a live channel;
+	// details are what its stream holds, once read, by detector under
+	// detMu (D138).
+	played    atomic.Bool
+	details   atomic.Pointer[streaminfo.Details]
+	detMu     sync.Mutex
+	detector  *streaminfo.Detector
+	detected  bool
 	repairing atomic.Int32 // its requests going through ffmpeg now
 	// profile is, for a live channel, the output profile that its device
 	// or player gets it through (D110).

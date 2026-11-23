@@ -122,6 +122,7 @@ func (a *Admin) Handler() http.Handler {
 	mux.Handle("GET /admin/lineup/channels/{id}/edit", a.page(a.lineupRoute(a.entryPanel)))
 	mux.Handle("POST /admin/lineup/channels/{id}", a.page(a.lineupRoute(a.saveEntry)))
 	mux.Handle("POST /admin/lineup/channels/{id}/backups", a.page(a.lineupRoute(a.backupsAction)))
+	mux.Handle("POST /admin/lineup/channels/{id}/health", a.page(a.lineupRoute(a.entryHealthForm)))
 	mux.Handle("POST /admin/lineup/channels", a.page(a.lineupRoute(a.changeSome)))
 	mux.Handle("POST /admin/lineup/groups", a.page(a.lineupRoute(a.createGroupForm)))
 	mux.Handle("POST /admin/lineup/groups/{id}/{action}", a.page(a.lineupRoute(a.groupAction)))
@@ -144,6 +145,9 @@ func (a *Admin) Handler() http.Handler {
 		mux.Handle("POST /admin/"+k.path+"/order/reset", a.page(a.shelfOrderReset(k.kind)))
 		mux.Handle("POST /admin/"+k.path+"/titles", a.page(a.titlesAction(k.kind)))
 	}
+	mux.Handle("GET /admin/health", a.page(a.healthPage))
+	mux.Handle("POST /admin/health", a.page(a.healthForm))
+	mux.Handle("POST /admin/streams/{id}/stop", a.page(a.stopStream))
 	mux.Handle("GET /admin/capture", a.page(a.capturePage))
 	mux.Handle("POST /admin/capture/clear", a.page(a.clearCapture))
 	mux.Handle("GET /admin/settings", a.page(a.settingsPage))
@@ -203,7 +207,7 @@ type view struct {
 
 // pageNames are the pages in admin/templates, each of which defines
 // "content" for the layout.
-var pageNames = []string{"sign-in", "home", "password", "message", "devices", "accounts", "account", "lineup", "rules", "library", "sources", "categories", "group-categories", "capture", "settings"}
+var pageNames = []string{"sign-in", "home", "password", "message", "devices", "accounts", "account", "lineup", "rules", "library", "sources", "categories", "group-categories", "capture", "health", "settings"}
 
 // pageParts are the parts in admin/templates that pages share, by page.
 var pageParts = map[string][]string{"lineup": {"lineup-nav", "replace-form"}, "rules": {"lineup-nav"}, "library": {"replace-form"},

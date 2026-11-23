@@ -87,6 +87,11 @@ type Rule struct {
 	SourceNames []string `json:"-" yaml:"sources,omitempty"`
 }
 
+// Best is a merge rule's Prefer for the copy whose stream was the best
+// when last seen: the most lines, then HDR, progressive and a high frame
+// rate (D138).
+const Best = "best"
+
 // MaxSources caps the sources that a merge rule puts in order.
 const MaxSources = 20
 
@@ -251,10 +256,14 @@ func Check(r Rule) (Rule, error) {
 		default:
 			return Rule{}, bad("Say what copies have the same: their guide ID or their name.")
 		}
-		if prefer := strings.TrimSpace(r.Prefer); prefer != "" {
+		switch prefer := strings.TrimSpace(r.Prefer); {
+		case prefer == "":
+		case strings.EqualFold(prefer, Best):
+			keep.Prefer = Best
+		default:
 			tag, ok := qualityTag(prefer)
 			if !ok {
-				return Rule{}, bad("A quality to show first is one of %s.", strings.Join(QualityTags, ", "))
+				return Rule{}, bad("A quality to show first is one of %s, or best for the best copy seen.", strings.Join(QualityTags, ", "))
 			}
 			keep.Prefer = tag
 		}
@@ -472,7 +481,7 @@ type Merger struct {
 // words, so that "Granite One HD" and "granite one (FHD)" are copies.
 func CompileMerge(r Rule) (Merger, error) {
 	m := Merger{Prefers: func(Channel) bool { return false }}
-	if r.Prefer != "" {
+	if r.Prefer != "" && r.Prefer != Best {
 		m.Prefers = func(c Channel) bool { return hasWord(c.Name, r.Prefer) }
 	}
 	if r.Copies == ByGuide {

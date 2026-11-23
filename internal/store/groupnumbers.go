@@ -43,7 +43,8 @@ type groupMember struct {
 // order, those without numbers last.
 func groupMembers(ctx context.Context, tx *sql.Tx, lineupID, groupID int64) ([]groupMember, error) {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT e.id, COALESCE(e.number, 0), COALESCE(e.numbered_in = ?2, 0), COALESCE(e.hidden, e.rule_hidden, 0) = 1,
+		SELECT e.id, COALESCE(e.number, 0), COALESCE(e.numbered_in = ?2, 0),
+			COALESCE(e.hidden, e.rule_hidden, 0) = 1 OR `+heldChannel+`,
 			`+entryName+`
 		FROM lineup_entries e JOIN channels c ON c.id = e.channel_id`+takenJoins+`
 		WHERE e.lineup_id = ?1 AND COALESCE(e.group_id, e.rule_group_id, m.group_id) = ?2 AND c.missing_since IS NULL

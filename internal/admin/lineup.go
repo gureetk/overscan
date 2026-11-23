@@ -336,6 +336,8 @@ type apiEntry struct {
 	Backups     int     `json:"backups"`
 	RuleBackups int     `json:"rule_backups"`
 	MergedInto  *string `json:"merged_into"`
+	// Health is what Overscan has seen of its channel's stream (D138).
+	Health apiHealth `json:"health"`
 }
 
 func entryBody(e store.LineupEntry) apiEntry {
@@ -343,7 +345,7 @@ func entryBody(e store.LineupEntry) apiEntry {
 		Name: e.Name, ChannelName: e.ChannelName, Renamed: e.Renamed, Moved: e.Moved,
 		Visibility: visibilityNames[e.Visibility], Hidden: e.Hidden, Missing: e.Missing, LeftOut: e.LeftOut, Locked: e.Locked,
 		GroupLocked: e.GroupLocked, Repair: e.Repair, RepairOwn: e.RepairOwn, Adult: e.Adult, Radio: e.Radio,
-		RuleBackups: e.RuleBackups}
+		RuleBackups: e.RuleBackups, Health: healthBody(e.Health)}
 	if e.Number > 0 {
 		out.Number = &e.Number
 	}

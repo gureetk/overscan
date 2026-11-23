@@ -144,15 +144,19 @@
   {{- if .Data.Streams}}
   <div class="table-wrap">
   <table class="list playing">
-    <thead><tr><th>Channel</th><th>Device</th><th>Source</th><th>Started</th><th class="right">Sent</th></tr></thead>
+    <thead><tr><th>Channel</th><th>Device</th><th>Source</th><th>Started</th><th class="right">Sent</th><th><span class="sr">Stop</span></th></tr></thead>
     <tbody>
     {{- range .Data.Streams}}
       <tr>
-        <td><div class="channel-cell"><span class="num-chip">{{if eq .Kind "movie"}}Film{{else if eq .Kind "episode"}}Ep.{{else if .Number}}{{.Number}}{{else}}–{{end}}</span><div><span class="strong">{{.Channel}}</span>{{if eq .Kind "archive"}}<div class="note">{{if .Programme}}{{.Programme}}, {{end}}from {{.Aired.Format "2 Jan 15:04"}} UTC</div>{{end}}{{if not .Playing}}<div class="note warn">Waiting for the player to come back</div>{{end}}</div></div></td>
+        <td><div class="channel-cell"><span class="num-chip">{{if eq .Kind "movie"}}Film{{else if eq .Kind "episode"}}Ep.{{else if .Number}}{{.Number}}{{else}}–{{end}}</span><div><span class="strong">{{.Channel}}</span>{{if eq .Kind "archive"}}<div class="note">{{if .Programme}}{{.Programme}}, {{end}}from {{.Aired.Format "2 Jan 15:04"}} UTC</div>{{end}}{{with .Details}}<div class="note" title="What the stream holds, as Overscan read it passing through">{{.}}</div>{{end}}{{if not .Playing}}<div class="note warn">Waiting for the player to come back</div>{{end}}</div></div></td>
         <td>{{.Device}}{{if or .Model .Account}}<div class="note">{{.Model}}{{if and .Model .Account}} · {{end}}{{.Account}}</div>{{end}}</td>
         <td><div class="chips">{{.Source}}{{if .HLS}}<span class="badge" title="The source sends HLS">HLS</span>{{end}}{{if .Repaired}}<span class="badge accent" title="It goes through ffmpeg, which rebuilds its timestamps">Repaired</span>{{end}}{{if .Timeshift}}<span class="badge" title="It plays through a buffer on this server, so that the box can pause it and go back">Timeshift</span>{{end}}{{if .Shared}}<span class="badge" title="It shares one connection to its source with the other screens that play this channel">Shared</span>{{end}}{{if and .Converted (not .Transcoded)}}<span class="badge accent" title="It goes through ffmpeg, which converts what the box cannot play">Converted</span>{{end}}{{if .Transcoded}}<span class="badge accent" title="{{if eq .TranscodedBy "overscan"}}This server's ffmpeg transcodes{{else}}Its source's server transcodes{{end}} the picture, which the box cannot play">Transcoded</span>{{end}}</div></td>
         <td>{{.Since}}</td>
         <td class="right">{{.Received}}</td>
+        <td class="right">{{if .ID}}<form method="post" action="/admin/streams/{{.ID}}/stop" hx-post="/admin/streams/{{.ID}}/stop" hx-target="#overview" hx-select="#overview" hx-swap="outerHTML">
+          <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+          <button type="submit" class="quiet small danger" title="End this stream. The device can play it again.">Stop</button>
+        </form>{{end}}</td>
       </tr>
     {{- end}}
     </tbody>
@@ -164,6 +168,14 @@
 </section>
 
 <div class="columns">
+  <section class="card side-card" aria-labelledby="health-title">
+    <span class="tile-icon{{if .Data.Failing}} warn{{end}}">{{template "i-alert"}}</span>
+    <div>
+      <h2 id="health-title">Channels that failed</h2>
+      <p>{{if or .Data.Failing .Data.Held}}{{if .Data.Failing}}{{count .Data.Failing}} {{plural .Data.Failing "channel"}} failed to start the last time {{if eq .Data.Failing 1}}it was{{else}}they were{{end}} played.{{end}}{{if .Data.Held}} {{count .Data.Held}} {{if eq .Data.Held 1}}is{{else}}are{{end}} hidden until {{if eq .Data.Held 1}}it plays{{else}}they play{{end}} again.{{end}}{{else}}Every channel played the last time someone watched it.{{end}}</p>
+      <a href="/admin/health">See the channels that failed</a>
+    </div>
+  </section>
   <section class="card side-card" aria-labelledby="capture-title">
     <span class="tile-icon">{{template "i-capture"}}</span>
     <div>

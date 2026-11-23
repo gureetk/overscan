@@ -40,9 +40,11 @@ What to check when something goes wrong, by what you see. [guide.md](guide.md) s
 
 **A channel does not play.** The box says why. A channel that is missing altogether may be hidden, in a group that is hidden, in another lineup, or from a source that the account does not use (*Sources* on its page).
 
-- *All connections to this source are in use.*: the source plays as many streams as its *Streams at once* allows, and Overscan never goes over it. The log says `stream refused: the source is at its connection limit`. Stop a stream elsewhere, or turn on the *Shared tuner* if screens watch the same channel.
+- *All connections to this source are in use.*: the source plays as many streams as its *Streams at once* allows, and Overscan never goes over it. The log says `stream refused: the source is at its connection limit`. *Overview* → *Playing now* says what holds the connections, and *Stop* ends a stream that a forgotten player holds. Stop a stream elsewhere, or turn on the *Shared tuner* if screens watch the same channel.
 - *This account plays as many streams at once as it may. Stop one elsewhere first.*: the account's limit, on its page on *Accounts*. The log says `stream refused: the account plays as many streams as it may`.
 - Nothing plays, or the picture stays black: the log says `a stream's source refused it` with what the source answered, or `cannot reach a stream`. A channel can have backups that play when its own stream cannot start. `overscan debug channel <number>` checks the channel from the server ([trying-it.md](trying-it.md), section 6).
+
+**A channel has disappeared from the boxes, and *Live TV* says *Hidden until it plays*.** Its stream failed to start, and it was hidden until it plays again, on *Overview* → *Channels that failed* or its panel. Show it again there, or give it a backup: it shows again by itself once its stream plays, as another channel's backup or a merged copy.
 
 **A channel stutters, skips or jumps back.** Set it to be repaired on *Live TV* (D57): its stream then goes through ffmpeg, which the log's start lines say it found.
 
