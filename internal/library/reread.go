@@ -4,6 +4,8 @@ package library
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"path/filepath"
 
 	"overscan.gureet.ca/internal/source"
@@ -74,4 +76,44 @@ func (l *Library) readAgain(src store.Source, kind string) {
 		}
 		l.startList(src, kind, true)
 	}()
+}
+
+// ErrNoList is the error for a source that has no list of films or of
+// series to read: one that is off, has none, or is gone.
+var ErrNoList = errors.New("the source has no such list to read")
+
+// ReadList reads a source's list of films or of series now, after the read
+// under way if any, which may have begun before a change, and waits for it
+// until ctx is done. The read goes on after ctx is done, for the next
+// device that asks. A change to the categories that the source brings
+// (D135) takes effect so.
+func (l *Library) ReadList(ctx context.Context, sourceID int64, kind string) error {
+	if kind != store.KindMovie && kind != store.KindSeries {
+		return fmt.Errorf("library: %q is not a kind of title", kind)
+	}
+	src, err := l.store.Source(ctx, sourceID)
+	if errors.Is(err, store.ErrNotFound) || err == nil && (!src.Enabled || !src.Settings().HasLibrary()) {
+		return ErrNoList
+	}
+	if err != nil {
+		return err
+	}
+	if p := l.startList(src, kind, false); p != nil {
+		select {
+		case <-p.done:
+		case <-ctx.Done():
+			l.readAgain(src, kind)
+			return ctx.Err()
+		}
+	}
+	p := l.startList(src, kind, true)
+	if p == nil {
+		return ErrNoList // the library is stopping
+	}
+	select {
+	case <-p.done:
+		return p.err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

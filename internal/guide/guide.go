@@ -158,11 +158,22 @@ func (g *Reader) ReadIfDue(ctx context.Context, src source.Settings, id int64) (
 	if src.Type == source.TypeStalker {
 		interval = min(interval, StalkerInterval)
 	}
+	// A change to the categories that the source brings (D135) makes its
+	// guide due, for the channels that it brings now.
+	choice, err := g.store.CategoryChoice(ctx, id, store.KindLive)
+	if err != nil {
+		return false, Result{}, err
+	}
 	age := g.now().Sub(state.ReadAt)
 	due := state.ReadAt.IsZero() || state.ReadFrom != readFrom(address) || age >= interval ||
-		state.Error != "" && age >= RetryAfter
+		state.Error != "" && age >= RetryAfter || choice.ChangedAt.After(state.ReadAt)
 	if !due {
 		return false, Result{}, nil
+	}
+	// A source that brings no channel has no programmes to keep, so its
+	// guide is not fetched until it does.
+	if listed, err := g.store.Source(ctx, id); err != nil || listed.Channels == 0 {
+		return false, Result{}, err
 	}
 	res, err := g.read(ctx, src, id, address)
 	return true, res, err

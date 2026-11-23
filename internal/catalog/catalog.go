@@ -69,6 +69,13 @@ type Refresher struct {
 
 	mu    sync.Mutex
 	locks map[int64]*sync.Mutex // by source: one refresh of a source at a time
+	// guides holds, by source, the lock that a read of its guide takes:
+	// one at a time.
+	guides map[int64]*sync.Mutex
+	// base is Run's context, under which a guide read that RefreshNow
+	// starts goes on; background counts those reads, which Run waits for.
+	base       context.Context
+	background sync.WaitGroup
 	// mayBeEmpty is a folder that may hold no films or series: the
 	// recordings folder (D89).
 	mayBeEmpty string
@@ -91,6 +98,7 @@ func NewRefresher(st *store.Store, log *slog.Logger, version string) *Refresher 
 		stalker:    stalker.NewPool(nil),
 		reload:     make(chan struct{}, 1),
 		locks:      map[int64]*sync.Mutex{},
+		guides:     map[int64]*sync.Mutex{},
 		maxBytes:   maxPlaylistBytes,
 		firstRetry: time.Minute,
 	}
@@ -122,11 +130,15 @@ func (r *Refresher) Reload() {
 // settings change, it starts over with the new ones. After a refresh that
 // worked, it reads the source's guide if that is due.
 func (r *Refresher) Run(ctx context.Context) {
+	r.mu.Lock()
+	r.base = ctx
+	r.mu.Unlock()
 	loops := map[int64]*loop{}
 	defer func() {
 		for _, l := range loops {
 			l.stop()
 		}
+		r.background.Wait()
 	}()
 	for ctx.Err() == nil {
 		r.sync(ctx, loops)
@@ -230,11 +242,7 @@ func (r *Refresher) loop(ctx context.Context, src source.Settings, id int64) {
 			continue
 		}
 		retry = r.firstRetry
-		if r.guide != nil {
-			// Its failures are logged and recorded; the next is tried after
-			// guide.RetryAfter, at a later refresh.
-			_, _, _ = r.guide.ReadIfDue(ctx, src, id)
-		}
+		r.readGuide(ctx, src, id)
 		// A refresh and a guide read build large lists that are garbage
 		// once stored. Give that memory back to the system now, rather than
 		// over the next minutes, so that the server stays small while it
@@ -245,13 +253,52 @@ func (r *Refresher) loop(ctx context.Context, src source.Settings, id int64) {
 }
 
 // RefreshNow reads a source now, whatever its schedule, and stores its
-// catalog.
+// catalog. If that works and the source's guide is due, as it is after a
+// change to the categories that the source brings (D135), it then reads
+// the guide too, after it returns.
 func (r *Refresher) RefreshNow(ctx context.Context, id int64) (store.CatalogChanges, error) {
 	settings, err := r.store.SourceSettings(ctx, id)
 	if err != nil {
 		return store.CatalogChanges{}, err
 	}
-	return r.Refresh(ctx, settings, id)
+	ch, err := r.Refresh(ctx, settings, id)
+	if err != nil {
+		return ch, err
+	}
+	r.mu.Lock()
+	base := r.base
+	if base != nil && base.Err() == nil {
+		r.background.Add(1)
+	} else {
+		base = nil
+	}
+	r.mu.Unlock()
+	if base != nil {
+		go func() {
+			defer r.background.Done()
+			r.readGuide(base, settings, id)
+		}()
+	}
+	return ch, nil
+}
+
+// readGuide reads a source's guide if it is due, one read of a source's
+// guide at a time. Its failures are logged and recorded; the next is tried
+// after guide.RetryAfter, at a later refresh.
+func (r *Refresher) readGuide(ctx context.Context, src source.Settings, id int64) {
+	if r.guide == nil {
+		return
+	}
+	r.mu.Lock()
+	l, ok := r.guides[id]
+	if !ok {
+		l = &sync.Mutex{}
+		r.guides[id] = l
+	}
+	r.mu.Unlock()
+	l.Lock()
+	defer l.Unlock()
+	_, _, _ = r.guide.ReadIfDue(ctx, src, id)
 }
 
 // Tested is what a test of a source found.
@@ -363,9 +410,9 @@ func (r *Refresher) Refresh(ctx context.Context, src source.Settings, id int64) 
 			"skipped", res.skipped, "took", r.now().Sub(start).Round(time.Millisecond))
 		return changes, nil
 	}
-	r.log.Info("source refreshed", "source", src.Name, "channels", len(res.channels),
+	r.log.Info("source refreshed", "source", src.Name, "channels", changes.Added+changes.Updated,
 		"added", changes.Added, "missing", changes.Missing, "removed", changes.Purged,
-		"skipped", res.skipped, "took", r.now().Sub(start).Round(time.Millisecond))
+		"left_out", changes.LeftOut, "skipped", res.skipped, "took", r.now().Sub(start).Round(time.Millisecond))
 	return changes, nil
 }
 

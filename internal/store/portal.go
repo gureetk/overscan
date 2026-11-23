@@ -36,7 +36,8 @@ type PortalCategory struct {
 // ApplyPortalCategories records a read of a portal's categories of films or
 // of series, in order, at the given time. Titles stay as they are: they
 // come a page at a time (ApplyPortalPage). A category that the read does
-// not list leaves the shelves, and the store, once no title is on it.
+// not list, or that the portal does not bring (D135), leaves the shelves,
+// and the store once no title is on it, so that no device reads its pages.
 func (s *Store) ApplyPortalCategories(ctx context.Context, sourceID int64, kind string, categories []LibraryCategory,
 	at time.Time) error {
 	fail := func(err error) error {
@@ -65,9 +66,17 @@ func (s *Store) ApplyPortalCategories(ctx context.Context, sourceID int64, kind 
 		sourceID, kind, when, when, sourceID, kind).Scan(&gen); err != nil {
 		return fail(err)
 	}
+	listed := libraryCategories(categories, nil)
+	for i := range listed {
+		listed[i].items = -1 // its titles are read a page at a time (D77)
+	}
+	brings, err := bringCategories(ctx, tx, sourceID, kind, listed, at)
+	if err != nil {
+		return fail(err)
+	}
 	seen := map[string]bool{}
 	for _, c := range categories {
-		if c.Key == "" || c.Name == "" || seen[c.Key] {
+		if c.Key == "" || c.Name == "" || seen[c.Key] || !brings(c.Key) {
 			continue
 		}
 		seen[c.Key] = true

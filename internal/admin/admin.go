@@ -44,6 +44,7 @@ type Admin struct {
 	tmdbBase string
 	recorder Recorder // records programmes; nil if this server cannot (D89)
 	folders  Folders  // reads the folder sources again; nil for none (D88)
+	lists    Lists    // reads a source's films or series again; nil for none (D135)
 }
 
 // New returns the admin, which keeps its administrator and sessions in st.
@@ -112,6 +113,10 @@ func (a *Admin) Handler() http.Handler {
 	mux.Handle("POST /admin/sources", a.page(a.addSourceForm))
 	mux.Handle("GET /admin/sources/{id}", a.page(a.sourcePage))
 	mux.Handle("POST /admin/sources/{id}", a.page(a.saveSourceForm))
+	mux.Handle("GET /admin/sources/{id}/categories", a.page(a.categoriesPage))
+	// A source's categories can run to a thousand, each sent with the form.
+	mux.Handle("POST /admin/sources/{id}/categories", a.pageWithin(maxCategoriesFormBytes, a.categoriesForm))
+	mux.Handle("POST /admin/sources/{id}/categories/read", a.page(a.categoriesRead))
 	mux.Handle("POST /admin/sources/{id}/{action}", a.page(a.sourceAction))
 	mux.Handle("GET /admin/lineup", a.page(a.lineupRoute(a.lineupPage)))
 	mux.Handle("GET /admin/lineup/channels/{id}/edit", a.page(a.lineupRoute(a.entryPanel)))
@@ -193,7 +198,7 @@ type view struct {
 
 // pageNames are the pages in admin/templates, each of which defines
 // "content" for the layout.
-var pageNames = []string{"sign-in", "home", "password", "message", "devices", "accounts", "account", "lineup", "rules", "library", "sources", "capture", "settings"}
+var pageNames = []string{"sign-in", "home", "password", "message", "devices", "accounts", "account", "lineup", "rules", "library", "sources", "categories", "capture", "settings"}
 
 // pageParts are the parts in admin/templates that pages share, by page.
 var pageParts = map[string][]string{"lineup": {"lineup-nav"}, "rules": {"lineup-nav"}, "accounts": {"account-parts"}, "account": {"account-parts"}}

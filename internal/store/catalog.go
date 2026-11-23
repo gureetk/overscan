@@ -59,18 +59,22 @@ type CatalogChannel struct {
 type CatalogChanges struct {
 	Added   int // channels new to the catalog
 	Updated int // channels it had already
-	Missing int // channels the source stopped listing
+	Missing int // channels the source stopped listing, or no longer brings
 	Purged  int // channels missing for longer than MissingGrace, now removed
+	// LeftOut counts the channels that the source listed in categories
+	// that it does not bring (D135).
+	LeftOut int
 }
 
 // ApplyCatalog makes the catalog of a source match a refresh that listed
 // channels, in order, at the given time. It all happens in one transaction:
-// listed channels are added or updated, unlisted ones are marked missing,
-// channels missing for longer than MissingGrace are removed with their lineup
-// entries, new categories join a group of every lineup (D47, D106), new
-// channels join every lineup, under the number they want when that is free
-// and after the highest number otherwise (D40), and every lineup's rules run
-// (D107).
+// the categories that the refresh listed are recorded, and only the
+// channels of those that the source brings are kept (D135); those channels
+// are added or updated, the others are marked missing, channels missing for
+// longer than MissingGrace are removed with their lineup entries, new
+// categories join a group of every lineup (D47, D106), new channels join
+// every lineup, under the number they want when that is free and after the
+// highest number otherwise (D40), and every lineup's rules run (D107).
 func (s *Store) ApplyCatalog(ctx context.Context, sourceID int64, channels []CatalogChannel, at time.Time) (CatalogChanges, error) {
 	var ch CatalogChanges
 	fail := func(err error) (CatalogChanges, error) {
@@ -82,6 +86,19 @@ func (s *Store) ApplyCatalog(ctx context.Context, sourceID int64, channels []Cat
 	}
 	defer tx.Rollback()
 	when := formatTime(at)
+
+	brings, err := bringCategories(ctx, tx, sourceID, KindLive, liveCategories(channels), at)
+	if err != nil {
+		return fail(err)
+	}
+	kept := make([]CatalogChannel, 0, len(channels))
+	for _, c := range channels {
+		if brings(c.Category) {
+			kept = append(kept, c)
+		}
+	}
+	ch.LeftOut = len(channels) - len(kept)
+	channels = kept
 
 	// Categories, in order of first appearance.
 	categories := map[string]int64{}
@@ -239,6 +256,24 @@ func (s *Store) ApplyCatalog(ctx context.Context, sourceID int64, channels []Cat
 		return fail(err)
 	}
 	return ch, nil
+}
+
+// liveCategories returns the categories of channels, in the order of their
+// first channels, with how many channels each holds; channels without a
+// category are in the one whose key is "".
+func liveCategories(channels []CatalogChannel) []listedCategory {
+	at := map[string]int{}
+	var out []listedCategory
+	for _, c := range channels {
+		i, ok := at[c.Category]
+		if !ok {
+			i = len(out)
+			at[c.Category] = i
+			out = append(out, listedCategory{key: c.Category, name: c.Category})
+		}
+		out[i].items++
+	}
+	return out
 }
 
 // Numbering (D40, D47). A channel that its source lists wants a number: its

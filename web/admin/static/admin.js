@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Small helps for the admin's pages, which work without them: filtering
-// the lineup's groups, ticking every channel, marking the channel open in
-// the panel, closing menus and keeping them on the screen, and choosing a
-// group on a phone. Listeners sit on the document, so they keep working when
-// htmx replaces part of a page.
+// the lineup's groups and a source's categories, ticking every channel or
+// every category shown, marking the channel open in the panel, closing
+// menus and keeping them on the screen, and choosing a group on a phone.
+// Listeners sit on the document, so they keep working when htmx replaces
+// part of a page.
 "use strict";
 
 document.documentElement.classList.add("js");
@@ -30,6 +31,27 @@ document.addEventListener("input", (e) => {
   const text = input.value.trim().toLowerCase();
   for (const item of list.querySelectorAll("[data-name]")) {
     item.hidden = text !== "" && !item.dataset.name.toLowerCase().includes(text);
+  }
+});
+
+// A button that ticks, or unticks, the boxes of its list's items that a
+// filter leaves shown, such as a source's categories.
+document.addEventListener("click", (e) => {
+  const button = e.target.closest("button[data-tick-shown], button[data-untick-shown]");
+  if (!button) {
+    return;
+  }
+  const on = button.hasAttribute("data-tick-shown");
+  const list = document.querySelector(on ? button.dataset.tickShown : button.dataset.untickShown);
+  if (!list) {
+    return;
+  }
+  for (const item of list.querySelectorAll("[data-name]")) {
+    if (!item.hidden) {
+      for (const box of item.querySelectorAll('input[type="checkbox"]')) {
+        box.checked = on;
+      }
+    }
   }
 });
 

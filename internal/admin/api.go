@@ -123,6 +123,9 @@ func (a *Admin) apiRoutes() []apiRoute {
 		{method: "DELETE", path: "sources/{id}", fn: a.apiDeleteSource},
 		{method: "POST", path: "sources/{id}/refresh", fn: a.apiRefreshSource},
 		{method: "POST", path: "sources/{id}/test", fn: a.apiTestSource},
+		{method: "GET", path: "sources/{id}/categories/{kind}", fn: a.apiCategories},
+		{method: "PUT", path: "sources/{id}/categories/{kind}", fn: a.apiSetCategories},
+		{method: "POST", path: "sources/{id}/categories/{kind}/read", fn: a.apiReadCategories},
 	}
 }
 

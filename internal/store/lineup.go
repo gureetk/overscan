@@ -346,7 +346,10 @@ type LineupEntry struct {
 	Category    string // the source's category, "" if none
 	Visibility  Visibility
 	Hidden      bool // devices do not see it, for whatever reason
-	Missing     bool // its source no longer lists it
+	Missing     bool // its source no longer lists it, or no longer brings its category
+	// LeftOut is set when it is missing because its source no longer
+	// brings its category (D135).
+	LeftOut     bool
 	Logo        string
 	Locked      bool  // the administrator locked it (D55)
 	GroupLocked bool  // its group is locked
@@ -456,7 +459,16 @@ const entrySelect = `
 			(SELECT count(*) FROM lineup_entry_rule_backups WHERE entry_id = e.id),
 			COALESCE((SELECT COALESCE(m.name, m.rule_name, mc.name)
 				FROM lineup_entry_rule_backups rb JOIN lineup_entries m ON m.id = rb.entry_id JOIN channels mc ON mc.id = m.channel_id
-				WHERE rb.channel_id = e.channel_id AND m.lineup_id = e.lineup_id LIMIT 1), '')`
+				WHERE rb.channel_id = e.channel_id AND m.lineup_id = e.lineup_id LIMIT 1), ''),
+			` + leftOutSQL
+
+// leftOutSQL is true of a channel c, in its category k, that is missing
+// because its source no longer brings its category (D135).
+const leftOutSQL = `(c.missing_since IS NOT NULL
+			AND EXISTS (SELECT 1 FROM source_category_choices sc
+				WHERE sc.source_id = c.source_id AND sc.kind = '` + KindLive + `' AND sc.only_ticked = 1)
+			AND NOT EXISTS (SELECT 1 FROM source_categories sk
+				WHERE sk.source_id = c.source_id AND sk.kind = '` + KindLive + `' AND sk.source_key = COALESCE(k.name, '') AND sk.ticked = 1))`
 
 func scanEntry(row rowScanner) (LineupEntry, error) {
 	var e LineupEntry
@@ -466,7 +478,7 @@ func scanEntry(row rowScanner) (LineupEntry, error) {
 		&e.Renamed, &e.GroupID, &e.Group, &e.Moved, &e.Category, &e.Visibility, &e.Hidden, &e.Missing, &e.Logo,
 		&e.Locked, &e.GroupLocked, &e.Repair, &own, &e.Adult, &e.AdultLocked, &e.AdultHidden, &e.Radio,
 		&e.RuleRenamed, &e.RuleMoved, &e.RuleShown, &e.RuleHidden, &e.RuleLogo, &e.RuleNumbered, &e.RuleGuide, &shift,
-		&e.Backups, &e.RuleBackups, &e.MergedInto)
+		&e.Backups, &e.RuleBackups, &e.MergedInto, &e.LeftOut)
 	if own.Valid {
 		e.RepairOwn = &own.Bool
 	}

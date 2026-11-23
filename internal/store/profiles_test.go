@@ -40,7 +40,10 @@ func TestProfilesMigration(t *testing.T) {
 		INSERT INTO lineup_entries (lineup_id, channel_id, number) SELECT 1, id, 1 FROM channels`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := old.ApplyLibrary(ctx, ids["main"], KindMovie, filmCategories, films, at); err != nil {
+	// A film, as schema 30 kept it.
+	if _, err := old.db.ExecContext(ctx, `
+		INSERT INTO titles (source_id, kind, source_key, name, position, generation, added_at)
+		VALUES (?, 'movie', '5001', 'The Long Field', 1, 1, ?)`, ids["main"], at.Unix()); err != nil {
 		t.Fatal(err)
 	}
 	var entry, title int64

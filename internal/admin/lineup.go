@@ -312,12 +312,15 @@ type apiEntry struct {
 	Visibility  string  `json:"visibility"`
 	Hidden      bool    `json:"hidden"`
 	Missing     bool    `json:"missing"`
-	Locked      bool    `json:"locked"`
-	GroupLocked bool    `json:"group_locked"`
-	Repair      bool    `json:"repair"`
-	RepairOwn   *bool   `json:"repair_own"`
-	Adult       bool    `json:"adult"` // its source marks it for adults (D86)
-	Radio       bool    `json:"radio"` // its source lists it as a radio station (D87)
+	// LeftOut is set when it is missing because its source no longer
+	// brings its category (D135).
+	LeftOut     bool  `json:"left_out"`
+	Locked      bool  `json:"locked"`
+	GroupLocked bool  `json:"group_locked"`
+	Repair      bool  `json:"repair"`
+	RepairOwn   *bool `json:"repair_own"`
+	Adult       bool  `json:"adult"` // its source marks it for adults (D86)
+	Radio       bool  `json:"radio"` // its source lists it as a radio station (D87)
 	// Rules lists what the lineup's rules do to it, by their actions
 	// (D107); the administrator's own edits win over them.
 	Rules []string `json:"rules"`
@@ -333,7 +336,7 @@ type apiEntry struct {
 func entryBody(e store.LineupEntry) apiEntry {
 	out := apiEntry{ID: e.ID, ChannelID: e.ChannelID, SourceID: e.SourceID, Source: e.Source, Pinned: e.Pinned, Backups: e.Backups,
 		Name: e.Name, ChannelName: e.ChannelName, Renamed: e.Renamed, Moved: e.Moved,
-		Visibility: visibilityNames[e.Visibility], Hidden: e.Hidden, Missing: e.Missing, Locked: e.Locked,
+		Visibility: visibilityNames[e.Visibility], Hidden: e.Hidden, Missing: e.Missing, LeftOut: e.LeftOut, Locked: e.Locked,
 		GroupLocked: e.GroupLocked, Repair: e.Repair, RepairOwn: e.RepairOwn, Adult: e.Adult, Radio: e.Radio,
 		RuleBackups: e.RuleBackups}
 	if e.Number > 0 {

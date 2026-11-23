@@ -108,8 +108,11 @@ type LibraryEpisode struct {
 type LibraryChanges struct {
 	Added   int // titles new to the library
 	Updated int // titles it had already
-	Missing int // titles the source stopped listing
+	Missing int // titles the source stopped listing, or no longer brings
 	Purged  int // titles missing for longer than LibraryGrace, now removed
+	// LeftOut counts the titles that the source listed in categories that
+	// it does not bring (D135).
+	LeftOut int
 }
 
 // checkKind returns an error unless kind is KindMovie or KindSeries.
@@ -122,11 +125,12 @@ func checkKind(kind string) error {
 
 // ApplyLibrary makes a source's films or series match a read that listed
 // categories and titles, in order, at the given time. It all happens in one
-// transaction: listed categories and titles are added or updated, those not
-// listed are marked missing, titles missing for longer than LibraryGrace are
-// removed, and the read is recorded. Details that devices made Overscan read
-// are kept. A title's container and picture are kept when the list gives
-// none.
+// transaction: the categories that the read listed are recorded, and only
+// those that the source brings, with their titles, are kept (D135); those
+// categories and titles are added or updated, the others are marked
+// missing, titles missing for longer than LibraryGrace are removed, and the
+// read is recorded. Details that devices made Overscan read are kept. A
+// title's container and picture are kept when the list gives none.
 func (s *Store) ApplyLibrary(ctx context.Context, sourceID int64, kind string, categories []LibraryCategory,
 	titles []LibraryTitle, at time.Time) (LibraryChanges, error) {
 	var ch LibraryChanges
@@ -142,6 +146,41 @@ func (s *Store) ApplyLibrary(ctx context.Context, sourceID int64, kind string, c
 	}
 	defer tx.Rollback()
 	when := formatTime(at)
+
+	found := libraryCategories(categories, titles)
+	brings, err := bringCategories(ctx, tx, sourceID, kind, found, at)
+	if err != nil {
+		return fail(err)
+	}
+	known := map[string]bool{}
+	for _, c := range found {
+		known[c.key] = true
+	}
+	keptCategories := make([]LibraryCategory, 0, len(categories))
+	for _, c := range categories {
+		if brings(c.Key) {
+			keptCategories = append(keptCategories, c)
+		}
+	}
+	// A title listed twice is kept as it is first listed.
+	keptTitles := make([]LibraryTitle, 0, len(titles))
+	first := map[string]bool{}
+	for _, t := range titles {
+		if t.Key == "" || t.Name == "" || first[t.Key] {
+			continue
+		}
+		first[t.Key] = true
+		key := t.Category
+		if !known[key] {
+			key = ""
+		}
+		if brings(key) {
+			keptTitles = append(keptTitles, t)
+		} else {
+			ch.LeftOut++
+		}
+	}
+	categories, titles = keptCategories, keptTitles
 
 	var gen int64
 	if err := tx.QueryRowContext(ctx, `
@@ -179,7 +218,7 @@ func (s *Store) ApplyLibrary(ctx context.Context, sourceID int64, kind string, c
 		cats[c.Key] = id
 	}
 
-	known := map[string]bool{}
+	known = map[string]bool{}
 	rows, err := tx.QueryContext(ctx, "SELECT source_key FROM titles WHERE source_id = ? AND kind = ?", sourceID, kind)
 	if err != nil {
 		return fail(err)
@@ -279,6 +318,43 @@ func (s *Store) ApplyLibrary(ctx context.Context, sourceID int64, kind string, c
 		return fail(err)
 	}
 	return ch, nil
+}
+
+// libraryCategories returns the categories that a read of films or of
+// series listed, in order, with how many of its titles each holds; titles
+// without a category, or in one that the read did not list, are in the one
+// whose key is "".
+func libraryCategories(categories []LibraryCategory, titles []LibraryTitle) []listedCategory {
+	at := map[string]int{}
+	var out []listedCategory
+	for _, c := range categories {
+		if c.Key == "" || c.Name == "" {
+			continue
+		}
+		if _, ok := at[c.Key]; ok {
+			continue
+		}
+		at[c.Key] = len(out)
+		out = append(out, listedCategory{key: c.Key, name: c.Name})
+	}
+	none := -1
+	seen := map[string]bool{}
+	for _, t := range titles {
+		if t.Key == "" || t.Name == "" || seen[t.Key] {
+			continue // as ApplyLibrary leaves them out
+		}
+		seen[t.Key] = true
+		i, ok := at[t.Category]
+		if !ok {
+			if none < 0 {
+				none = len(out)
+				out = append(out, listedCategory{})
+			}
+			i = none
+		}
+		out[i].items++
+	}
+	return out
 }
 
 // unixOrZero returns t in Unix seconds, or 0 for the zero time.
