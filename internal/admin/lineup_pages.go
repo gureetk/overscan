@@ -696,6 +696,22 @@ func (a *Admin) groupAction(w http.ResponseWriter, r *http.Request, s store.Admi
 		if n, err = a.numberGroup(ctx, id, int(from)); err == nil {
 			done = fmt.Sprintf("Numbered %d %s from %d.", n, plural(n, "channel"), from)
 		}
+	case "numbers-from":
+		var from int
+		if from, err = numbersFromForm(r); err != nil {
+			break
+		}
+		if err = a.setNumbersFrom(ctx, id, from); err == nil {
+			done = fmt.Sprintf("The group's channels are numbered from %d, and a channel that joins it takes the next free number after its last.", from)
+			if from == 0 {
+				done = "The group has no first number now: its channels keep their numbers, and one that joins it is numbered as the source numbers it."
+			}
+		}
+	case "sort":
+		var n int
+		if n, err = a.sortGroup(ctx, id); err == nil {
+			done = fmt.Sprintf("Sorted the group's channels by name: %d %s moved.", n, plural(n, "channel"))
+		}
 	case "delete":
 		if err = a.deleteGroup(ctx, id); err == nil {
 			done = "Deleted the group."

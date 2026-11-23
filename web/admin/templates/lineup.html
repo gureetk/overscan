@@ -72,6 +72,12 @@
     <div class="groups-head">
       <h2 id="groups-title">Groups</h2>
       <details class="popover">
+        <summary class="button quiet icon" aria-label="Find and replace in the groups' names" title="Find and replace in the groups' names">{{template "i-pencil"}}</summary>
+        <div class="menu form-menu">
+          {{template "replace-form" (dict "Action" "/admin/lineup/groups/replace" "Target" "#lineup-main" "Back" .Data.View.Back "CSRF" .Session.CSRFToken "What" "groups")}}
+        </div>
+      </details>
+      <details class="popover">
         <summary class="button quiet icon" aria-label="New group" title="New group">{{template "i-plus"}}</summary>
         <div class="menu form-menu">
           <form method="post" action="/admin/lineup/groups" hx-post="/admin/lineup/groups" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" class="row-form">
@@ -213,15 +219,23 @@
   </div>
   <div class="group-actions">
     <details class="popover">
-      <summary class="button small" title="Pins the numbers of the group's shown channels, in their order">{{template "i-hash"}}Number from…</summary>
+      <summary class="button small{{if .G.NumbersFrom}} accent{{end}}" title="Numbers the group's channels from a first number, and those that join it after them">{{template "i-hash"}}{{if .G.NumbersFrom}}Numbers from {{.G.NumbersFrom}}{{else}}Numbers from…{{end}}</summary>
       <div class="menu form-menu">
-        <form method="post" action="/admin/lineup/groups/{{.G.ID}}/number" hx-post="/admin/lineup/groups/{{.G.ID}}/number" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" class="row-form">
+        <form method="post" action="/admin/lineup/groups/{{.G.ID}}/numbers-from" hx-post="/admin/lineup/groups/{{.G.ID}}/numbers-from" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" class="row-form">
           <input type="hidden" name="csrf" value="{{.CSRF}}">
           <input type="hidden" name="back" value="{{.D.View.Back}}">
-          <input class="num-input" name="from" type="number" min="1" max="999999" placeholder="From" aria-label="Number the group's shown channels from" required>
+          <input class="num-input" name="from" type="number" min="1" max="999999" placeholder="From" value="{{with .G.NumbersFrom}}{{.}}{{end}}" aria-label="The group's first number" required>
           <button type="submit" class="primary">Number</button>
         </form>
-        <p class="hint">Pins the numbers of the group's shown channels, in their order.</p>
+        <p class="hint">Numbers the group's channels from this number, in their order, and gives a channel that joins it later the next free number after its last. Numbers you set yourself, and those of other groups' channels, stay where they are; a channel hidden on its own gives its number up.</p>
+        {{- if .G.NumbersFrom}}
+        <form method="post" action="/admin/lineup/groups/{{.G.ID}}/numbers-from" hx-post="/admin/lineup/groups/{{.G.ID}}/numbers-from" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML">
+          <input type="hidden" name="csrf" value="{{.CSRF}}">
+          <input type="hidden" name="back" value="{{.D.View.Back}}">
+          <input type="hidden" name="stop" value="1">
+          <button type="submit" class="small">No first number</button>
+        </form>
+        {{- end}}
       </div>
     </details>
     <form method="post" action="/admin/lineup/groups/{{.G.ID}}/{{if .G.Hidden}}show{{else}}hide{{end}}" hx-post="/admin/lineup/groups/{{.G.ID}}/{{if .G.Hidden}}show{{else}}hide{{end}}" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML">
@@ -237,7 +251,7 @@
     <a class="button small{{if and .D.Current.OwnGroups (not .G.Categories)}} primary{{end}}" href="{{.D.View.CategoriesURL .G.ID}}">{{template "i-lineup"}}Categories…</a>
     {{template "add-channels" .}}
     <details class="popover">
-      <summary class="button small icon" aria-label="More for the group: merge it, move a category, delete it" title="Merge, move a category, delete">{{template "i-more"}}</summary>
+      <summary class="button small icon" aria-label="More for the group: merge it, move a category, sort it, delete it" title="Merge, move a category, sort, delete">{{template "i-more"}}</summary>
       <div class="menu form-menu wide">
         <form method="post" action="/admin/lineup/groups/{{.G.ID}}/merge" hx-post="/admin/lineup/groups/{{.G.ID}}/merge" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" class="row-form" hx-confirm="Merge {{.G.Name}} into the group you chose? Its categories and channels go there, and {{.G.Name}} goes.">
           <input type="hidden" name="csrf" value="{{.CSRF}}">
@@ -263,6 +277,11 @@
           <button type="submit">Move</button>
         </form>
         {{- end}}
+        <form method="post" action="/admin/lineup/groups/{{.G.ID}}/sort" hx-post="/admin/lineup/groups/{{.G.ID}}/sort" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" hx-confirm="Number {{.G.Name}}'s channels again, in the order of their names?">
+          <input type="hidden" name="csrf" value="{{.CSRF}}">
+          <input type="hidden" name="back" value="{{.D.View.Back}}">
+          <button type="submit" title="Its channels take the numbers they hold between them, in the order of their names, so that 2 comes before 10">Sort by name</button>
+        </form>
         {{- if .D.Deletable .G}}
         <form method="post" action="/admin/lineup/groups/{{.G.ID}}/delete" hx-post="/admin/lineup/groups/{{.G.ID}}/delete" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML">
           <input type="hidden" name="csrf" value="{{.CSRF}}">

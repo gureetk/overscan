@@ -143,19 +143,21 @@ func (s *Store) CopyLineup(ctx context.Context, from int64, name string) (int64,
 		// A group's name is unique in its lineup, so the copy's groups are
 		// found by name.
 		for _, q := range []string{`
-			INSERT INTO lineup_groups (lineup_id, name, hidden, edited, locked)
-			SELECT ?1, name, hidden, edited, locked FROM lineup_groups WHERE lineup_id = ?2`, `
+			INSERT INTO lineup_groups (lineup_id, name, hidden, edited, locked, numbers_from)
+			SELECT ?1, name, hidden, edited, locked, numbers_from FROM lineup_groups WHERE lineup_id = ?2`, `
 			INSERT INTO lineup_categories (lineup_id, source_id, category, group_id)
 			SELECT ?1, m.source_id, m.category, n.id
 			FROM lineup_categories m
 				JOIN lineup_groups o ON o.id = m.group_id
 				JOIN lineup_groups n ON n.lineup_id = ?1 AND n.name = o.name
 			WHERE m.lineup_id = ?2`, `
-			INSERT INTO lineup_entries (lineup_id, channel_id, number, pinned, name, group_id, hidden, locked)
-			SELECT ?1, e.channel_id, e.number, e.pinned, e.name, n.id, e.hidden, e.locked
+			INSERT INTO lineup_entries (lineup_id, channel_id, number, pinned, name, group_id, hidden, locked, numbered_in)
+			SELECT ?1, e.channel_id, e.number, e.pinned, e.name, n.id, e.hidden, e.locked, nn.id
 			FROM lineup_entries e
 				LEFT JOIN lineup_groups o ON o.id = e.group_id
 				LEFT JOIN lineup_groups n ON n.lineup_id = ?1 AND n.name = o.name
+				LEFT JOIN lineup_groups no ON no.id = e.numbered_in
+				LEFT JOIN lineup_groups nn ON nn.lineup_id = ?1 AND nn.name = no.name
 			WHERE e.lineup_id = ?2`,
 		} {
 			if _, err := tx.ExecContext(ctx, q, id, from); err != nil {

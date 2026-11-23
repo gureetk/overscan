@@ -1562,11 +1562,17 @@ paths:
     patch:
       tags: [lineup]
       operationId: changeGroup
-      summary: Rename, hide, show or lock a group
+      summary: Rename, hide, show, lock or number a group
       description: >-
         A hidden group hides its channels, those that its categories bring
         later included, apart from those shown on their own. A locked group's
-        channels need the parental PIN.
+        channels need the parental PIN. `numbers_from` gives the group a first
+        number (D137): its channels are numbered from it again, in their
+        order, and a channel that joins it later takes the next free number
+        after its last; numbers set by hand or by a rule, and other groups'
+        numbers, stay where they are, and a channel hidden on its own gives
+        its number up. 0 takes the first number away, and the channels keep
+        their numbers.
       security:
         - session: []
           csrf: []
@@ -1585,6 +1591,10 @@ paths:
                   type: boolean
                 locked:
                   type: boolean
+                numbers_from:
+                  type: integer
+                  minimum: 0
+                  maximum: 999999
       responses:
         "200":
           $ref: "#/components/responses/Group"
@@ -1759,6 +1769,76 @@ paths:
           $ref: "#/components/responses/CSRF"
         "404":
           $ref: "#/components/responses/NotFound"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+  /lineup/groups/{id}/sort:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/Lineup"
+    post:
+      tags: [lineup]
+      operationId: sortGroup
+      summary: Sort a group's channels by name
+      description: >-
+        The group's channels take the numbers they hold between them, the
+        lowest for the first name, in natural order, so that 2 comes before
+        10 (D137). Numbers set by hand or by a rule, and channels hidden on
+        their own, stay where they are.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "200":
+          description: Sorted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sorted]
+                properties:
+                  sorted:
+                    type: integer
+                    description: How many channels took another number.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /lineup/groups/replace:
+    parameters:
+      - $ref: "#/components/parameters/Lineup"
+    post:
+      tags: [lineup]
+      operationId: replaceGroupNames
+      summary: Find and replace in the names of the lineup's groups
+      description: >-
+        `find` is found whatever its case; between slashes, it is a regular
+        expression, and `$1` and so on in `replace` are its groups, as in a
+        rename rule (D107, D137). A name that would be left empty stays as it
+        is. Every group is renamed, or none: a name that cannot be one
+        (`bad_name`) or two groups with one name (`name_taken`, 409) change
+        nothing.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Replace"
+      responses:
+        "200":
+          $ref: "#/components/responses/Renamed"
+        "400":
+          $ref: "#/components/responses/EditMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "409":
+          $ref: "#/components/responses/EditConflict"
         "415":
           $ref: "#/components/responses/NotJSON"
   /lineup/categories:
@@ -2646,6 +2726,39 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /library/{kind}/shelves/replace:
+    parameters:
+      - $ref: "#/components/parameters/Kind"
+    post:
+      tags: [library]
+      operationId: replaceShelfNames
+      summary: Find and replace in the names of the shelves
+      description: >-
+        As `POST /lineup/groups/replace` does for groups, on the names that
+        devices see the shelves by (D137). A shelf whose name becomes its
+        sources' name has it back.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Replace"
+      responses:
+        "200":
+          $ref: "#/components/responses/Renamed"
+        "400":
+          $ref: "#/components/responses/EditMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "415":
+          $ref: "#/components/responses/NotJSON"
   /library/{kind}/shelves/{id}:
     parameters:
       - $ref: "#/components/parameters/Kind"
@@ -3253,6 +3366,17 @@ components:
         Every request that changes something sends it.
 
   schemas:
+    Replace:
+      type: object
+      additionalProperties: false
+      required: [find]
+      properties:
+        find:
+          type: string
+          maxLength: 200
+        replace:
+          type: string
+          maxLength: 200
     LineupSummary:
       type: object
       required: [id, name, created_at, own_groups, accounts, viewers, shown, rules]
@@ -3719,6 +3843,9 @@ components:
         first_number:
           type: [integer, "null"]
           description: The lowest number that devices see in it.
+        numbers_from:
+          type: [integer, "null"]
+          description: Its first number (D137), which numbers its channels and those that join it; null if it has none.
         categories:
           type: array
           items:
@@ -3925,6 +4052,14 @@ components:
           type: string
           enum: [SD, HD, FHD, UHD, 4K, 8K, HEVC, H264, H265, 1080p, 720p, 50fps, 60fps]
           description: For `merge`, a quality word whose copy shows first, before the lineup's order.
+        sources:
+          type: array
+          maxItems: 20
+          items:
+            type: integer
+          description: >-
+            For `merge`, the IDs of the sources whose copies show first, in that order (D137), before
+            the quality; a source removed leaves the order.
     RuleAction:
       type: string
       enum: [include, exclude, rename, regroup, renumber, logo, guide, timeshift, merge]
@@ -3991,6 +4126,11 @@ components:
           enum: [guide, name]
         prefer:
           type: string
+        sources:
+          type: array
+          maxItems: 20
+          items:
+            type: integer
     Visibility:
       type: string
       enum: [group, shown, hidden]
@@ -4892,6 +5032,26 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/SourceCategories"
+    Renamed:
+      description: What was renamed; nothing if no name held the text.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [renamed]
+            properties:
+              renamed:
+                type: array
+                items:
+                  type: object
+                  required: [id, from, to]
+                  properties:
+                    id:
+                      type: integer
+                    from:
+                      type: string
+                    to:
+                      type: string
     EditMistake:
       description: >-
         The change cannot be made: a name (`bad_name`), a number

@@ -23,6 +23,7 @@ lineups:
     groups:
       - name: Cartoons
         locked: true
+        numbers_from: 100
         categories:
           - source: main
             name: "Kids: Cartoons"
@@ -44,11 +45,11 @@ lineups:
         action: exclude
 ```
 
-- **`kind` and `version`** say what the file is. Overscan refuses a file of a later version, which a later Overscan writes, rather than drop what it does not know. Version 2 adds `own_groups`; Overscan writes version 1 when no lineup has it, so that Overscan 1.0, which reads version 1 only, imports the file too, and it reads both.
+- **`kind` and `version`** say what the file is. Overscan refuses a file of a later version, which a later Overscan writes, rather than drop what it does not know. Version 2 adds `own_groups`, a group's `numbers_from` and a merge rule's `sources`; Overscan writes version 1 when the file holds none of them, so that Overscan 1.0, which reads version 1 only, imports the file too, and it reads both.
 - **`lineups`**, each with its **`name`**, and **`own_groups: true`** for a lineup that holds only what its groups take ([D136](decisions.md)); without it, a lineup takes every category of every source.
-- **`groups`**: the groups that were made or changed by hand, by name, with `hidden`, `locked`, and the `categories` of the sources that they hold; a category's `name: ""` is a source's channels without a category. The groups that Overscan makes by itself, one for each category, it makes again on import; a lineup with `own_groups` has none but the file's.
+- **`groups`**: the groups that were made or changed by hand, by name, with `hidden`, `locked`, `numbers_from` (its first number, [D137](decisions.md)), and the `categories` of the sources that they hold; a category's `name: ""` is a source's channels without a category. The groups that Overscan makes by itself, one for each category, it makes again on import; a lineup with `own_groups` has none but the file's.
 - **`channels`**: the channels changed by hand. A channel is known by its `source`, by name, and its `key` there, which stays the same across refreshes; `title` is its name at its source, for people who read the file, and an import does not use it. What was changed: a pinned `number`, a `name`, a `group`, `hidden` (`true` or `false` for a channel hidden or shown by hand, left out for one that follows its group), `locked`, and the `backups` that play when its stream cannot start, in order. Channels not changed by hand are not in the file: an import takes them from the sources, numbered as usual.
-- **`rules`**: the lineup's rules, in order, with the fields that [rules.md](rules.md) describes. A rule's `source`, if it has one, is a source's name.
+- **`rules`**: the lineup's rules, in order, with the fields that [rules.md](rules.md) describes. A rule's `source`, if it has one, is a source's name, and so are those in a merge rule's `sources`; a name that the server lacks leaves the order.
 
 Sources are found by their names. To use a file on a server whose sources have other names, change the names in the file first. What names a source or a channel that the server lacks is left out, and the import says how much.
 

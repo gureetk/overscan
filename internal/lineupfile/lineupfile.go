@@ -4,7 +4,9 @@
 // and imported from (D112): one YAML file, with a version, that holds each
 // lineup's groups that the administrator made or changed, its channels
 // changed by hand, with their backups, and its rules, and since version 2
-// whether it holds only what its groups take (D136). Sources are named,
+// whether it holds only what its groups take (D136), its groups' first
+// numbers and the order of sources in its merge rules (D137). Sources are
+// named,
 // and channels known by their source and the key that their source gives
 // them, which stays the same across refreshes. A file never holds a
 // source's address, a login or anything else secret.
@@ -29,9 +31,10 @@ import (
 
 // Kind and Version name the file's format: Version is the latest that
 // Overscan reads. A file of a later version is refused, so that nothing in
-// it is dropped without a word. Version 2 adds a lineup's own_groups; a
-// file is written as version 1 when it holds nothing of version 2, so that
-// an Overscan that reads only version 1 imports it too.
+// it is dropped without a word. Version 2 adds a lineup's own_groups, a
+// group's numbers_from and a merge rule's sources; a file is written as
+// version 1 when it holds nothing of version 2, so that an Overscan that
+// reads only version 1 imports it too.
 const (
 	Kind    = "overscan-lineups"
 	Version = 2
@@ -73,10 +76,12 @@ type Lineup struct {
 // Group is a group that the administrator made or changed, with the
 // categories of the sources that it holds.
 type Group struct {
-	Name       string     `yaml:"name"`
-	Hidden     bool       `yaml:"hidden,omitempty"`
-	Locked     bool       `yaml:"locked,omitempty"`
-	Categories []Category `yaml:"categories,omitempty"`
+	Name   string `yaml:"name"`
+	Hidden bool   `yaml:"hidden,omitempty"`
+	Locked bool   `yaml:"locked,omitempty"`
+	// NumbersFrom is its first number, 0 if it has none (version 2).
+	NumbersFrom int        `yaml:"numbers_from,omitempty"`
+	Categories  []Category `yaml:"categories,omitempty"`
 }
 
 // Category is a source's live category, by name; "" names the source's
@@ -124,6 +129,16 @@ func (f File) Needs() int {
 	for _, l := range f.Lineups {
 		if l.OwnGroups {
 			return 2
+		}
+		for _, g := range l.Groups {
+			if g.NumbersFrom != 0 {
+				return 2
+			}
+		}
+		for _, r := range l.Rules {
+			if len(r.SourceNames) > 0 || len(r.Sources) > 0 {
+				return 2
+			}
 		}
 	}
 	return 1
@@ -218,7 +233,7 @@ func Parse(data []byte) (f File, err error) {
 		return File{}, bad("The file holds something that a lineup file does not: %s", firstLine(err))
 	}
 	if need := f.Needs(); need > f.Version {
-		return File{}, bad("The file says version %d, but holds own_groups, which version %d of lineup files added: change its version to %d.",
+		return File{}, bad("The file says version %d, but holds own_groups, numbers_from or a merge's sources, which version %d of lineup files added: change its version to %d.",
 			f.Version, need, need)
 	}
 	return f, f.Check()
@@ -338,6 +353,9 @@ func (l Lineup) check() error {
 			return bad("the group %s is there twice.", g.Name)
 		}
 		groups[g.Name] = true
+		if g.NumbersFrom < 0 || g.NumbersFrom > maxNumber {
+			return bad("the group %s: a first number is from 1 to %d.", g.Name, maxNumber)
+		}
 		for _, c := range g.Categories {
 			if err := checkKey(c.Source, "a category's source"); err != nil {
 				return bad("the group %s: %v", g.Name, err)
@@ -405,6 +423,14 @@ func (l Lineup) check() error {
 		}
 		if r.Match.SourceName != "" {
 			if err := checkKey(r.Match.SourceName, "a source"); err != nil {
+				return bad("rule %d: %v", i+1, err)
+			}
+		}
+		if len(r.Sources) > 0 {
+			return bad("rule %d names its sources by their IDs; a lineup file names them.", i+1)
+		}
+		for _, name := range r.SourceNames {
+			if err := checkKey(name, "a source"); err != nil {
 				return bad("rule %d: %v", i+1, err)
 			}
 		}

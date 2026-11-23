@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -79,7 +80,15 @@ type Rule struct {
 	// quality word that the copy to show first holds, if any.
 	Copies string `json:"copies,omitempty" yaml:"copies,omitempty"`
 	Prefer string `json:"prefer,omitempty" yaml:"prefer,omitempty"`
+	// For merge: the IDs of the sources whose copies to show first, in
+	// that order, before the quality (D137). A lineup file names them
+	// instead, in SourceNames.
+	Sources     []int64  `json:"sources,omitempty" yaml:"-"`
+	SourceNames []string `json:"-" yaml:"sources,omitempty"`
 }
+
+// MaxSources caps the sources that a merge rule puts in order.
+const MaxSources = 20
 
 // Match says which channels a rule acts on: those that meet every
 // condition it has. A rule without any matches every channel.
@@ -249,6 +258,21 @@ func Check(r Rule) (Rule, error) {
 			}
 			keep.Prefer = tag
 		}
+		if len(r.Sources) > MaxSources || len(r.SourceNames) > MaxSources {
+			return Rule{}, bad("A merge puts at most %d sources in order.", MaxSources)
+		}
+		for i, id := range r.Sources {
+			if id <= 0 || slices.Contains(r.Sources[:i], id) {
+				return Rule{}, bad("Name each source to show first once.")
+			}
+		}
+		for i, name := range r.SourceNames {
+			if name == "" || slices.Contains(r.SourceNames[:i], name) {
+				return Rule{}, bad("Name each source to show first once.")
+			}
+		}
+		keep.Sources = slices.Clone(r.Sources)
+		keep.SourceNames = slices.Clone(r.SourceNames)
 	default:
 		return Rule{}, bad("Choose what the rule does: %s.", strings.Join(Actions, ", "))
 	}
@@ -410,6 +434,28 @@ func replacer(replace, with string) (Renamer, error) {
 		}
 		return out
 	}, nil
+}
+
+// CompileReplace returns what replaces replace with with in a name, as a
+// rename rule does: text between slashes is a regular expression, and $1
+// and so on in with are its groups; other text is found whatever its case.
+// A name that the replacement would leave empty stays as it was. The
+// admin's find and replace for groups' and shelves' names uses it (D137).
+func CompileReplace(replace, with string) (func(string) string, error) {
+	if replace == "" || replace == "//" {
+		return nil, bad("Give the text to find.")
+	}
+	if err := checkText("text to find", replace, maxPattern); err != nil {
+		return nil, err
+	}
+	if err := checkText("replacement", with, maxText); err != nil {
+		return nil, err
+	}
+	r, err := replacer(replace, with)
+	if err != nil {
+		return nil, bad("The text to find is not a regular expression that Overscan reads: %v.", err)
+	}
+	return r, nil
 }
 
 // Merger is a merge rule, compiled (D113): Key says what a channel's

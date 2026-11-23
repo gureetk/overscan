@@ -207,6 +207,19 @@
           {{- range .D.Qualities}}<option value="{{.}}"{{if and $merge (eq . $r.Prefer)}} selected{{end}}>The first in {{.}}</option>{{end}}
         </select>
       </div>
+      {{- if gt (len .D.Sources) 1}}
+      <div class="field if-merge">
+        <span class="label" id="{{$p}}-sources-label">Sources to show first</span>
+        <div class="source-order" role="group" aria-labelledby="{{$p}}-sources-label">
+          {{- range $i := .D.SourceSlots}}
+          <select name="first_source" aria-label="{{if $i}}Then the copies of{{else}}First the copies of{{end}}">
+            <option value="">{{if $i}}Then…{{else}}No source first{{end}}</option>
+            {{- range $.D.Sources}}<option value="{{.ID}}"{{if and $merge (eq .ID ($.D.SourceAt $r $i))}} selected{{end}}>{{.Name}}</option>{{end}}
+          </select>
+          {{- end}}
+        </div>
+      </div>
+      {{- end}}
     </div>
     <p class="hint if-rename">A new name replaces the whole name. <em>Replace text</em> changes part of the name, as the rules before it left it; in what replaces a regular expression, <code>$1</code> is its first group.</p>
     <p class="hint if-regroup">A group of that name, made if the lineup has none.</p>
@@ -214,7 +227,7 @@
     <p class="hint if-logo">Devices load the logo from this address, so it must be one that they can reach.</p>
     <p class="hint if-guide">The channel is one of the lineup's, by the name that its source gives it, from the same source if it can be. A channel that shows another's programmes an hour late, such as <em>Harbour News +1</em>, takes the guide of <em>Harbour News</em> with <em>Its name, changed</em>: replace <code>+1</code> with nothing. Another rule then moves its times.</p>
     <p class="hint if-timeshift">The programmes that the channels show in the guide move by this much: 60 minutes later for a channel that shows them an hour late.</p>
-    <p class="hint if-merge">Channels that a source lists more than once, in another quality or as a second feed, become one. Of the channels it acts on, those with the same guide ID, or the same name once words such as HD, FHD and 4K are left out, as you choose, are copies of one channel: the first that devices see shows, and the others are hidden and play in its place, in turn, when its stream cannot start, after the backups you pick yourself. Copies that sources add later join by themselves.</p>
+    <p class="hint if-merge">Channels that a source lists more than once, in another quality or as a second feed, become one. Of the channels it acts on, those with the same guide ID, or the same name once words such as HD, FHD and 4K are left out, as you choose, are copies of one channel: the first that devices see shows, from the sources put first if you choose some, then in the quality chosen, and the others are hidden and play in its place, in turn, when its stream cannot start, after the backups you pick yourself. Copies that sources add later join by themselves.</p>
   </fieldset>
   <div class="form-buttons">
     <button type="submit" class="primary">{{if .ID}}Save the rule{{else}}Add the rule{{end}}</button>

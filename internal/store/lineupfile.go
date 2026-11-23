@@ -78,7 +78,7 @@ func exportLineup(ctx context.Context, tx *sql.Tx, id int64, sources map[int64]s
 	// The groups that the administrator made or changed, by name, with
 	// the categories that they hold.
 	rows, err := tx.QueryContext(ctx, `
-		SELECT g.id, g.name, g.hidden, g.locked, COALESCE(m.source_id, 0), COALESCE(m.category, '')
+		SELECT g.id, g.name, g.hidden, g.locked, COALESCE(g.numbers_from, 0), COALESCE(m.source_id, 0), COALESCE(m.category, '')
 		FROM lineup_groups g LEFT JOIN lineup_categories m ON m.group_id = g.id
 		WHERE g.lineup_id = ? AND g.edited = 1
 		ORDER BY g.name, g.id, m.source_id, m.category`, id)
@@ -90,7 +90,7 @@ func exportLineup(ctx context.Context, tx *sql.Tx, id int64, sources map[int64]s
 		var gid, source int64
 		var g lineupfile.Group
 		var category string
-		if err := rows.Scan(&gid, &g.Name, &g.Hidden, &g.Locked, &source, &category); err != nil {
+		if err := rows.Scan(&gid, &g.Name, &g.Hidden, &g.Locked, &g.NumbersFrom, &source, &category); err != nil {
 			rows.Close()
 			return l, err
 		}
@@ -180,6 +180,10 @@ func exportLineup(ctx context.Context, tx *sql.Tx, id int64, sources map[int64]s
 			rule.Match.SourceName = sources[rule.Match.Source]
 			rule.Match.Source = 0
 		}
+		for _, id := range rule.Sources {
+			rule.SourceNames = append(rule.SourceNames, sources[id])
+		}
+		rule.Sources = nil
 		l.Rules = append(l.Rules, rule)
 	}
 	return l, nil
@@ -325,7 +329,12 @@ func importLineup(ctx context.Context, tx *sql.Tx, l lineupfile.Lineup, sources 
 		if err != nil {
 			return res, err
 		}
-		if _, err := tx.ExecContext(ctx, "UPDATE lineup_groups SET hidden = ?, locked = ? WHERE id = ?", g.Hidden, g.Locked, gid); err != nil {
+		var from any
+		if g.NumbersFrom > 0 {
+			from = g.NumbersFrom
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE lineup_groups SET hidden = ?, locked = ?, numbers_from = ? WHERE id = ?",
+			g.Hidden, g.Locked, from, gid); err != nil {
 			return res, err
 		}
 		res.Groups++
@@ -446,6 +455,13 @@ func importLineup(ctx context.Context, tx *sql.Tx, l lineupfile.Lineup, sources 
 			}
 			r.Match.Source = source
 		}
+		// A source that this server lacks leaves the merge's order.
+		for _, name := range r.SourceNames {
+			if source, ok := sources[name]; ok {
+				r.Sources = append(r.Sources, source)
+			}
+		}
+		r.SourceNames = nil
 		spec, err := checkRule(r)
 		if err != nil {
 			return res, err

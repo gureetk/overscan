@@ -162,6 +162,10 @@ func TestRuleFields(t *testing.T) {
 				f.SetInt(int64(i + 1))
 			case reflect.Bool:
 				f.SetBool(true)
+			case reflect.Slice:
+				if f.Type().Elem().Kind() == reflect.String {
+					f.Set(reflect.ValueOf([]string{"x" + strconv.Itoa(i)}))
+				}
 			default:
 				t.Fatalf("a rule has a field of kind %v", f.Kind())
 			}
