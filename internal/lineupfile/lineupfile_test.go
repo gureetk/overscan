@@ -70,6 +70,8 @@ func TestParseRefuses(t *testing.T) {
 		"no lineups":    {head + "lineups: []\n", "no lineup"},
 		"anchor":        {head + "lineups:\n  - &a\n    name: Kids\n  - *a\n", "anchors"},
 		"merge":         {head + "lineups:\n  - name: Kids\n    groups:\n      - <<: {name: X}\n", "anchors, aliases or merges"},
+		"tag":           {head + "lineups:\n  - name: !!str Kids\n", "tags"},
+		"empty tag":     {head + "lineups:\n  - name: A\n    channels:\n      ! #0\n", "tags"},
 		"two documents": {head + "lineups:\n  - name: Kids\n---\n" + head, "2 YAML documents"},
 		"duplicate key": {head + "lineups:\n  - name: Kids\n    name: Lounge\n", "Overscan reads"},
 		"bad name":      {head + "lineups:\n  - name: \"Kids\\u0007\"\n", "control characters"},
