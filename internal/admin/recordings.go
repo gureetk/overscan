@@ -167,7 +167,7 @@ func (a *Admin) recordingSource(ctx context.Context) error {
 	for i := 2; names[name]; i++ {
 		name = recordingSourceName + "-" + strconv.Itoa(i)
 	}
-	_, err = a.addSource(ctx, source.Settings{Name: name, Type: source.TypeFolder, URL: dir})
+	_, err = a.addSource(ctx, source.Settings{Name: name, Type: source.TypeFolder, URL: dir}, false)
 	return err
 }
 

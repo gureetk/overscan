@@ -286,7 +286,7 @@
       <input type="hidden" name="group" value="{{.G.ID}}">
       <ul class="plain candidates">
         {{- range .D.Candidates}}
-        <li><label{{if .Hidden}} class="is-hidden"{{end}}><input type="checkbox" name="ids" value="{{.ID}}"> <span class="num">{{if .Number}}{{.Number}}{{else}}–{{end}}</span> <span class="c-name">{{.Name}}</span> <span class="muted">{{if .Group}}in {{.Group}}{{else}}in no group{{end}}{{if .Missing}}, missing{{else if .Hidden}}, hidden{{end}}</span></label></li>
+        <li><label{{if .Hidden}} class="is-hidden"{{end}}><input type="checkbox" name="ids" value="{{.ID}}"> <span class="num">{{if .Number}}{{.Number}}{{else}}–{{end}}</span> <span class="c-name">{{.Name}}</span> <span class="muted">{{if .Group}}in {{.Group}}{{else}}in no group{{end}}{{if .LeftOut}}, left out{{else if .Missing}}, missing{{else if .Hidden}}, hidden{{end}}</span></label></li>
         {{- end}}
       </ul>
       {{- if gt .D.Found (len .D.Candidates)}}
@@ -315,7 +315,8 @@
   {{- end}}
   <td class="state"><div class="chips">
     {{- if .E.Radio}}<span class="badge" title="Its source lists it as a radio station: boxes play it on their Radio screen">{{template "i-radio"}}Radio</span>{{end}}
-    {{- if .E.Missing}}<span class="badge bad" title="Its source no longer lists it. Overscan keeps it, with its edits, for a week in case it comes back.">{{template "i-alert"}}Missing</span>
+    {{- if .E.LeftOut}}<span class="badge" title="Its source no longer brings its category. Overscan keeps it, with its edits, for a week in case you tick the category again.">{{template "i-eye-off"}}Left out</span>
+    {{- else if .E.Missing}}<span class="badge bad" title="Its source no longer lists it. Overscan keeps it, with its edits, for a week in case it comes back.">{{template "i-alert"}}Missing</span>
     {{- else if .E.Hidden}}<span class="badge">{{template "i-eye-off"}}{{if or (eq .Visibility "hidden") .E.RuleHidden}}Hidden{{else}}Hidden with its group{{end}}</span>
     {{- else if not .E.Number}}<span class="badge">No number</span>{{end}}
     {{- if and (eq .Visibility "shown") (not .E.Missing)}}<span class="badge" title="Shown even if its group is hidden">{{template "i-eye"}}Always shown</span>{{end}}

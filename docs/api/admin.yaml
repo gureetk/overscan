@@ -2889,20 +2889,23 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [channels, added, missing, removed]
+                required: [channels, added, missing, removed, left_out]
                 properties:
                   channels:
                     type: integer
-                    description: The channels it lists.
+                    description: The channels it lists, in the categories that it brings (D135).
                   added:
                     type: integer
                     description: Channels new to the catalog.
                   missing:
                     type: integer
-                    description: Channels it stopped listing, kept for 7 days.
+                    description: Channels it stopped listing or bringing, kept for 7 days.
                   removed:
                     type: integer
                     description: Channels missing for longer than that, now gone.
+                  left_out:
+                    type: integer
+                    description: Channels it listed in categories that it does not bring (D135).
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -2952,6 +2955,117 @@ paths:
         "502":
           $ref: "#/components/responses/SourceFailed"
 
+  /sources/{id}/categories/{kind}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/CategoryKind"
+    get:
+      tags: [sources]
+      operationId: listSourceCategories
+      summary: List what a source brings of a kind of category
+      description: >-
+          Whether the source brings every category of its live channels, its
+          films or its series, or only those ticked, and the categories that
+          its reads listed, ticked or not (D135), in the order of the last read
+          that listed each, at most 1,000. A source without live channels has
+          none of `live`, one without films and series none of `movies` and
+          `series`, and a folder none at all: those answer 404.
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Only the categories whose names hold this text, whatever its case.
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/SourceCategories"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [sources]
+      operationId: setSourceCategories
+      summary: Change what a source brings of a kind of category
+      description: >-
+          Changes what the body gives and keeps the rest. Ticks name
+          categories by their keys; a key that the source has no category
+          for is left out. The change takes effect at the source's next read
+          of the kind: `POST …/read` reads it now. The source is read with
+          the same requests whatever it brings, and what a read lists in the
+          categories that it does not bring is not stored. Channels and
+          titles that it stops bringing are kept for 7 days, with their
+          edits, favourites and progress, as those that it stops listing
+          are, so that ticking their categories again brings them back.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SourceCategoriesChange"
+      responses:
+        "200":
+          $ref: "#/components/responses/SourceCategories"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+
+  /sources/{id}/categories/{kind}/read:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+      - $ref: "#/components/parameters/CategoryKind"
+    post:
+      tags: [sources]
+      operationId: readSourceCategories
+      summary: Read a source's live channels, films or series now
+      description: >-
+          Reads the source's live channels as `sources/{id}/refresh` does,
+          or its list of films or of series as a box's first request would
+          (D63), so that a change to what it brings takes effect, or so that
+          its categories of films or series can be chosen before a box asks
+          for them. A read of films or series that takes longer than 20
+          seconds goes on after the answer, 202.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "200":
+          description: >-
+            The read is done. For live channels, what it found, as
+            `sources/{id}/refresh` says it; for films or series,
+            `reading` false.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CategoriesRead"
+        "202":
+          description: A read of films or series goes on; `reading` is true.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CategoriesRead"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/SourceConflict"
+        "502":
+          $ref: "#/components/responses/SourceFailed"
+
 components:
   parameters:
     ID:
@@ -2977,6 +3091,14 @@ components:
       schema:
         type: string
         enum: [movies, series]
+    CategoryKind:
+      name: kind
+      in: path
+      required: true
+      description: A source's categories of live channels, of films, or of series.
+      schema:
+        type: string
+        enum: [live, movies, series]
     MAC:
       name: mac
       in: path
@@ -3473,7 +3595,7 @@ components:
                 type: string
     Channel:
       type: object
-      required: [id, channel_id, source_id, source, number, pinned, name, channel_name, renamed, group_id, group, moved, category, visibility, hidden, missing, locked, group_locked, repair, repair_own, adult, radio, rules, backups]
+      required: [id, channel_id, source_id, source, number, pinned, name, channel_name, renamed, group_id, group, moved, category, visibility, hidden, missing, left_out, locked, group_locked, repair, repair_own, adult, radio, rules, backups]
       properties:
         id:
           type: integer
@@ -3515,7 +3637,10 @@ components:
           description: Devices do not see it, for whatever reason.
         missing:
           type: boolean
-          description: Its source no longer lists it; it is kept for 7 days, with its edits.
+          description: Its source no longer lists it, or no longer brings its category; it is kept for 7 days, with its edits.
+        left_out:
+          type: boolean
+          description: It is missing because its source no longer brings its category (D135).
         locked:
           type: boolean
           description: Locked on its own; it needs the parental PIN (D55).
@@ -3728,7 +3853,8 @@ components:
     Source:
       type: object
       required: [id, name, type, host, address, enabled, max_connections, refresh_seconds, user_agent, numbers,
-        new_categories_hidden, public_only, channels, refreshed_at, refresh_error, stream_limit, account, guide, films, series]
+        new_categories_hidden, public_only, channels, refreshed_at, refresh_error, stream_limit, account, guide, films, series,
+        categories]
       properties:
         id:
           type: integer
@@ -3830,6 +3956,125 @@ components:
             What the reads of an Xtream, a Jellyfin or a Plex source's, a
             folder's or a Stalker portal's series did (D63); null for an M3U
             source. For a portal, as for its films.
+        categories:
+          type: object
+          description: >-
+            What the source brings of each kind of category that it has, by
+            kind (D135): `live` for a source with live channels, `movies` and
+            `series` for one with films and series; empty for a folder.
+          additionalProperties:
+            type: object
+            required: [only_ticked, listed, ticked]
+            properties:
+              only_ticked:
+                type: boolean
+                description: It brings only the ticked categories; otherwise every one.
+              listed:
+                type: integer
+                description: The categories that its reads listed.
+              ticked:
+                type: integer
+                description: Of those, the ticked ones.
+    SourceCategories:
+      type: object
+      required: [kind, only_ticked, tick_new, changed_at, read_at, pending, total, ticked, categories]
+      description: What a source brings of a kind of category (D135).
+      properties:
+        kind:
+          type: string
+          enum: [live, movies, series]
+        only_ticked:
+          type: boolean
+          description: It brings only the ticked categories; otherwise every one, as before.
+        tick_new:
+          type: boolean
+          description: >-
+            A category that it adds later starts ticked. While it brings every
+            category, a new one starts ticked whatever this says.
+        changed_at:
+          type: [string, "null"]
+          format: date-time
+          description: When the choice, or a tick that counts, last changed; null if never.
+        read_at:
+          type: [string, "null"]
+          format: date-time
+          description: When a read of the kind last listed its categories; null if none has.
+        pending:
+          type: boolean
+          description: The choice or a tick changed since that read, so the next read changes what it brings.
+        total:
+          type: integer
+          description: The categories that match `q`, or every one, those past the list's end too.
+        ticked:
+          type: integer
+          description: Of every category, the ticked ones.
+        categories:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/SourceCategory"
+    SourceCategory:
+      type: object
+      required: [key, name, items, ticked, listed_at]
+      properties:
+        key:
+          type: string
+          description: >-
+            A live category's name, or the source's own ID for a category of
+            films or series; empty for the channels or titles without one.
+        name:
+          type: string
+          description: As the source names it; empty for the channels or titles without a category.
+        items:
+          type: [integer, "null"]
+          description: >-
+            The channels or titles that it held at the last read that listed
+            it; null if that is not known, as for a Stalker portal's
+            categories, whose titles are read a page at a time (D77).
+        ticked:
+          type: boolean
+        listed_at:
+          type: string
+          format: date-time
+          description: >-
+            When a read last listed it. A category that no read lists for 7
+            days is forgotten.
+    SourceCategoriesChange:
+      type: object
+      additionalProperties: false
+      description: What the body leaves out stays as it is.
+      properties:
+        only_ticked:
+          type: boolean
+        tick_new:
+          type: boolean
+        ticked:
+          type: object
+          description: >-
+            Ticks by the categories' keys: true to tick, false to untick. The
+            body must stay under 64 KiB; send many ticks in parts.
+          additionalProperties:
+            type: boolean
+    CategoriesRead:
+      type: object
+      required: [reading]
+      properties:
+        reading:
+          type: boolean
+          description: A read of films or series goes on after the answer.
+        channels:
+          type: integer
+          description: For live channels, those that the source brings.
+        added:
+          type: integer
+        missing:
+          type: integer
+          description: For live channels, those that it stopped listing or bringing, kept for 7 days.
+        removed:
+          type: integer
+        left_out:
+          type: integer
+          description: For live channels, those that it listed in categories that it does not bring.
     LibraryRead:
       type: object
       required: [read_at, tried_at, error, titles]
@@ -4163,6 +4408,16 @@ components:
           description: >-
             Keep every request for the source to public addresses (D121);
             ignored for a folder.
+        bring:
+          type: string
+          enum: [every, ticked]
+          description: >-
+            For a new source only: what it brings (D135). `every` category,
+            as before, when left out; or only those `ticked`, of each kind of
+            category that it has, once its first read lists them, which keeps
+            its categories alone. A folder ignores it. A source that exists
+            changes it with `PUT sources/{id}/categories/{kind}`; a change
+            that gives it is refused.
     Error:
       type: object
       required: [error, message]
@@ -4461,8 +4716,8 @@ components:
       description: >-
         A setting breaks a rule: `bad_name`, `bad_type`, `bad_url`,
         `bad_username`, `bad_password`, `bad_mac`, `bad_device`,
-        `bad_user_agent`, `bad_max_connections`, `bad_refresh` or
-        `bad_numbers`; or the body is not the JSON the path takes
+        `bad_user_agent`, `bad_max_connections`, `bad_refresh`,
+        `bad_numbers` or `bad_bring`; or the body is not the JSON the path takes
         (`bad_json`). The message never quotes the address, the login or
         the box's details.
       content:
@@ -4472,8 +4727,8 @@ components:
     SourceConflict:
       description: >-
         Another source has the name (`name_taken`), the source has no address
-        saved (`no_address`), or its address was saved with another key file
-        (`address_locked`).
+        saved (`no_address`), its address was saved with another key file
+        (`address_locked`), or it is off and cannot be read (`source_off`).
       content:
         application/json:
           schema:
@@ -4486,6 +4741,12 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    SourceCategories:
+      description: What the source brings of the kind of category, and its categories.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/SourceCategories"
     EditMistake:
       description: >-
         The change cannot be made: a name (`bad_name`), a number

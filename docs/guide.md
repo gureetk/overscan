@@ -22,6 +22,7 @@ The admin is at `http://<server>:8080/admin/`. Its pages are *Overview*, *Source
 - **A folder of films and series** on the server ([library-folders.md](library-folders.md)).
 - **Streams at once:** how many your account with the provider allows. Overscan never goes over it.
 - **Public addresses only:** for a provider on the internet, so that nothing it lists can make Overscan reach your home network (D121).
+- **What it brings:** every category, or only those you tick, for its live channels, films and series apart: the source's card → *Choose categories*. What it leaves out is not stored and has no guide. A new source can start with *Only those I tick, after its first read*, so that nothing reaches the lineup before you choose (D135).
 
 ## Arrange the channels
 

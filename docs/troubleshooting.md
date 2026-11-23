@@ -24,6 +24,8 @@ What to check when something goes wrong, by what you see. [guide.md](guide.md) s
 - *the playlist is not a regular file*, *the playlist file does not exist*, *Overscan may not read the playlist file*: a playlist file's path names something else, nothing, or a file that the `overscan` user cannot read.
 - *its address was saved with another key file*: the key file is not the one that saved it. Put the right key file back, or enter the address again ([backup.md](backup.md)).
 
+**Channels, films or series are missing from a source.** Its card's *Categories it brings* says whether it brings every category or only those ticked; *Choose categories* shows each category with how many channels or titles it held at the last read. On *Live TV*, a channel marked *Left out* is in a category that the source no longer brings, and one marked *Missing* is one that the source no longer lists: each stays a week, then goes. The log's `source refreshed` line counts what was left out (`left_out=`).
+
 **The guide is empty, or its times are wrong.** A source's card says when its guide was last read, with how many channels and programmes, and the log says `guide read`, or `guide read failed`. A channel without a guide of its own can take another's with a rule, and a rule can move a guide's times for a channel that shows its programmes later than the guide says ([rules.md](rules.md)). Past programmes that start at the wrong time need the source's *Catch-up time zone*.
 
 ## Boxes and Stalker apps

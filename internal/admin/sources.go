@@ -87,12 +87,25 @@ func (a *Admin) reloadSources() {
 	}
 }
 
-func (a *Admin) addSource(ctx context.Context, settings source.Settings) (int64, error) {
+// addSource adds a source. With onlyTicked, it brings only the categories
+// that the administrator ticks once its first read lists them (D135), and
+// that read keeps the categories alone.
+func (a *Admin) addSource(ctx context.Context, settings source.Settings, onlyTicked bool) (int64, error) {
 	id, err := a.store.AddSource(ctx, settings)
 	if err != nil {
 		return 0, sourceError(err)
 	}
-	a.log.Info("source added in the admin", "source", settings.Name)
+	if onlyTicked {
+		// Before the reader hears of the source, so that its first read
+		// keeps to it.
+		for _, k := range sourceKinds(store.Source{Type: settings.WithDefaults().Type}) {
+			if _, err := a.store.SetCategoryChoice(ctx, id, k.Kind, true, false, a.now()); err != nil {
+				a.reloadSources()
+				return id, err
+			}
+		}
+	}
+	a.log.Info("source added in the admin", "source", settings.Name, "only_ticked_categories", onlyTicked)
 	a.reloadSources()
 	return id, nil
 }
@@ -257,6 +270,16 @@ type apiSource struct {
 	// source's films and series did (D63); nil for M3U sources.
 	Films  *apiLibraryRead `json:"films"`
 	Series *apiLibraryRead `json:"series"`
+	// Categories says what the source brings of each kind of category that
+	// it has, by kind: live, movies and series (D135); none for a folder.
+	Categories map[string]apiBrings `json:"categories"`
+}
+
+// apiBrings is what a source brings of a kind of category.
+type apiBrings struct {
+	OnlyTicked bool `json:"only_ticked"`
+	Listed     int  `json:"listed"` // the categories that its reads listed
+	Ticked     int  `json:"ticked"` // of those, the ticked ones
 }
 
 // apiLibraryRead is what the reads of a source's films, or series, did.
@@ -315,7 +338,7 @@ var addressNames = map[store.AddressState]string{
 	store.AddressSaved: "saved", store.AddressMissing: "missing", store.AddressLocked: "locked",
 }
 
-func sourceBody(s store.Source, reads libraryReads) apiSource {
+func sourceBody(s store.Source, reads libraryReads, brings map[int64][]bringSummary) apiSource {
 	out := apiSource{ID: s.ID, Name: s.Name, Type: s.Type, Host: s.Host, Address: addressNames[s.Address], Enabled: s.Enabled,
 		MaxConnections: s.MaxConnections, RefreshSeconds: int64(s.Refresh / time.Second), UserAgent: s.UserAgent,
 		Numbers: s.Numbers, CatchupZone: s.CatchupZone, NewCategoriesHidden: s.NewCategoriesHidden, PublicOnly: s.PublicOnly,
@@ -334,6 +357,10 @@ func sourceBody(s store.Source, reads libraryReads) apiSource {
 	if s.Settings().HasLibrary() {
 		out.Films = libraryReadBody(reads[s.ID][store.KindMovie])
 		out.Series = libraryReadBody(reads[s.ID][store.KindSeries])
+	}
+	out.Categories = map[string]apiBrings{}
+	for _, b := range brings[s.ID] {
+		out.Categories[b.Kind.Path] = apiBrings{OnlyTicked: b.OnlyTicked, Listed: b.Listed, Ticked: b.Ticked}
 	}
 	return out
 }
@@ -366,9 +393,13 @@ func (a *Admin) apiSources(w http.ResponseWriter, r *http.Request, _ store.Admin
 	if a.editAnswer(w, err) {
 		return
 	}
+	brings, err := a.sourceBrings(r.Context(), srcs)
+	if a.editAnswer(w, err) {
+		return
+	}
 	out := make([]apiSource, len(srcs))
 	for i, s := range srcs {
-		out[i] = sourceBody(s, reads)
+		out[i] = sourceBody(s, reads, brings)
 	}
 	writeJSON(w, http.StatusOK, struct {
 		Sources []apiSource `json:"sources"`
@@ -385,7 +416,11 @@ func (a *Admin) writeSource(w http.ResponseWriter, r *http.Request, status int, 
 	if a.editAnswer(w, err) {
 		return
 	}
-	writeJSON(w, status, sourceBody(src, reads))
+	brings, err := a.sourceBrings(r.Context(), []store.Source{src})
+	if a.editAnswer(w, err) {
+		return
+	}
+	writeJSON(w, status, sourceBody(src, reads, brings))
 }
 
 // apiSourceChange is the body of a request that adds or changes a source.
@@ -404,6 +439,10 @@ type apiSourceChange struct {
 	Enabled             *bool   `json:"enabled"`
 	NewCategoriesHidden *bool   `json:"new_categories_hidden"`
 	PublicOnly          *bool   `json:"public_only"`
+	// Bring is what a new source brings: "every" category, as before, or
+	// only those "ticked" once its first read lists them (D135). A source
+	// that exists changes it at sources/{id}/categories/{kind}.
+	Bring *string `json:"bring"`
 	// A Stalker portal's box (D76).
 	MAC       *string `json:"mac"`
 	Serial    *string `json:"serial"`
@@ -486,7 +525,18 @@ func (a *Admin) apiAddSource(w http.ResponseWriter, r *http.Request, _ store.Adm
 		return
 	}
 	settings := body.newSettings()
-	id, err := a.addSource(r.Context(), settings)
+	onlyTicked := false
+	if body.Bring != nil {
+		switch *body.Bring {
+		case "every":
+		case "ticked":
+			onlyTicked = true
+		default:
+			apiError(w, http.StatusBadRequest, "bad_bring", `What a source brings is "every" category or only those "ticked".`)
+			return
+		}
+	}
+	id, err := a.addSource(r.Context(), settings, onlyTicked)
 	if a.editAnswer(w, err) {
 		return
 	}
@@ -515,6 +565,10 @@ func (a *Admin) apiChangeSource(w http.ResponseWriter, r *http.Request, _ store.
 	}
 	if body == (apiSourceChange{}) {
 		apiError(w, http.StatusBadRequest, "bad_json", "Say what to change.")
+		return
+	}
+	if body.Bring != nil {
+		apiError(w, http.StatusBadRequest, "bad_bring", "Change what a source brings with PUT sources/{id}/categories/{kind}.")
 		return
 	}
 	src, err := a.store.Source(ctx, id)
@@ -562,6 +616,14 @@ type apiRead struct {
 	Added    int `json:"added"`
 	Missing  int `json:"missing"`
 	Removed  int `json:"removed"`
+	// LeftOut counts the channels of categories that the source does not
+	// bring (D135).
+	LeftOut int `json:"left_out"`
+}
+
+// readBody is what the API says of a read of a source's channels.
+func readBody(ch store.CatalogChanges) *apiRead {
+	return &apiRead{Channels: ch.Added + ch.Updated, Added: ch.Added, Missing: ch.Missing, Removed: ch.Purged, LeftOut: ch.LeftOut}
 }
 
 func (a *Admin) apiRefreshSource(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
@@ -573,7 +635,7 @@ func (a *Admin) apiRefreshSource(w http.ResponseWriter, r *http.Request, _ store
 	if a.editAnswer(w, err) {
 		return
 	}
-	writeJSON(w, http.StatusOK, apiRead{Channels: ch.Added + ch.Updated, Added: ch.Added, Missing: ch.Missing, Removed: ch.Purged})
+	writeJSON(w, http.StatusOK, readBody(ch))
 }
 
 // apiTested is what a test of a source found.
@@ -703,6 +765,9 @@ type sourceForm struct {
 	Address   store.AddressState
 	Tested    *catalog.Tested // what a test found
 	TestErr   string          // why a test failed
+	// Bring is set when a new source is to bring only the categories
+	// ticked once its first read lists them (D135).
+	Bring bool
 }
 
 // RefreshChoices returns the intervals to offer, with the form's own.
@@ -849,6 +914,9 @@ type sourceRow struct {
 	// Films and Series are what the reads of an Xtream, a Jellyfin or a Plex
 	// source's films and series did; zero if none has ended.
 	Films, Series store.LibraryRead
+	// Brings is what it brings of each kind of category that it has
+	// (D135); none for a folder.
+	Brings []bringSummary
 }
 
 // FilmsLine says what the reads of the source's films did.
@@ -1038,6 +1106,10 @@ func (a *Admin) showSources(w http.ResponseWriter, r *http.Request, s store.Admi
 		return
 	}
 	reads, err := a.libraryReads(r.Context())
+	var brings map[int64][]bringSummary
+	if err == nil {
+		brings, err = a.sourceBrings(r.Context(), srcs)
+	}
 	if err != nil {
 		a.log.Error("cannot show the sources", "error", err)
 		a.message(w, r, http.StatusInternalServerError, "Something went wrong", "The server's log says what.", &s)
@@ -1045,7 +1117,7 @@ func (a *Admin) showSources(w http.ResponseWriter, r *http.Request, s store.Admi
 	}
 	for _, src := range srcs {
 		data.Sources = append(data.Sources, sourceRow{Source: src, Now: data.Now,
-			Films: reads[src.ID][store.KindMovie], Series: reads[src.ID][store.KindSeries]})
+			Films: reads[src.ID][store.KindMovie], Series: reads[src.ID][store.KindSeries], Brings: brings[src.ID]})
 	}
 	v.Title, v.Section, v.Session, v.Data = "Sources", "sources", &s, data
 	if editing {
@@ -1174,16 +1246,22 @@ func (a *Admin) sourceDone(w http.ResponseWriter, r *http.Request, s store.Admin
 // addSourceForm adds a source, or tests the form's settings.
 func (a *Admin) addSourceForm(w http.ResponseWriter, r *http.Request, s store.AdminSession) {
 	settings, err := formSettings(r)
-	form := sourceForm{Settings: settings}
+	form := sourceForm{Settings: settings, Bring: formBring(r)}
 	if err == nil && r.PostFormValue("test") != "" {
 		a.testForm(w, r, s, form, false)
 		return
 	}
+	onlyTicked := formBring(r) && settings.Type != source.TypeFolder
 	if err == nil {
-		_, err = a.addSource(r.Context(), settings)
+		_, err = a.addSource(r.Context(), settings, onlyTicked)
 	}
 	done := "Added " + settings.Name + ". Overscan is reading it now; its channels join the lineup in a moment."
-	if !settings.HasChannels() {
+	switch {
+	case onlyTicked && settings.HasChannels():
+		done = "Added " + settings.Name + ". Overscan is reading its categories now: choose those it brings from its card, with Choose categories."
+	case onlyTicked:
+		done = "Added " + settings.Name + ". Its films and series bring only the categories you tick: choose them from its card, with Choose categories."
+	case !settings.HasChannels():
 		done = "Added " + settings.Name + ". Boxes find its films and series under Movies and Series."
 	}
 	a.sourceDone(w, r, s, err, done, form, false)
@@ -1255,6 +1333,9 @@ func (a *Admin) sourceAction(w http.ResponseWriter, r *http.Request, s store.Adm
 			n := ch.Added + ch.Updated
 			done = fmt.Sprintf("Read %s: %s %s, %s new, %s gone missing, %s removed.", src.Name, count(n), plural(n, "channel"),
 				count(ch.Added), count(ch.Missing), count(ch.Purged))
+			if ch.LeftOut > 0 {
+				done = strings.TrimSuffix(done, ".") + fmt.Sprintf(", and %s left out with their categories.", count(ch.LeftOut))
+			}
 			switch src.Type {
 			case source.TypeJellyfin:
 				done = "Checked " + src.Name + ": the server answers, and takes the API key."

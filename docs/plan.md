@@ -133,6 +133,7 @@ MAG emulators are a different case. StbEmu loads the portal's own web page and e
 | `sources` | id, type, name, host (shown in the admin), enabled, max connections, request limits, redirect allowed, refresh schedule, new categories hidden, last status |
 | `source_secrets` | source id, the address and credentials, encrypted (D46) |
 | `categories` | id, source id, kind (live, movie, series, radio), name, adult flag |
+| `source_categories` | source id, kind (live, movie, series), the source's key, name, items at the last read, ticked; and `source_category_choices`, whether a source brings only the ticked categories of a kind (D135) |
 | `channels` | id, source id, source ref (for M3U, the stream address, encrypted: D46), identity key, name, number, logo, category, xmltv id, archive days, adult, missing since |
 | `lineups` | id, name (one default lineup until the hub stage) |
 | `lineup_groups` | id, lineup id, name, hidden; the categories it holds, from any source (D47) |
@@ -533,13 +534,13 @@ Security review (an outside one if possible), complete docs, a promise that upgr
 ### M8: Playlists (M)
 A household that runs several sources can make Overscan its only playlist manager (D133): it chooses what each source brings, and makes lineups of its own groups from any of them. Each phase ends with a pre-release of v1.1.0 (`v1.1.0-alpha.N`, then `-rc.N`), as M7's did with v1.0.0. What is new starts as Overscan behaved before, so an upgrade changes nothing a household sees (D115). In this order:
 - M8's order and *Done when*, and the milestones after 1.0 (D132 to D134).
-- What a source brings. A source reads every category, as before, or only the categories that the administrator ticks, live, films and series alike, with a choice for the categories that it adds later. The channels and titles of the other categories are not kept: no rows, no guide programmes and nothing to match. The source is read with the same requests as before and what it lists is filtered, so its provider sees no difference.
+- What a source brings. A source reads every category, as before, or only the categories that the administrator ticks, live, films and series alike, with a choice for the categories that it adds later. The channels and titles of the other categories are not kept: no rows, no guide programmes and nothing to match. The source is read with the same requests as before and what it lists is filtered, so its provider sees no difference. **In place:** each source's *Categories* page, from its card on *Sources*, chooses for its live channels, films and series apart, with search, counts and ticks for what a filter shows; saving reads the source again; channels and titles that it stops bringing stay a week, as those that it stops listing do, *Left out* on *Live TV*; a new source can start with only the categories ticked after its first read (D135).
 - Lineups of the household's own groups. A lineup can start empty, and then holds only what its groups take. A group takes categories of any source, picked from one list of every source's categories, and keeps up with them as sources change; channels can still be moved, renamed and hidden one at a time, and rules still apply (D47, D107). Merging the copies of a channel (D113) can be on from the start. Lineups that exist keep taking every category. A lineup's page says which accounts see it, and through which outputs.
 - Numbers and order. A group can have a first number: its channels are numbered from it, and a channel that a source adds takes the next free number in its group. Numbers stay unique in a lineup, and numbers set by hand stay (D47). A group's channels can be sorted by name in natural order, so that 2 comes before 10. Find and replace for the names of groups, and of the shelves of films and series. A merged channel prefers the copies of the sources that the administrator puts first.
 - Channel health, from what happens (D134). Channels whose streams failed to start when someone played them are listed, and can be hidden until one plays again. Each stream's resolution, codecs and dynamic range are noted as it passes through the hub and shown in the admin, and a merge can prefer the best copy. The *Overview* can stop a stream.
 - The milestone's hardening: the security checklist on what is new, docs, and upgrade tests (D118).
 *Done when:* with fictional sources, a source set to three of its categories keeps only their channels and their programmes; a lineup started empty, with a group that takes categories of three sources, holds exactly their channels, and a channel that a source adds to one of them appears after a refresh, numbered after its group's last; numbers stay unique across the lineup; a merged channel plays the copy of the source put first, or the best copy seen; a lineup's page names the accounts and outputs that serve it, and its playlist and guide, its Xtream login, a box and a Stalker client show the same; and an upgrade changes nothing a household set up, as lineups keep taking every category and sources keep reading every category.
-*Status:* planned (D132); not started.
+*Status:* under way. Its pre-releases: what a source brings (v1.1.0-alpha.1).
 
 ### M9: Guides and pictures (M)
 Each phase ends with a pre-release of v1.2.0. In this order:
@@ -736,6 +737,7 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 - After 1.0: M8 playlists, M9 guides and pictures, M10 transcoding and M11 HLS output, each ending in a minor release (D132).
 - A household can manage its sources in Overscan alone, which still reads other managers' output (D133).
 - Overscan learns which channels work only from what happens as people watch; it never opens a channel to test it (D134).
+- A source brings every category of its live channels, films and series, or only those ticked, read with the same requests either way (D135).
 - The reference client reads Overscan through the Xtream output, without a source type of Overscan's own (open question 2).
 - HDHomeRun emulation waits in the backlog (open question 6).
 

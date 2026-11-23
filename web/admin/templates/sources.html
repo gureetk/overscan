@@ -97,6 +97,11 @@
     <div><dt>Series</dt><dd>{{.S.SeriesLine}}</dd></div>
     {{- end}}
     <div><dt>Streams at once</dt><dd>{{.S.Limit}}</dd></div>
+    {{- with .S.Brings}}
+    <div><dt>Categories it brings</dt><dd>
+      {{- range $i, $b := .}}{{if $i}}<br>{{end}}{{$b.Text}}{{end}}
+      <a class="fact-link" href="/admin/sources/{{$.S.ID}}/categories">Choose categories</a></dd></div>
+    {{- end}}
     {{- if not .S.LibraryOnly}}
     <div><dt>Numbers</dt><dd>{{if eq .S.Numbers "provider"}}The {{.S.Origin}}'s own{{else}}In {{if eq .S.Origin "playlist"}}playlist{{else}}the {{.S.Origin}}'s{{end}} order{{end}}</dd></div>
     <div><dt>New categories</dt><dd>
@@ -142,6 +147,7 @@
       <input id="source-name" name="name" value="{{$f.Settings.Name}}" maxlength="32" pattern="[a-z0-9][a-z0-9_\-]{0,31}" required spellcheck="false" autocapitalize="none" autocomplete="off" placeholder="Such as main">
       <p class="hint">Lower-case letters, digits, hyphens and underscores. The log names the source by it.</p>
     </div>
+
 
     <div class="field for-m3u">
       <label for="source-url">Address</label>
@@ -272,6 +278,17 @@
         {{- if $keepFolder}}Saved: {{$f.Host}}. Enter a new path only to change it.
         {{- else}}The folder's absolute path on this server. Overscan reads its films and series, with their .nfo files and pictures, and never changes them. The service must be able to read it, and does not see folders under /home.{{end}}</p>
     </div>
+
+    {{- if not $f.ID}}
+    <div class="field for-categories">
+      <label for="source-bring">Categories it brings</label>
+      <select id="source-bring" name="bring" aria-describedby="source-bring-text">
+        <option value="every"{{if not $f.Bring}} selected{{end}}>Every category</option>
+        <option value="ticked"{{if $f.Bring}} selected{{end}}>Only those I tick, after its first read</option>
+      </select>
+      <p class="hint" id="source-bring-text">Only those you tick: its first read keeps its list of categories alone, and you tick those it brings on its Categories page. Its provider sees the same requests either way.</p>
+    </div>
+    {{- end}}
 
     <div class="field for-library">
       <label for="source-library-max">Streams at once</label>

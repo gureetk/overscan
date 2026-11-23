@@ -402,9 +402,9 @@ func (l *Library) readList(src store.Source, kind string) error {
 	if err != nil {
 		return fail(err)
 	}
-	l.log.Info("read a source's "+what, "source", src.Name, "titles", len(read.titles), "categories", len(read.categories),
-		"added", changes.Added, "missing", changes.Missing, "removed", changes.Purged, "skipped", read.skipped,
-		"took", l.now().Sub(start).Round(time.Millisecond))
+	l.log.Info("read a source's "+what, "source", src.Name, "titles", changes.Added+changes.Updated,
+		"categories", len(read.categories), "added", changes.Added, "missing", changes.Missing, "removed", changes.Purged,
+		"left_out", changes.LeftOut, "skipped", read.skipped, "took", l.now().Sub(start).Round(time.Millisecond))
 	if len(read.tmdb) > 0 {
 		l.startTMDB(src, kind, read.tmdb)
 	}

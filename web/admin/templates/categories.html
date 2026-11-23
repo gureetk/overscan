@@ -1,0 +1,77 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+{{/* What a source brings (D135): its categories of live channels, films
+     and series, every one or those ticked. */}}
+{{define "content"}}
+{{- $d := .Data}}
+<div id="categories-main">
+<p class="crumbs"><a href="/admin/sources">Sources</a></p>
+<div class="page-head">
+  <div>
+    <h1>What {{$d.Source.Name}} brings</h1>
+    <p class="lead">Overscan reads {{$d.Source.Name}} with the same requests whatever you choose here, and keeps only what it brings: the {{if $d.Source.HasLibrary}}channels, films and series{{else}}channels{{end}} of the categories you tick. What it leaves out is not stored, has no guide and never reaches a device.</p>
+  </div>
+</div>
+{{template "alerts" .}}
+{{- if gt (len $d.Kinds) 1}}
+<nav class="lineup-tabs bring-tabs" aria-label="Kinds of category">
+  {{- range $d.Kinds}}
+  <a href="{{$d.URL .Kind}}"{{if eq .Kind.Path $d.Kind.Path}} aria-current="page"{{end}}>{{.Kind.Tab}}{{if .OnlyTicked}} <span class="count quiet">{{.Ticked}}/{{.Listed}}</span>{{end}}</a>
+  {{- end}}
+</nav>
+{{- end}}
+
+<section class="card" aria-labelledby="bring-title">
+  <h2 id="bring-title" class="sr">{{$d.Kind.Tab}}</h2>
+  <form method="post" action="{{$d.Action}}" hx-post="{{$d.Action}}" hx-target="#categories-main" hx-select="#categories-main" hx-swap="outerHTML" class="bring-form">
+    <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+    <input type="hidden" name="kind" value="{{$d.Kind.Path}}">
+    <fieldset class="type-choice">
+      <legend>What it brings of its {{$d.Kind.Nouns}}</legend>
+      <label class="type-tile"><input type="radio" name="bring" value="every"{{if not $d.Choice.OnlyTicked}} checked{{end}}><span><strong>Every category</strong><small>As it lists them, with those it adds later.</small></span></label>
+      <label class="type-tile"><input type="radio" name="bring" value="ticked"{{if $d.Choice.OnlyTicked}} checked{{end}}><span><strong>Only the categories ticked below</strong><small>The others' {{$d.Kind.Nouns}} are left out.</small></span></label>
+    </fieldset>
+    <label class="check"><input type="checkbox" name="tick_new" value="1"{{if $d.Choice.TickNew}} checked{{end}}> Tick the categories that it adds later</label>
+    <p class="hint">Ticks count once it brings only the categories ticked. {{if eq $d.Kind.Kind "live"}}A channel it no longer brings leaves the lineup at once, and stays a week, with what you changed about it, so that ticking its category again brings it back as it was; after that it is gone, with its favourites.{{else}}A title it no longer brings leaves the boxes at once, and stays a week, with how far each profile got into it, so that ticking its category again brings it back.{{end}}</p>
+
+    {{- if $d.Categories}}
+    <div class="bring-tools">
+      <input type="search" placeholder="Filter the categories" aria-label="Filter the categories" data-filter="#category-list" data-js-only hidden>
+      <button type="button" class="small" data-tick-shown="#category-list" data-js-only hidden>Tick those shown</button>
+      <button type="button" class="small" data-untick-shown="#category-list" data-js-only hidden>Untick those shown</button>
+      <span class="tally">{{count $d.Ticked}} of {{count $d.Total}} ticked</span>
+    </div>
+    <ul id="category-list" class="category-list">
+      {{- range $d.Categories}}
+      <li data-name="{{.Label}}"{{if .Stale}} class="stale"{{end}}>
+        <input type="hidden" name="listed" value="{{.Key}}">
+        <label class="check"><input type="checkbox" name="tick" value="{{.Key}}"{{if .Ticked}} checked{{end}}> <span class="c-name">{{.Label}}</span></label>
+        <span class="items">{{if .Stale}}Not in the last read{{else}}{{.ItemsText}}{{end}}</span>
+      </li>
+      {{- end}}
+    </ul>
+    {{- if $d.More}}<p class="hint">Only the first {{len $d.Categories}} of its {{count $d.Total}} categories show here; the API lists and ticks the rest.</p>{{end}}
+    {{- else if eq $d.Kind.Kind "live"}}
+    <p class="empty">No categories yet: they show here once Overscan has read {{$d.Source.Name}}.</p>
+    {{- else}}
+    <p class="empty">No categories yet. Overscan reads {{$d.Source.Name}}'s {{$d.Kind.Nouns}} when a box first opens {{$d.Kind.Screen}}, or now with Read them now.</p>
+    {{- end}}
+    <div class="form-buttons">
+      <button type="submit" class="primary">Save</button>
+      <span class="hint">{{with $d.KeptText}}{{.}} {{end}}{{if $d.Pending}}Changed since the last read: saving reads it again.{{else if $d.Source.Enabled}}Saving a change reads it again, so that what it brings changes at once.{{end}}</span>
+    </div>
+  </form>
+</section>
+
+<section class="card" aria-labelledby="bring-read-title">
+  <h2 id="bring-read-title">Read {{if eq $d.Kind.Kind "live"}}its channels{{else}}its {{$d.Kind.Nouns}}{{end}}</h2>
+  <p class="hint">{{if $d.LastRead.IsZero}}Not read yet.{{else}}Its categories were last read {{ago $d.LastRead $d.Now}}.{{end}}{{if not $d.Source.Enabled}} {{$d.Source.Name}} is off: turn it on to read it.{{end}}</p>
+  {{- if $d.Source.Enabled}}
+  <form method="post" action="{{$d.Action}}/read" hx-post="{{$d.Action}}/read" hx-target="#categories-main" hx-select="#categories-main" hx-swap="outerHTML">
+    <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+    <input type="hidden" name="kind" value="{{$d.Kind.Path}}">
+    <button type="submit" class="small">{{template "i-refresh"}}Read them now</button>
+  </form>
+  {{- end}}
+</section>
+</div>
+{{end}}
