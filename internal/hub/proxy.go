@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -203,8 +204,14 @@ func (e *statusError) Error() string { return "the source answered " + e.status 
 // get requests target from upstream for s, with the source's user agent.
 // An answer other than 200 OK is a *statusError. Errors never quote the
 // address, which can hold credentials.
+//
+// It first waits for the answers of the source's ended streams to close,
+// so that the source never sees more streams than its limit, and counts
+// the answer as open for s until it is closed.
 func (h *Hub) get(ctx context.Context, s *session, target string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	h.waitClosed(ctx, s)
+	var conn net.Conn
+	req, err := http.NewRequestWithContext(traceConn(ctx, &conn), http.MethodGet, target, nil)
 	if err != nil {
 		return nil, fetchError(err)
 	}
@@ -213,10 +220,13 @@ func (h *Hub) get(ctx context.Context, s *session, target string) (*http.Respons
 		ua = h.userAgent
 	}
 	req.Header.Set("User-Agent", ua)
+	s.upstream.Add(1)
 	resp, err := h.clientFor(s).Do(req)
 	if err != nil {
+		s.upstream.Add(-1)
 		return nil, fetchError(err)
 	}
+	resp = opened(s, resp, conn)
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		return nil, &statusError{code: resp.StatusCode, status: resp.Status}
