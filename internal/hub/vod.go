@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"path"
 	"regexp"
@@ -341,9 +342,12 @@ func lapsed(code int) bool {
 }
 
 // fetchFile requests a film or an episode for s at address, as getFile
-// says.
+// says, once the answers of the source's ended streams have closed, as get
+// does.
 func (h *Hub) fetchFile(ctx context.Context, s *session, address, rangeAsked, ifRange string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
+	h.waitClosed(ctx, s)
+	var conn net.Conn
+	req, err := http.NewRequestWithContext(traceConn(ctx, &conn), http.MethodGet, address, nil)
 	if err != nil {
 		return nil, fetchError(err)
 	}
@@ -358,10 +362,13 @@ func (h *Hub) fetchFile(ctx context.Context, s *session, address, rangeAsked, if
 			req.Header.Set("If-Range", ifRange)
 		}
 	}
+	s.upstream.Add(1)
 	resp, err := h.clientFor(s).Do(req)
 	if err != nil {
+		s.upstream.Add(-1)
 		return nil, fetchError(err)
 	}
+	resp = opened(s, resp, conn)
 	switch resp.StatusCode {
 	case http.StatusOK, http.StatusPartialContent, http.StatusRequestedRangeNotSatisfiable:
 		return resp, nil

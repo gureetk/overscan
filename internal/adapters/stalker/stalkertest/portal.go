@@ -93,12 +93,14 @@ type Portal struct {
 	links   map[string]string // play tokens, to what they play
 	streams int               // streams playing now
 	most    int               // the most that played at once
-	agents  map[string]bool   // the user agents seen
+	playing map[*http.Request]struct{}
+	agents  map[string]bool // the user agents seen
 }
 
 // New starts a fake portal, which the test stops when it ends.
 func New(t testing.TB) *Portal {
-	p := &Portal{calls: map[string]int{}, links: map[string]string{}, agents: map[string]bool{}}
+	p := &Portal{calls: map[string]int{}, links: map[string]string{}, agents: map[string]bool{},
+		playing: map[*http.Request]struct{}{}}
 	p.Server = httptest.NewServer(http.HandlerFunc(p.serve))
 	t.Cleanup(p.Close)
 	return p
@@ -651,6 +653,31 @@ func Content(what string) []byte {
 	return bytes.Repeat([]byte("FILE "+what+" "), 2000)
 }
 
+// countPlaying counts the streams that play now, for the most that played
+// at once. A stream plays until its client closes its connection, which
+// the portal notices a moment later, after the next request when the
+// machine is busy: so a stream more than one waits up to a second for the
+// portal to notice the others that ended.
+func (p *Portal) countPlaying() {
+	deadline := time.Now().Add(time.Second)
+	for {
+		p.mu.Lock()
+		live := 0
+		for q := range p.playing {
+			if q.Context().Err() == nil {
+				live++
+			}
+		}
+		if live <= 1 || time.Now().After(deadline) {
+			p.most = max(p.most, live)
+			p.mu.Unlock()
+			return
+		}
+		p.mu.Unlock()
+		time.Sleep(2 * time.Millisecond)
+	}
+}
+
 // play serves what a link plays: a channel's endless MPEG-TS, or the file
 // of a film or of a past programme, with ranges.
 func (p *Portal) play(w http.ResponseWriter, r *http.Request) {
@@ -659,7 +686,7 @@ func (p *Portal) play(w http.ResponseWriter, r *http.Request) {
 	what, ok := p.links[token]
 	if ok {
 		p.streams++
-		p.most = max(p.most, p.streams)
+		p.playing[r] = struct{}{}
 		if p.OneUseLinks && strings.HasPrefix(what, "live:") ||
 			p.OneUseFileLinks && (strings.HasPrefix(what, "vod:") || strings.HasPrefix(what, "archive:")) {
 			delete(p.links, token)
@@ -673,8 +700,10 @@ func (p *Portal) play(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		p.mu.Lock()
 		p.streams--
+		delete(p.playing, r)
 		p.mu.Unlock()
 	}()
+	p.countPlaying()
 	kind, name, _ := strings.Cut(what, ":")
 	switch kind {
 	case "vod":

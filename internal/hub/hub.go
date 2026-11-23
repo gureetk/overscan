@@ -156,6 +156,9 @@ type Hub struct {
 	unrelayable map[int64]time.Time // channels whose HLS the relay could not follow, by ID, until when (D61)
 	shared      map[int64]*session  // the shared tuners that run, by channel ID (D93)
 	failing     map[int64]time.Time // channels whose streams failed to start, by ID, until when (D109)
+	// closing are the ended sessions whose answers from their sources are
+	// not all closed yet.
+	closing map[*session]struct{}
 }
 
 // New returns a hub for the given sources, keyed by store ID. Its signing
@@ -190,6 +193,7 @@ func New(st *store.Store, log *slog.Logger, version string, sources map[int64]So
 		unrelayable: map[int64]time.Time{},
 		shared:      map[int64]*session{},
 		failing:     map[int64]time.Time{},
+		closing:     map[*session]struct{}{},
 		players:     map[playerKey]*Player{},
 		playerByID:  map[int64]*Player{},
 	}
@@ -534,6 +538,7 @@ type session struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	bytes     atomic.Int64
+	upstream  atomic.Int32 // its answers from its source that are open
 	repairing atomic.Int32 // its requests going through ffmpeg now
 	// profile is, for a live channel, the output profile that its device
 	// or player gets it through (D110).
@@ -662,6 +667,9 @@ func (h *Hub) end(s *session, reason string) {
 	}
 	s.ended = true
 	s.cancel()
+	if s.upstream.Load() > 0 {
+		h.closing[s] = struct{}{}
+	}
 	if s.release != nil {
 		s.release()
 	}
