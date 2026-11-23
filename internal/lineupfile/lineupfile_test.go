@@ -199,6 +199,9 @@ func FuzzParse(f *testing.F) {
 	f.Add([]byte("kind: overscan-lineups\nversion: 1\nlineups:\n  - name: a\n    channels:\n      - {source: s, key: k, hidden: true}\n"))
 	f.Add([]byte("kind: overscan-lineups\nversion: 1\nlineups:\n  - &a {name: a}\n  - *a\n"))
 	f.Add([]byte("kind: overscan-lineups\nversion: 1\nlineups: [{name: \"~\", rules: [{match: {name: \"/a+/\"}, action: rename, replace: x, with: \"null\"}]}]\n"))
+	// What version 2 adds.
+	f.Add([]byte("kind: overscan-lineups\nversion: 2\nlineups:\n  - name: a\n    own_groups: true\n    groups:\n      - {name: N, numbers_from: 100, categories: [{source: one, name: \"\"}]}\n" +
+		"    rules: [{action: merge, copies: name, prefer: best, sources: [one, two]}]\n"))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		got, err := Parse(data)
 		if err != nil {

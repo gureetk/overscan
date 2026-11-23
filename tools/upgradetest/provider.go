@@ -12,7 +12,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -56,6 +58,14 @@ var twoChannels = []fakeChannel{
 	{key: "ox", name: "Orchard Extra", group: "Extra", number: 203},
 }
 
+// threeChannels is the playlist of the source "three", which only the walk
+// through M8's Done when adds (donewhen_test.go).
+var threeChannels = []fakeChannel{
+	{key: "cb", name: "Cobalt Bulletin", group: "Bulletins", guide: "cobalt-bulletin.example"},
+	{key: "mb", name: "Meadow Bulletin", group: "Bulletins"},
+	{key: "wt", name: "Willow Travel", group: "Travel"},
+}
+
 // libraryFiles are the folder source's films and episodes, relative to its
 // folder. Overscan lists them by their names; their bytes are no video.
 var libraryFiles = []string{
@@ -72,6 +82,36 @@ type provider struct {
 	url  string
 	base time.Time // the guide's programmes start on the hours from here
 	logo []byte
+
+	mu       sync.Mutex
+	added    map[string][]fakeChannel // channels added to a playlist since, by its name
+	played   []string                 // the keys of the streams asked for, in order
+	pictures map[string][]byte        // streams of real pictures, by key; null packets for the others
+}
+
+// add adds a channel to a playlist, for its next read.
+func (p *provider) add(playlist string, c fakeChannel) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.added == nil {
+		p.added = map[string][]fakeChannel{}
+	}
+	p.added[playlist] = append(p.added[playlist], c)
+}
+
+// asked returns the keys of the streams asked for so far.
+func (p *provider) asked() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.played)
+}
+
+// usePictures makes the provider stream these bytes, again and again, for
+// the channels of these keys.
+func (p *provider) usePictures(streams map[string][]byte) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.pictures = streams
 }
 
 func startProvider() (*provider, error) {
@@ -93,8 +133,14 @@ func startProvider() (*provider, error) {
 	p.logo = buf.Bytes()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /main.m3u", func(w http.ResponseWriter, r *http.Request) { p.playlist(w, mainChannels) })
-	mux.HandleFunc("GET /two.m3u", func(w http.ResponseWriter, r *http.Request) { p.playlist(w, twoChannels) })
+	for name, channels := range map[string][]fakeChannel{"main": mainChannels, "two": twoChannels, "three": threeChannels} {
+		mux.HandleFunc("GET /"+name+".m3u", func(w http.ResponseWriter, r *http.Request) {
+			p.mu.Lock()
+			all := append(slices.Clone(channels), p.added[name]...)
+			p.mu.Unlock()
+			p.playlist(w, all)
+		})
+	}
 	mux.HandleFunc("GET /guide.xml", p.guide)
 	mux.HandleFunc("GET /logo/{key}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
@@ -134,7 +180,7 @@ func (p *provider) guide(w http.ResponseWriter, r *http.Request) {
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n<tv generator-info-name=\"upgradetest\">\n")
 	seen := map[string]bool{}
 	var ids []fakeChannel
-	for _, c := range append(append([]fakeChannel(nil), mainChannels...), twoChannels...) {
+	for _, c := range slices.Concat(mainChannels, twoChannels, threeChannels) {
 		if c.guide != "" && !seen[c.guide] {
 			seen[c.guide] = true
 			ids = append(ids, c)
@@ -157,14 +203,22 @@ func (p *provider) guide(w http.ResponseWriter, r *http.Request) {
 // provider started begins.
 func (p *provider) programme(h int) time.Time { return p.base.Add(time.Duration(h) * time.Hour) }
 
-// stream serves MPEG-TS null packets until the client goes.
+// stream serves MPEG-TS null packets until the client goes, or the
+// channel's pictures again and again if it has some.
 func (p *provider) stream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "video/mp2t")
-	chunk := make([]byte, 188*50)
-	for i := 0; i < len(chunk); i += 188 {
-		copy(chunk[i:], []byte{0x47, 0x1f, 0xff, 0x10})
-		for j := i + 4; j < i+188; j++ {
-			chunk[j] = 0xff
+	key := strings.TrimSuffix(r.PathValue("key"), ".ts")
+	p.mu.Lock()
+	p.played = append(p.played, key)
+	chunk := p.pictures[key]
+	p.mu.Unlock()
+	if chunk == nil {
+		chunk = make([]byte, 188*50)
+		for i := 0; i < len(chunk); i += 188 {
+			copy(chunk[i:], []byte{0x47, 0x1f, 0xff, 0x10})
+			for j := i + 4; j < i+188; j++ {
+				chunk[j] = 0xff
+			}
 		}
 	}
 	flusher, _ := w.(http.Flusher)

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"overscan.gureet.ca/internal/hub"
 	"overscan.gureet.ca/internal/streaminfo"
 )
 
@@ -148,6 +149,20 @@ func TestStopAStream(t *testing.T) {
 	}
 	apiErrorOf(t, ta.apiDo("POST", "streams/zz/stop", "", c, csrfHeader, csrf), http.StatusNotFound, "not_found")
 	if fmt.Sprint(stopped.stopped) != "[a1:stopped in the admin b2:stopped in the admin a1:stopped through the API]" {
+		t.Errorf("stopped %v", stopped.stopped)
+	}
+
+	// A recording's stream is called off, not stopped: the recorder would
+	// play it again.
+	stopped.fakeStreams = append(stopped.fakeStreams, hub.Stream{ID: "c3", Kind: hub.PlaysChannel, DeviceID: -1, EntryID: 1,
+		Channel: "Alpha", Started: ta.clock})
+	if body := ta.do("GET", "/admin/", nil, c).Body.String(); strings.Contains(body, "/admin/streams/c3/stop") {
+		t.Error("a recording has a Stop button")
+	}
+	rec = ta.do("POST", "/admin/streams/c3/stop", url.Values{"csrf": {csrf}}, c, "HX-Request", "true")
+	mustContain(t, "stopping a recording", rec.Body.String(), "A recording is called off on Settings, under Recordings.")
+	apiErrorOf(t, ta.apiDo("POST", "streams/c3/stop", "", c, csrfHeader, csrf), http.StatusConflict, "recording")
+	if len(stopped.stopped) != 3 {
 		t.Errorf("stopped %v", stopped.stopped)
 	}
 }

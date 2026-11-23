@@ -20,8 +20,9 @@ info:
     on the server with `overscan admin password`.
 
     **Bodies.** Requests and answers are JSON in UTF-8. A request body is at
-    most 64 KiB, sent as `Content-Type: application/json`. No answer may be
-    cached.
+    most 64 KiB, or 1 MiB for the lists of categories that a source brings
+    and that a group takes, sent as `Content-Type: application/json`. No
+    answer may be cached.
 
     **Errors.** An error has an HTTP error status and a body of the form
     `{"error": "code", "message": "A sentence."}`: the code is for scripts,
@@ -272,7 +273,8 @@ paths:
       description: >-
         Ends the stream, as the admin's Overview does (D138); the log says
         it was stopped through the API. The device can play it again. For a
-        screen of a shared tuner, the screen alone.
+        screen of a shared tuner, the screen alone. A recording's stream is
+        not stopped (`recording`, 409): call the recording off instead.
       security:
         - session: []
           csrf: []
@@ -285,6 +287,12 @@ paths:
           $ref: "#/components/responses/CSRF"
         "404":
           description: There is no such stream, or it has ended (`not_found`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: The stream is a recording's (`recording`).
           content:
             application/json:
               schema:
@@ -4490,7 +4498,7 @@ components:
           type: object
           description: >-
             Ticks by the categories' keys: true to tick, false to untick. The
-            body must stay under 64 KiB; send many ticks in parts.
+            body must stay under 1 MiB; send more ticks in parts.
           additionalProperties:
             type: boolean
     CategoriesRead:

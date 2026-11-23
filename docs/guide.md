@@ -88,7 +88,7 @@ Overscan speaks plain HTTP. If you put a reverse proxy with TLS in front of it o
 
 ## When something goes wrong
 
-- **What is playing:** *Overview* → *Playing now*, each stream with what it holds, and *Stop* to end one that a forgotten player holds (D138).
+- **What is playing:** *Overview* → *Playing now*, each stream with what it holds, and *Stop* to end one that a forgotten player holds; a recording is called off on *Settings* → *Recordings* instead (D138).
 - **The log:** `journalctl -u overscan -f` on a service install, `docker compose logs -f` with Docker. Each line says what happened in plain words.
 - **The support bundle,** on *Settings*: the settings, the lineup's counts and the log's last lines, without addresses, logins or most of each MAC address, to read or to attach to a report.
 - **The capture log:** what Stalker clients and players asked for that Overscan does not answer.
