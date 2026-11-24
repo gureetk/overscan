@@ -37,9 +37,10 @@ type features struct {
 	// pre-release on), handGuides channels' guides chosen by hand (from
 	// v1.2.0-alpha.2 on), logos logos set by hand and guides' logos
 	// (from alpha.3 on), placeholders placeholder programmes (from
-	// alpha.4 on), and pictures TMDB's pictures for providers' titles
-	// (from alpha.5 on).
-	guides, handGuides, logos, placeholders, pictures bool
+	// alpha.4 on), pictures TMDB's pictures for providers' titles (from
+	// alpha.5 on), and moves a channel moved to another source (from
+	// alpha.6 on).
+	guides, handGuides, logos, placeholders, pictures, moves bool
 }
 
 func featuresOf(version string) features {
@@ -62,7 +63,7 @@ func featuresOf(version string) features {
 		return from(1, 2) && !(major == 1 && minor == 2 && strings.HasPrefix(pre, "alpha.") && alpha < n)
 	}
 	return features{households: at(4), hub: at(5), playlists: from(1, 1), guides: from(1, 2), handGuides: since(2), logos: since(3),
-		placeholders: since(4), pictures: since(5)}
+		placeholders: since(4), pictures: since(5), moves: since(6)}
 }
 
 // household holds what the setup made, by name, so that the probes can
@@ -238,12 +239,55 @@ func (h *household) setUp(a *admin, base string, since time.Time) error {
 			return a.call("PATCH", "settings", map[string]any{"tmdb_pictures": true}, nil)
 		}})
 	}
+	if h.f.moves {
+		steps = append(steps, struct {
+			name string
+			run  func() error
+		}{"a channel moved to another source", func() error { return h.setUpMoves(a) }})
+	}
 	for _, s := range steps {
 		if err := s.run(); err != nil {
 			return fmt.Errorf("setting up %s: %w", s.name, err)
 		}
 	}
 	return nil
+}
+
+// setUpMoves moves two's Cobalt Extra to main's Cobalt Films (D144): its
+// entries, with the logo set by hand on it, play from main, and main's
+// own entry of Cobalt Films goes.
+func (h *household) setUpMoves(a *admin) error {
+	type planned struct {
+		Channel struct {
+			ID   int64  `json:"id"`
+			Name string `json:"name"`
+		} `json:"channel"`
+	}
+	find := func(from, to int64, name string) (int64, error) {
+		var plan struct {
+			Matches   []planned `json:"matches"`
+			Unmatched []planned `json:"unmatched"`
+		}
+		if err := a.call("GET", fmt.Sprintf("sources/%d/moves?to=%d", from, to), nil, &plan); err != nil {
+			return 0, err
+		}
+		for _, p := range append(plan.Matches, plan.Unmatched...) {
+			if p.Channel.Name == name {
+				return p.Channel.ID, nil
+			}
+		}
+		return 0, fmt.Errorf("no channel %s to move", name)
+	}
+	extra, err := find(h.sources["two"], h.sources["main"], "Cobalt Extra")
+	if err != nil {
+		return err
+	}
+	films, err := find(h.sources["main"], h.sources["two"], "Cobalt Films")
+	if err != nil {
+		return err
+	}
+	return a.call("POST", fmt.Sprintf("sources/%d/moves", h.sources["two"]),
+		map[string]any{"moves": []map[string]int64{{"channel": extra, "to": films}}}, nil)
 }
 
 func (h *household) setUpSources(a *admin, since time.Time) error {

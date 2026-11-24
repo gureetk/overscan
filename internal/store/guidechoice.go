@@ -166,7 +166,7 @@ func (s *Store) HandMatches(ctx context.Context) ([]HandMatch, error) {
 		SELECT hc.channel_id, hc.guide_channel_id, c.archive_days FROM channel_guide_choices hc
 		JOIN channels c ON c.id = hc.channel_id
 		JOIN guide_channels gc ON gc.id = hc.guide_channel_id JOIN guides g ON g.id = gc.guide_id
-		WHERE g.enabled = 1 AND c.missing_since IS NULL ORDER BY hc.channel_id`)
+		WHERE g.enabled = 1 AND c.missing_since IS NULL AND c.moved_to IS NULL ORDER BY hc.channel_id`)
 	if err != nil {
 		return nil, fmt.Errorf("store: guides chosen by hand: %w", err)
 	}
@@ -314,7 +314,7 @@ func (s *Store) ChannelGuides(ctx context.Context, show, find string, offset, li
 	if !ok {
 		return nil, 0, fmt.Errorf("store: channels' guides: no such list %q", show)
 	}
-	where := " WHERE s.enabled = 1 AND c.missing_since IS NULL AND " + cond
+	where := " WHERE s.enabled = 1 AND c.missing_since IS NULL AND c.moved_to IS NULL AND " + cond
 	args := []any{}
 	if find = strings.TrimSpace(find); find != "" {
 		where += ` AND c.name LIKE ? ESCAPE '\'`
@@ -357,7 +357,7 @@ func (s *Store) ChannelGuideCounts(ctx context.Context) (map[string]int, error) 
 		FROM channels c JOIN sources s ON s.id = c.source_id
 		LEFT JOIN channel_guide_choices hc ON hc.channel_id = c.id
 		LEFT JOIN channel_guide_matches gm ON gm.channel_id = c.id AND hc.channel_id IS NULL
-		WHERE s.enabled = 1 AND c.missing_since IS NULL`).Scan(&without, &byName, &byHand)
+		WHERE s.enabled = 1 AND c.missing_since IS NULL AND c.moved_to IS NULL`).Scan(&without, &byName, &byHand)
 	if err != nil {
 		return nil, fmt.Errorf("store: channels' guides: %w", err)
 	}
@@ -393,7 +393,7 @@ type GuidedChannel struct {
 func (s *Store) GuidedChannels(ctx context.Context) ([]GuidedChannel, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.id, c.name, c.xmltv_id, c.source_id, s.name FROM channels c JOIN sources s ON s.id = c.source_id
-		WHERE s.enabled = 1 AND c.missing_since IS NULL AND `+ownProgrammesExist+`
+		WHERE s.enabled = 1 AND c.missing_since IS NULL AND c.moved_to IS NULL AND `+ownProgrammesExist+`
 		ORDER BY c.source_id, c.position`)
 	if err != nil {
 		return nil, fmt.Errorf("store: channels with a guide: %w", err)

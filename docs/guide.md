@@ -24,6 +24,10 @@ The admin is at `http://<server>:8080/admin/`. Its pages are *Overview*, *Source
 - **Public addresses only:** for a provider on the internet, so that nothing it lists can make Overscan reach your home network (D121).
 - **What it brings:** every category, or only those you tick, for its live channels, films and series apart: the source's card → *Choose categories*. What it leaves out is not stored and has no guide. A new source can start with *Only those I tick, after its first read*, so that nothing reaches the lineup before you choose (D135).
 
+## Move to a new provider
+
+Add the new source and let it be read. Then *Sources* → the old source's ⋯ → *Move its channels to other sources*: tick the new source, or several in the order that should win where two have a channel, and *Find matches*. Overscan matches each channel by its guide ID, then by its name, as it matches guides, and lists the matches, ticked, with the channels it found none for. Untick any that is wrong and *Move the ticked channels*: in every lineup they play from the new source, with their numbers, names, groups, logos, locks, favourites, recordings and backups, and the new source's own copies of them go. The old source stays, with the channels that did not move, until you delete it (D144).
+
 ## Add a guide of your own
 
 *Guides* → *Add a guide*: the address of an XMLTV guide, gzip or not, or the path of a guide's file on the server. Overscan reads it at once and then every 12 hours. It fills only the channels whose own sources give them no programme: by the guide ID that a channel's source gives it, then by its name. Where the guide has the name in two countries, a country tag in the channel's name or its group, such as *UK:* or *[UK]*, chooses; where nothing does, the channel stays without a guide rather than take the wrong one. The guide's card says how many channels it fills, and the top of the page how many still have no guide (D139).

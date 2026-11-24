@@ -390,7 +390,8 @@ func numberChannels(ctx context.Context, tx *sql.Tx, lineupID, sourceID int64, r
 		LEFT JOIN categories k ON k.id = c.category_id
 		LEFT JOIN lineup_categories m ON m.lineup_id = ? AND m.source_id = c.source_id AND m.category = COALESCE(k.name, '')
 		LEFT JOIN lineup_groups ng ON ng.id = COALESCE(e.group_id, e.rule_group_id, m.group_id)
-		WHERE c.source_id = ? AND c.missing_since IS NULL AND COALESCE(e.pinned, 0) = 0 AND COALESCE(e.rule_pinned, 0) = 0
+		WHERE c.source_id = ? AND c.missing_since IS NULL AND c.moved_to IS NULL AND COALESCE(e.pinned, 0) = 0
+			AND COALESCE(e.rule_pinned, 0) = 0
 			AND (? OR e.id IS NULL OR e.number IS NULL)
 			AND (? = 0 OR m.group_id IS NOT NULL OR e.group_id IS NOT NULL)
 			AND (e.id IS NULL OR ng.numbers_from IS NULL)
@@ -487,7 +488,7 @@ func numberChannels(ctx context.Context, tx *sql.Tx, lineupID, sourceID int64, r
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO lineup_entries (lineup_id, channel_id)
 			SELECT ?, c.id FROM channels c
-			WHERE c.source_id = ? AND c.missing_since IS NULL
+			WHERE c.source_id = ? AND c.missing_since IS NULL AND c.moved_to IS NULL
 				AND NOT EXISTS (SELECT 1 FROM lineup_entries e WHERE e.lineup_id = ? AND e.channel_id = c.id)`,
 			lineupID, sourceID, lineupID); err != nil {
 			return err

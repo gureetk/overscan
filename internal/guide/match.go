@@ -193,6 +193,17 @@ func match(candidates []store.MatchCandidate, listed []store.ListedChannel) []st
 	return out
 }
 
+// MatchChannels works out which of other sources' channels stands for
+// each of a source's channels, when the source's channels move to them
+// (D144), as the guides' channels are matched with channels (D139): by
+// guide ID, then by name, a country tag choosing between names that tie.
+// listed holds the other sources' channels with, as their GuideID, their
+// source's place in the order of the sources, the first of which wins a
+// tie; each match's GuideChannelID is the other source's channel.
+func MatchChannels(candidates []store.MatchCandidate, listed []store.ListedChannel) []store.GuideMatch {
+	return match(candidates, listed)
+}
+
 // pick chooses one of the guides' channels found by a candidate's name, as
 // match says, and reports whether it could.
 func pick(ls []listing, found []int, exact, place string) (int, bool) {

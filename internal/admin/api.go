@@ -132,6 +132,8 @@ func (a *Admin) apiRoutes() []apiRoute {
 		{method: "DELETE", path: "sources/{id}", fn: a.apiDeleteSource},
 		{method: "POST", path: "sources/{id}/refresh", fn: a.apiRefreshSource},
 		{method: "POST", path: "sources/{id}/test", fn: a.apiTestSource},
+		{method: "GET", path: "sources/{id}/moves", fn: a.apiMovePlan},
+		{method: "POST", path: "sources/{id}/moves", fn: a.apiMoves},
 		{method: "GET", path: "guides", fn: a.apiGuides},
 		{method: "POST", path: "guides", fn: a.apiAddGuide},
 		{method: "GET", path: "guides/{id}", fn: a.apiOwnGuide},
@@ -238,7 +240,8 @@ func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 
 // readJSONWithin is readJSON for a body of at most limit bytes: the lists
 // of a source's categories, which the page's forms send within the same
-// limit (maxCategoriesFormBytes).
+// limit (maxCategoriesFormBytes), and the moves of a source's channels
+// (maxMoveFormBytes).
 func readJSONWithin(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
 	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
 		apiError(w, http.StatusUnsupportedMediaType, "not_json", "Send the body as application/json.")

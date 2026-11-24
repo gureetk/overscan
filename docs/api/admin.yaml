@@ -3709,6 +3709,139 @@ paths:
         "502":
           $ref: "#/components/responses/SourceFailed"
 
+  /sources/{id}/moves:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [sources]
+      operationId: planChannelMove
+      summary: Find where a source's channels would move among other sources
+      description: >-
+        Matches each of the source's channels that it still lists, and that
+        has not moved, with the channels of the sources that `to` names, by
+        guide ID and then by name, a country tag choosing between names that
+        tie, as guides are matched (D139, D144). Where two of those sources
+        have a match, the first named gives it. A channel of theirs stands for
+        one of the source's at most: the first, in the source's order, takes
+        it, and the others say `taken`. Nothing moves.
+      parameters:
+        - name: to
+          in: query
+          required: true
+          description: The other sources of channels to move to, by ID, in order, separated by commas.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The matches, and the channels without one.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [source, to, moved, matches, unmatched]
+                properties:
+                  source:
+                    type: integer
+                  to:
+                    type: array
+                    items:
+                      type: integer
+                  moved:
+                    type: integer
+                    description: The source's channels that moved before.
+                  matches:
+                    type: array
+                    items:
+                      type: object
+                      required: [channel, to, by]
+                      properties:
+                        channel:
+                          $ref: "#/components/schemas/MovableChannel"
+                        to:
+                          $ref: "#/components/schemas/MovableChannel"
+                        by:
+                          type: string
+                          enum: [guide_id, name]
+                  unmatched:
+                    type: array
+                    items:
+                      type: object
+                      required: [channel, reason]
+                      properties:
+                        channel:
+                          $ref: "#/components/schemas/MovableChannel"
+                        reason:
+                          type: string
+                          enum: [no_match, taken]
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [sources]
+      operationId: moveChannels
+      summary: Move a source's channels to other sources' channels
+      description: >-
+        Every lineup's entry of each channel named takes the channel that it
+        moves to in its place, keeping its number (pinned), name, group,
+        logo, hidden and locked state, favourites, what devices watched,
+        recordings and backups; the new channel's own entry goes, its
+        favourites with the old one. The channel's switch for repair and its
+        guide chosen by hand go to the new channel where it has none. The old
+        channels record where they went, so that the source's reads give
+        them no entry again, and the source stays until it is deleted
+        (D144). All or nothing: a move that cannot be is `bad_move`.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [moves]
+              properties:
+                moves:
+                  type: array
+                  items:
+                    type: object
+                    required: [channel, to]
+                    properties:
+                      channel:
+                        type: integer
+                        description: One of the source's channels.
+                      to:
+                        type: integer
+                        description: Another source's channel, which no other channel moves to.
+      responses:
+        "200":
+          description: What moved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [channels, entries, merged]
+                properties:
+                  channels:
+                    type: integer
+                  entries:
+                    type: integer
+                    description: The lineups' entries that took a new channel.
+                  merged:
+                    type: integer
+                    description: The new channels' own entries that went.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /sources/{id}/test:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -3932,6 +4065,21 @@ components:
         Every request that changes something sends it.
 
   schemas:
+    MovableChannel:
+      type: object
+      required: [id, source_id, name, category, xmltv_id]
+      properties:
+        id:
+          type: integer
+        source_id:
+          type: integer
+        name:
+          type: string
+          description: As its source gives it.
+        category:
+          type: string
+        xmltv_id:
+          type: string
     Replace:
       type: object
       additionalProperties: false
