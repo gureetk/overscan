@@ -82,6 +82,21 @@ The *Soak* workflow runs it with a guide of the household's own of 20,000 channe
 
 The budgets are the plan's, in its section 15: under about 60 MB of memory idle, under about 150 MB with a large catalogue, and a few percent of one core for a few streams.
 
+**For 1.2**, in November 2026: a run of 60 minutes with a guide of the household's own (`-duration 60m -own-guide 20000 -own-hours 168 -placeholders 60`, the other flags at their defaults), on a cloud machine with two cores of an Intel Xeon at 2.1 GHz, against the server of v1.2.0-rc.1's code. The guide's 1.68 million programmes were read in 53 seconds, and the XMLTV guide, 490 MB with the placeholders, in 13 seconds. From this release on, the peaks are the kernel's high-water marks.
+
+| Measure | 60 minutes, two cores | Budget |
+| --- | --- | --- |
+| Resident memory at the peak while reading the sources, the guide of the household's own and the XMLTV guide | 105.5 MB; 82.2 MB before the guide | 150 MB |
+| Resident memory, idle with all of it loaded | 53.0 MB | 60 MB |
+| Resident memory at the peak under load | 141.2 MB; the samples, at most 79.1 MB | 150 MB |
+| Resident memory at the end | 69.1 MB | |
+| CPU, average under load: four streams, 20 Mbit/s in all | 2.5% of one core | A few percent |
+| CPU at the peak, over five seconds | 43.8% of one core | |
+| Streams | 136 played, none failed, 9.0 GB proxied | |
+| Calls | 358, none failed; 62 shelves of films read | |
+
+The budgets hold. The peak while reading takes in the administrator's sign-in, whose password hash takes 64 MiB for a moment; the server gives that back at once, and the memory of a written XMLTV guide too. The peak under load comes in the seconds when the four boxes load the whole lineup at once, each answer built in memory, as it has since the first run: the high-water mark sees it, where samples five seconds apart did not. Under load, the samples' means over the run's thirds were 60.4, 62.7 and 65.0 MB, and a second run of 35 minutes found 58.3, 59.1 and 58.9 MB.
+
 **For 1.0**, in November 2026: a run of 330 minutes with the defaults, by the *Soak* workflow on a GitHub-hosted runner (`ubuntu-latest`, Ubuntu 26.04), and, as a second check, 150 minutes on a cloud machine with two cores of an Intel Xeon at 2.3 GHz. The first ran the server as released in v1.0.0-alpha.4, the second as in alpha.5, which changed no code that the test runs; neither is the LXC.
 
 | Measure | 330 minutes, GitHub's runner | 150 minutes, two cores | Budget |
@@ -131,6 +146,8 @@ To run it on your machine, with the binaries of the releases to upgrade from:
 `-keep` keeps each upgrade's folder, with the servers' logs and databases, and `-v` lists what step 4 left out. Each release takes under a minute.
 
 `tools/upgradetest` also walks through M8's *Done when* (the plan, section 14) with every `go test ./...`, in `TestPlaylistsDoneWhen`: with the same fictional provider and a third playlist, a source set to three of its categories keeps only their channels and their programmes; a lineup started empty, with a group that takes categories of three sources, holds exactly their channels, numbered from the group's first number, and a channel that a source adds appears after a refresh, numbered after the group's last; numbers stay unique; a merged channel plays the copy of the source put first, and then the best picture seen once two copies with real pictures have played; the lineup's page names the account and how it is reached; and its playlist and guide, its Xtream login, a box and a Stalker client show the same channels with the same numbers.
+
+It walks through M9's *Done when* too, in `TestGuidesDoneWhen`: with two guides of the household's own, one of them with traps, and a box, the guides fill the channels whose sources give none, by guide ID and by name, and fill nothing wrong (a name in two countries that nothing chooses between, a longer name, channels that their sources or a guide before fill); a guide chosen by hand holds through a refresh of its source and a read of the guide; logos follow their order, by hand, a rule, the channel's own if it loads, its guide's if it loads, none, and a guide can give its logos first; placeholders show only while they are set, and only where a channel has nothing; and a lineup moved from the source main to a new provider's two sources keeps its numbers, groups, names, favourites and logos, plays from the new sources, and keeps what moved off main at its next read. The line about TMDB's pictures is walked in the library's tests, `TestPicturesDoneWhen`, against a fake TMDB: titles whose posters are missing, do not load or are shared by ten take TMDB's, and the others keep their own.
 
 Every migration from 43 on also has a test of its own in `internal/store`, `TestMigrationNNNN…`, which makes a database with the schema before it, holding what a household sets up, applies the migration and checks that nothing was lost or changed: `TestNewMigrationsHaveUpgradeTests` fails without one. `TestMigrationsAreUnchanged` holds every migration to its SHA-256 in `internal/store/testdata/migrations.sha256`, since a migration that a release holds is never edited.
 
