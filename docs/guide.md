@@ -94,6 +94,7 @@ The films and series of Xtream servers, Stalker portals, Jellyfin, Plex and fold
 - **What a box cannot play** goes through ffmpeg: *Settings* → *Converting and transcoding* says what may be converted or transcoded, and on which server.
 - **The playback check,** in the box's own *Settings* → *Playback Check*, measures what that box plays.
 - **Details from TMDB** for a folder's titles, with a key of your own: *Settings*.
+- **Pictures from TMDB** for the films and series of Xtream servers and Stalker portals, once that key is saved: *Settings* → *Pictures for providers' films and series*, off at first. A title whose poster is missing, does not load on a box, or is one that many of its source's titles share takes TMDB's, looked up in the background; its own comes back once it loads (D143).
 
 ## Back up, upgrade, go back, remove
 

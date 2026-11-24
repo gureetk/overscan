@@ -2,7 +2,7 @@
 
 # TMDB notes
 
-What Overscan asks of The Movie Database (TMDB) for the films and series in folders on the server, with a key that the administrator gives (D88), and what TMDB asks of applications in return.
+What Overscan asks of The Movie Database (TMDB) for the films and series in folders on the server (D88), and for the pictures of Xtream servers' and Stalker portals' films and series (D143), with a key that the administrator gives, and what TMDB asks of applications in return.
 
 **Sources.** Each statement carries a mark from the [clean-room policy](../clean-room.md): **Documented** (a named public source says so), **Observed** (seen by a contributor, who says with what) or **Assumed** (inferred, and a hypothesis until a real source confirms it). Nothing here is Observed yet: the workspace that wrote Overscan's TMDB client could not reach TMDB, and the client was tested against a fake written from these notes.
 
@@ -31,6 +31,7 @@ What Overscan asks of The Movie Database (TMDB) for the films and series in fold
 
 ## 3. Pictures
 
+- For a provider's film or series, Overscan uses only the poster and the wide picture of what it asks (D143), and asks the same methods: by the ID that an Xtream server gives (`tmdb_id`, in [the Xtream notes](xtream-api-notes.md)), else by a search with the title's name and year, as for a folder's title.
 - A picture is at `https://image.tmdb.org/t/p/`, then a size, then its path, such as `w500` and `/abc.jpg`. Sizes include `w92`, `w185`, `w342`, `w500`, `w780`, `w1280` and `original`. **Documented** [4], and the configuration lists them [1]. Overscan asks for `w342` posters, `w1280` backdrops and `w300` stills, and keeps its own copy of each, as it does every picture (D54).
 
 ## 4. Limits

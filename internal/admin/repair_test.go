@@ -49,8 +49,9 @@ func TestRepairInTheAPI(t *testing.T) {
 	settings := func(rec *httptest.ResponseRecorder) (bool, bool) {
 		var got map[string]any
 		err := json.Unmarshal(rec.Body.Bytes(), &got)
-		return got["repair_default"] == true, err == nil && rec.Code == http.StatusOK && len(got) == 17 &&
+		return got["repair_default"] == true, err == nil && rec.Code == http.StatusOK && len(got) == 18 &&
 			got["outputs"] == false && got["outputs_anywhere"] == false && got["guide_placeholders"] == 0.0 &&
+			got["tmdb_pictures"] == false &&
 			got["repair_hls"] == false && got["transcode_video"] == 0.0 && got["convert_sound"] == true &&
 			got["server_transcodes"] == true && got["adult_marks"] == "lock" && got["radio_apart"] == false &&
 			got["tmdb_key_set"] == false && got["tmdb_language"] == "" && got["recordings_cap"] == 0.0 &&

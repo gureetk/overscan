@@ -2717,6 +2717,12 @@ paths:
                   description: >-
                     The length of placeholder programmes, in minutes, or 0
                     for none (D142).
+                tmdb_pictures:
+                  type: boolean
+                  description: >-
+                    Films and series of Xtream servers and Stalker portals
+                    whose poster is missing, does not load, or is one that
+                    many of their source's titles share take TMDB's (D143).
       responses:
         "200":
           $ref: "#/components/responses/Settings"
@@ -5767,7 +5773,7 @@ components:
         application/json:
           schema:
             type: object
-            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes, adult_marks, radio_apart, tmdb_key_set, tmdb_language, recordings_cap, recordings_until, recordings_max_hours, timeshift_minutes, shared_tuner, outputs, outputs_anywhere, guide_placeholders]
+            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes, adult_marks, radio_apart, tmdb_key_set, tmdb_language, recordings_cap, recordings_until, recordings_max_hours, timeshift_minutes, shared_tuner, outputs, outputs_anywhere, guide_placeholders, tmdb_pictures]
             properties:
               repair_default:
                 type: boolean
@@ -5876,6 +5882,14 @@ components:
                   The length, in minutes, of the placeholder programmes that
                   the guides that boxes and players read give a channel
                   where it has none (D142), or 0 for none. Off at first.
+              tmdb_pictures:
+                type: boolean
+                description: >-
+                  Films and series of Xtream servers and Stalker portals whose
+                  poster is missing, does not load, or is one that at least
+                  ten of their source's titles share take TMDB's poster, and
+                  its wide picture where they have none, once TMDB's key is
+                  saved (D143). Off at first.
     NoRecorder:
       description: This server cannot record (`no_recorder`).
       content:

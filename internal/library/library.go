@@ -102,6 +102,9 @@ type Library struct {
 	// way in the background, by source and kind (D88).
 	tmdbBase string
 	tmdbRuns map[listKey]bool
+	// pictureRuns are the runs that give providers' titles TMDB's
+	// pictures, under way, by source and kind (D143).
+	pictureRuns map[listKey]bool
 
 	// Overridden by tests.
 	maxListBytes int64
@@ -138,15 +141,29 @@ func New(st *store.Store, log *slog.Logger, version string) *Library {
 		stalker:   stalker.NewPool(nil),
 		tmdbBase:  tmdb.DefaultBase,
 		tmdbRuns:  map[listKey]bool{},
+
+		pictureRuns: map[listKey]bool{},
 	}
 }
 
-// Run waits until ctx is done, then stops the reads under way and waits for
-// them, so that none outlives the store.
+// Run looks at providers' pictures every PicturesEvery (D143) until ctx is
+// done, then stops the reads under way and waits for them, so that none
+// outlives the store.
 func (l *Library) Run(ctx context.Context) {
-	<-ctx.Done()
-	l.stop()
-	l.running.Wait()
+	tick := time.NewTicker(PicturesEvery)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			l.stop()
+			l.running.Wait()
+			return
+		case <-tick.C:
+			// Providers' titles take TMDB's pictures where theirs want
+			// replacing (D143).
+			l.FillPictures(ctx)
+		}
+	}
 }
 
 // State says what devices can browse of a kind of title.
@@ -407,6 +424,9 @@ func (l *Library) readList(src store.Source, kind string) error {
 		"left_out", changes.LeftOut, "skipped", read.skipped, "took", l.now().Sub(start).Round(time.Millisecond))
 	if len(read.tmdb) > 0 {
 		l.startTMDB(src, kind, read.tmdb)
+	}
+	if hasPictures(settings.Type) {
+		l.startPictures(src, kind)
 	}
 	return nil
 }
@@ -788,6 +808,7 @@ func (l *Library) readMovie(ctx context.Context, c *xtream.Client, t store.Title
 		Year:      m.Year,
 		Rating:    m.Rating,
 		Duration:  int(m.Duration / time.Second),
+		TMDBID:    m.TMDBID,
 	}
 	return l.store.SetMovieDetails(ctx, t.ID, d, m.Container, l.now())
 }

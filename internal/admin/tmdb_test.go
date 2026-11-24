@@ -11,10 +11,13 @@ import (
 	"testing"
 )
 
-// fakeFolders counts the reads of the folders that the admin asks for.
-type fakeFolders struct{ reads int }
+// fakeFolders counts the reads of the folders, and the runs for
+// providers' pictures, that the admin asks for.
+type fakeFolders struct{ reads, pictures int }
 
 func (f *fakeFolders) ReadFoldersAgain(context.Context) { f.reads++ }
+
+func (f *fakeFolders) FillPictures(context.Context) { f.pictures++ }
 
 // TestTMDB saves, checks and removes TMDB's key from the Settings page and
 // the API, which never gives the key back, and reads the folders again when
@@ -99,4 +102,44 @@ func TestTMDB(t *testing.T) {
 	if folders.reads != reads+1 {
 		t.Errorf("%d reads of the folders after removing the key, from %d", folders.reads, reads)
 	}
+}
+
+// TestTMDBPictures turns TMDB's pictures for providers' films and series
+// on and off from the Settings page and the API (D143).
+func TestTMDBPictures(t *testing.T) {
+	ta := newTestAdmin(t)
+	folders := &fakeFolders{}
+	ta.UseFolders(folders)
+	c, h := ta.withLineup()
+	csrf := h[1]
+	hx := []string{"HX-Request", "true"}
+	ctx := context.Background()
+
+	page := ta.do("GET", "/admin/settings", nil, c).Body.String()
+	mustContain(t, "off", page, "Pictures for providers' films and series",
+		"Off: films and series of Xtream servers and Stalker portals show their sources' pictures.")
+	rec := ta.do("POST", "/admin/settings/tmdb-pictures", lineupForm(csrf, "", "pictures", "1"), c, hx...)
+	mustContain(t, "on", rec.Body.String(), "whose pictures want replacing take TMDB&#39;s",
+		"On, once TMDB's key is saved")
+	if on, err := ta.st.TMDBPictures(ctx); !on || err != nil || folders.pictures != 1 {
+		t.Errorf("on: %v, %v, %d runs", on, err, folders.pictures)
+	}
+	if err := ta.st.SetTMDBKey(ctx, "made-up-key"); err != nil {
+		t.Fatal(err)
+	}
+	page = ta.do("GET", "/admin/settings", nil, c).Body.String()
+	mustContain(t, "with a key", page, "looked up in the background. 0 titles show TMDB's now.")
+
+	var got apiSettings
+	rec = ta.apiDo("PATCH", "settings", `{"tmdb_pictures": false}`, c, h...)
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || got.TMDBPictures {
+		t.Errorf("off: %s", rec.Body)
+	}
+	apiErrorOf(t, ta.apiDo("PATCH", "settings", `{"tmdb_pictures": "yes"}`, c, h...), http.StatusBadRequest, "bad_json")
+	rec = ta.apiDo("PATCH", "settings", `{"tmdb_pictures": true}`, c, h...)
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || !got.TMDBPictures || folders.pictures != 2 {
+		t.Errorf("on again: %s, %d runs", rec.Body, folders.pictures)
+	}
+	mustContain(t, "lineup.txt", ta.bundleFiles(c)["lineup.txt"],
+		"TMDB's pictures for providers' titles (D143): true; titles showing them: 0; sources' pictures that do not load: 0")
 }

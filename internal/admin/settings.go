@@ -27,8 +27,9 @@ import (
 // API never gives back, the room that recordings may take (D89), how
 // many minutes of a box's live channel the server keeps (D92), whether
 // one connection to a source serves every screen that plays a channel
-// (D93), and the length of placeholder programmes, in minutes, 0 for none
-// (D142).
+// (D93), the length of placeholder programmes, in minutes, 0 for none
+// (D142), and whether providers' films and series take TMDB's pictures
+// where theirs want replacing (D143).
 
 type apiSettings struct {
 	RepairDefault    bool   `json:"repair_default"`
@@ -48,6 +49,7 @@ type apiSettings struct {
 	Outputs          bool   `json:"outputs"`
 	OutputsAnywhere  bool   `json:"outputs_anywhere"`
 	Placeholders     int    `json:"guide_placeholders"`
+	TMDBPictures     bool   `json:"tmdb_pictures"`
 }
 
 func (a *Admin) apiSettings(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
@@ -87,7 +89,9 @@ func (a *Admin) apiSettings(w http.ResponseWriter, r *http.Request, _ store.Admi
 		if v.Outputs, err = a.store.Outputs(ctx); err == nil {
 			if v.OutputsAnywhere, err = a.store.OutputsAnywhere(ctx); err == nil {
 				var block time.Duration
-				block, err = a.store.Placeholders(ctx)
+				if block, err = a.store.Placeholders(ctx); err == nil {
+					v.TMDBPictures, err = a.store.TMDBPictures(ctx)
+				}
 				v.Placeholders = int(block / time.Minute)
 			}
 		}
@@ -247,6 +251,15 @@ func (a *Admin) apiChangeSettings(w http.ResponseWriter, r *http.Request, _ stor
 				return
 			}
 			if a.editAnswer(w, a.setOutputsAnywhere(r.Context(), on)) {
+				return
+			}
+		case "tmdb_pictures":
+			var on bool
+			if json.Unmarshal(v, &on) != nil {
+				apiError(w, http.StatusBadRequest, "bad_json", "tmdb_pictures is true or false.")
+				return
+			}
+			if a.editAnswer(w, a.setTMDBPictures(r.Context(), on)) {
 				return
 			}
 		case "guide_placeholders":
@@ -460,21 +473,49 @@ func (a *Admin) setTMDBKey(ctx context.Context, key string) (warning string, err
 	return warning, nil
 }
 
-// Folders reads the folder sources again.
+// Folders reads the folder sources again, and looks providers' titles'
+// pictures up on TMDB (D143).
 type Folders interface {
 	ReadFoldersAgain(ctx context.Context)
+	FillPictures(ctx context.Context)
 }
 
 // UseFolders gives the admin what reads the folder sources again, which a
 // change to TMDB's key or language does (D88).
 func (a *Admin) UseFolders(f Folders) { a.folders = f }
 
-// readFolders reads the folder sources again, so that a change to TMDB's
-// settings shows at once.
+// readFolders reads the folder sources again, and looks providers'
+// titles' pictures up on TMDB, so that a change to TMDB's settings shows
+// at once.
 func (a *Admin) readFolders(ctx context.Context) {
 	if a.folders != nil {
 		a.folders.ReadFoldersAgain(ctx)
+		a.folders.FillPictures(ctx)
 	}
+}
+
+// setTMDBPictures turns TMDB's pictures for providers' titles on or off
+// (D143).
+func (a *Admin) setTMDBPictures(ctx context.Context, on bool) error {
+	if err := a.store.SetTMDBPictures(ctx, on); err != nil {
+		return err
+	}
+	a.log.Info("TMDB's pictures for providers' films and series set in the admin", "on", on)
+	if on && a.folders != nil {
+		a.folders.FillPictures(ctx)
+	}
+	return nil
+}
+
+// tmdbPicturesForm turns TMDB's pictures for providers' titles on or off
+// from the Settings page.
+func (a *Admin) tmdbPicturesForm(w http.ResponseWriter, r *http.Request, s store.AdminSession) {
+	on := r.PostFormValue("pictures") != ""
+	done := "Films and series of Xtream servers and Stalker portals show their sources' pictures."
+	if on {
+		done = "Films and series of Xtream servers and Stalker portals whose pictures want replacing take TMDB's, as they are looked up in the background."
+	}
+	a.settingsDone(w, r, s, a.setTMDBPictures(r.Context(), on), done)
 }
 
 // setTMDBLanguage sets the language that TMDB is asked in: such as en-GB,

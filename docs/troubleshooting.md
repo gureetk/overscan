@@ -62,6 +62,8 @@ What to check when something goes wrong, by what you see. [guide.md](guide.md) s
 
 **A player gets *403*: *Overscan's outputs answer players on its own networks only.*** The player is not on your own networks, or comes through a reverse proxy that names no client. Away from home, connect through a VPN into your home network; behind a reverse proxy, name it in `trusted_proxies` ([outputs.md](outputs.md), D119).
 
+**A film or series shows another title's poster.** With *Pictures for providers' films and series* on, Overscan takes TMDB's poster where a title's own is missing, does not load, or is shared by many titles, finding it by its TMDB ID or else by its name and year (D143). A wrong match comes from a name that TMDB has for another title of the same year: *Settings* → the switch off gives every title its source's pictures again.
+
 **Programmes named after their channel fill a player's guide.** These are placeholder programmes, for the hours in which a channel has none: *Guides* → *Placeholder programmes* → *Nothing* turns them off (D142). Players keep the guide they read until they read it again.
 
 **A player's login fails though it is right.** After five wrong logins from one address within 15 minutes, even the right one waits until the first of them is 15 minutes old.

@@ -272,8 +272,17 @@
       <p class="hint" id="tmdb-language-hint">Two small letters, and a region if you like: en, en-GB, fr-FR.</p>
       <button type="submit">Save</button>
     </form>
+    <form method="post" action="/admin/settings/tmdb-pictures" hx-post="/admin/settings/tmdb-pictures" hx-trigger="change" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" class="switch-row tmdb-pictures">
+      <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+      <input class="switch" type="checkbox" id="tmdb-pictures" name="pictures" value="1"{{if .Data.TMDBPictures}} checked{{end}} aria-describedby="tmdb-pictures-text">
+      <div>
+        <label for="tmdb-pictures">Pictures for providers' films and series</label>
+        <p id="tmdb-pictures-text">{{if not .Data.TMDBPictures}}Off: films and series of Xtream servers and Stalker portals show their sources' pictures. On, those whose poster is missing, does not load, or is one that many of their source's titles share take TMDB's.{{else if not .Data.TMDBKeySet}}On, once TMDB's key is saved: films and series of Xtream servers and Stalker portals whose poster is missing, does not load, or is one that many of their source's titles share take TMDB's.{{else}}On: films and series of Xtream servers and Stalker portals whose poster is missing, does not load, or is one that many of their source's titles share take TMDB's, looked up in the background. {{count .Data.TMDBFilled}} {{plural .Data.TMDBFilled "title"}} {{if eq .Data.TMDBFilled 1}}shows{{else}}show{{end}} TMDB's now{{if .Data.PicturesFailing}}; {{count .Data.PicturesFailing}} of the sources' pictures do not load{{end}}.{{end}}</p>
+        <noscript><button class="small" type="submit">Save</button></noscript>
+      </div>
+    </form>
     {{- if .Data.TMDBKeySet}}
-    <form method="post" action="/admin/settings/tmdb" hx-post="/admin/settings/tmdb" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" hx-confirm="Remove TMDB's key? Titles in folders then show what their folders have." class="tmdb-remove">
+    <form method="post" action="/admin/settings/tmdb" hx-post="/admin/settings/tmdb" hx-target="#settings-main" hx-select="#settings-main" hx-swap="outerHTML" hx-confirm="Remove TMDB's key? Titles in folders then show what their folders have, and providers' titles their sources' pictures." class="tmdb-remove">
       <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
       <button type="submit" class="danger small" name="remove" value="1">Remove the key</button>
     </form>

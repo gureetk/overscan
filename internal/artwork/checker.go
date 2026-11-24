@@ -40,7 +40,8 @@ const (
 	retryUnsettled = time.Hour
 )
 
-// Checker checks whether logos load.
+// Checker checks whether logos load, and whether providers' posters that
+// did not load load again (D143).
 type Checker struct {
 	store *store.Store
 	cache *Cache
@@ -149,5 +150,70 @@ func (k *Checker) Round(ctx context.Context) int {
 	if err := k.store.ForgetLogoChecks(ctx, now.Add(-2*ReloadAfter)); err != nil && ctx.Err() == nil {
 		k.log.Error("cannot forget old logos' checks", "error", err)
 	}
-	return len(due)
+	return len(due) + k.pictures(ctx, now, checksAtOnce-len(due))
+}
+
+// pictures fetches again up to limit of the providers' posters that did
+// not load a day or more ago (D143): one that loads now gives its titles
+// their own poster again, in place of TMDB's. It returns how many it
+// tried.
+func (k *Checker) pictures(ctx context.Context, now time.Time, limit int) int {
+	if limit <= 0 {
+		return 0
+	}
+	if err := k.store.ForgetPictureChecks(ctx); err != nil {
+		if ctx.Err() == nil {
+			k.log.Error("cannot forget old pictures' checks", "error", err)
+		}
+		return 0
+	}
+	found, err := k.store.PicturesToCheck(ctx, now.Add(-RecheckAfter), limit+len(k.later))
+	if err != nil {
+		if ctx.Err() == nil {
+			k.log.Error("cannot check pictures", "error", err)
+		}
+		return 0
+	}
+	tried, loaded := 0, 0
+	for _, f := range found {
+		if _, wait := k.later[f.Address]; wait || tried == limit {
+			continue
+		}
+		if ctx.Err() != nil {
+			break
+		}
+		if k.pause > 0 {
+			select {
+			case <-ctx.Done():
+				return tried
+			case <-time.After(k.pause):
+			}
+		}
+		tried++
+		fctx, cancel := context.WithTimeout(ctx, 2*fetchTimeout)
+		_, _, err := k.cache.GetWith(fctx, PosterKind, f.Address, func() ([]byte, error) {
+			return k.cache.get(f.Address, f.UserAgent, f.PublicOnly)
+		})
+		cancel()
+		switch {
+		case err == nil:
+			err = k.store.PictureLoads(ctx, f.SourceID, f.Address)
+			loaded++
+		case Settled(err):
+			err = k.store.PictureFailed(ctx, f.SourceID, f.Address, k.now())
+		default:
+			k.later[f.Address] = k.now().Add(retryUnsettled)
+			err = nil
+		}
+		if err != nil {
+			if ctx.Err() == nil {
+				k.log.Error("cannot record a picture's check", "error", err)
+			}
+			return tried
+		}
+	}
+	if loaded > 0 {
+		k.log.Info("posters that did not load load again", "checked", tried, "load", loaded)
+	}
+	return tried
 }
