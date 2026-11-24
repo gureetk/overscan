@@ -18,6 +18,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -248,8 +249,16 @@ func (o *Output) guide(w http.ResponseWriter, r *http.Request) {
 // their programmes from a day before now, or a channel's archive's days,
 // to a week ahead, with placeholders where the setting asks for them
 // (D142), and returns how many programmes it wrote. Every time is in UTC.
-// Logos are addresses under base.
+// Logos are addresses under base. It gives the memory that it used back to
+// the system once it is done.
 func WriteGuide(ctx context.Context, w io.Writer, st *store.Store, lineupID int64, channels []store.LineupChannel, base string, now time.Time) (int, error) {
+	// A guide of a large lineup, with a week of programmes, runs to
+	// hundreds of megabytes, built a programme at a time from the
+	// database: garbage that Go would hand back to the system only over
+	// minutes. A player reads it every few hours, so collecting it at once
+	// costs little and keeps the idle server small (the plan's section 15),
+	// as a source's read does.
+	defer debug.FreeOSMemory()
 	from := now.Add(-guideBack)
 	shown := make(map[int64]time.Time, len(channels))
 	if _, err := io.WriteString(w, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE tv SYSTEM \"xmltv.dtd\">\n"+
