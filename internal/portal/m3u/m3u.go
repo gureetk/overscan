@@ -246,8 +246,9 @@ func (o *Output) guide(w http.ResponseWriter, r *http.Request) {
 
 // WriteGuide writes an XMLTV guide of the given channels of a lineup, and
 // their programmes from a day before now, or a channel's archive's days,
-// to a week ahead, and returns how many programmes it wrote. Every time is
-// in UTC. Logos are addresses under base.
+// to a week ahead, with placeholders where the setting asks for them
+// (D142), and returns how many programmes it wrote. Every time is in UTC.
+// Logos are addresses under base.
 func WriteGuide(ctx context.Context, w io.Writer, st *store.Store, lineupID int64, channels []store.LineupChannel, base string, now time.Time) (int, error) {
 	from := now.Add(-guideBack)
 	shown := make(map[int64]time.Time, len(channels))
@@ -277,7 +278,7 @@ func WriteGuide(ctx context.Context, w io.Writer, st *store.Store, lineupID int6
 		}
 	}
 	n := 0
-	err := st.EachLineupProgramme(ctx, lineupID, from, now.Add(guideAhead), func(entryID int64, p store.Programme) error {
+	err := st.EachLineupListing(ctx, lineupID, from, now.Add(guideAhead), now, func(entryID int64, p store.Programme) error {
 		back, ok := shown[entryID]
 		if !ok || !p.Stop.After(back) {
 			return nil

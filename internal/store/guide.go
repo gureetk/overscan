@@ -381,6 +381,9 @@ type Programme struct {
 	SubTitle    string
 	Description string
 	Category    string
+	// Placeholder is true of a placeholder programme, named after its
+	// channel, where it has none (D142).
+	Placeholder bool
 }
 
 // Programmes returns the programmes of a channel that end after from and

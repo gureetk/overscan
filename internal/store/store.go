@@ -50,6 +50,9 @@ var (
 type Store struct {
 	db  *sql.DB
 	box atomic.Pointer[secrets.Box] // seals and opens secrets (D46)
+	// zone is the time zone whose midnights placeholder programmes'
+	// blocks start from (D142): the server's own, unless a test sets it.
+	zone *time.Location
 }
 
 // UseKey makes the store seal secrets with box, and open them. Without it,

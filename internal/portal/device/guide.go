@@ -15,7 +15,8 @@ import (
 
 // The guide (D51) for the box's page: what is on every channel over a few
 // hours, for now and next and the guide's grid, and one channel's
-// programmes in full.
+// programmes in full, with placeholders where the setting asks for them
+// (D142).
 
 // Windows of the guide's calls.
 const (
@@ -30,7 +31,8 @@ const (
 
 // programme is a programme of a channel. Times are Unix seconds. GET guide
 // leaves out the subtitle, description and category, to keep its answer
-// small.
+// small. Placeholder is true of a placeholder programme (D142), which
+// cannot be recorded or played from an archive.
 type programme struct {
 	ID          int64  `json:"id"`
 	Title       string `json:"title"`
@@ -39,10 +41,11 @@ type programme struct {
 	Category    string `json:"category,omitempty"`
 	Start       int64  `json:"start"`
 	Stop        int64  `json:"stop"`
+	Placeholder bool   `json:"placeholder,omitempty"`
 }
 
 func shortProgramme(p store.Programme) programme {
-	return programme{ID: p.ID, Title: p.Title, Start: p.Start.Unix(), Stop: p.Stop.Unix()}
+	return programme{ID: p.ID, Title: p.Title, Start: p.Start.Unix(), Stop: p.Stop.Unix(), Placeholder: p.Placeholder}
 }
 
 func fullProgramme(p store.Programme) programme {
@@ -118,7 +121,7 @@ func (a *API) guide(w http.ResponseWriter, r *http.Request, d store.Device) {
 		a.internalError(w, "look up account", err)
 		return
 	}
-	byEntry, err := a.store.LineupProgrammes(r.Context(), acct.LineupID, from, to, ids...)
+	byEntry, err := a.store.LineupListings(r.Context(), acct.LineupID, from, to, a.now(), ids...)
 	if err != nil {
 		a.internalError(w, "read the guide", err)
 		return
@@ -178,7 +181,7 @@ func (a *API) channelGuide(w http.ResponseWriter, r *http.Request, d store.Devic
 			return
 		}
 	}
-	ps, err := a.store.EntryProgrammes(r.Context(), acct.LineupID, id, from, to)
+	ps, err := a.store.EntryListings(r.Context(), acct.LineupID, id, from, to, a.now())
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, errNotFound)
 		return

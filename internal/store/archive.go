@@ -195,6 +195,7 @@ func (s *Store) EntryArchiveDays(ctx context.Context, lineupID, entryID int64) (
 
 // InArchive reports whether a programme has ended by now and started
 // within the days that an archive reaches back, so that it plays from it.
+// A placeholder never does (D142).
 func InArchive(p Programme, days int, now time.Time) bool {
-	return days > 0 && !p.Stop.After(now) && p.Start.After(now.Add(-time.Duration(days)*24*time.Hour))
+	return days > 0 && !p.Placeholder && !p.Stop.After(now) && p.Start.After(now.Add(-time.Duration(days)*24*time.Hour))
 }

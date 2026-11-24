@@ -35,9 +35,10 @@ type features struct {
 	playlists bool
 	// guides is v1.2.0's: guides of the household's own (from its first
 	// pre-release on), handGuides channels' guides chosen by hand (from
-	// v1.2.0-alpha.2 on), and logos logos set by hand and guides' logos
-	// (from alpha.3 on).
-	guides, handGuides, logos bool
+	// v1.2.0-alpha.2 on), logos logos set by hand and guides' logos
+	// (from alpha.3 on), and placeholders placeholder programmes (from
+	// alpha.4 on).
+	guides, handGuides, logos, placeholders bool
 }
 
 func featuresOf(version string) features {
@@ -59,7 +60,8 @@ func featuresOf(version string) features {
 	since := func(n int) bool {
 		return from(1, 2) && !(major == 1 && minor == 2 && strings.HasPrefix(pre, "alpha.") && alpha < n)
 	}
-	return features{households: at(4), hub: at(5), playlists: from(1, 1), guides: from(1, 2), handGuides: since(2), logos: since(3)}
+	return features{households: at(4), hub: at(5), playlists: from(1, 1), guides: from(1, 2), handGuides: since(2), logos: since(3),
+		placeholders: since(4)}
 }
 
 // household holds what the setup made, by name, so that the probes can
@@ -215,6 +217,15 @@ func (h *household) setUp(a *admin, base string, since time.Time) error {
 			name string
 			run  func() error
 		}{"logos", func() error { return h.setUpLogos(a) }})
+	}
+	if h.f.placeholders {
+		// Two-hour placeholders; the settings' probe sees that they stay.
+		steps = append(steps, struct {
+			name string
+			run  func() error
+		}{"placeholder programmes", func() error {
+			return a.call("PATCH", "settings", map[string]any{"guide_placeholders": 120}, nil)
+		}})
 	}
 	for _, s := range steps {
 		if err := s.run(); err != nil {

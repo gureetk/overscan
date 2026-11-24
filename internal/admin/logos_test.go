@@ -140,7 +140,8 @@ func TestGuideLogosSettings(t *testing.T) {
 	// The support bundle says so.
 	files := ta.bundleFiles(c)
 	mustContain(t, "sources.txt", files["sources.txt"], "Its guide's logos", "Before a channel's own")
-	mustContain(t, "guides.txt", files["guides.txt"], "Its logos", "Not used", "Logos checked (D141): 0, of which 0 do not load")
+	mustContain(t, "guides.txt", files["guides.txt"], "Its logos", "Not used", "Logos checked (D141): 0, of which 0 do not load",
+		"Placeholder programmes (D142): off")
 }
 
 // bundleFiles returns the support bundle's files by name.

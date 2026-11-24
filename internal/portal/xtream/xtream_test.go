@@ -1003,3 +1003,45 @@ func FuzzStreamFile(f *testing.F) {
 		}
 	})
 }
+
+// TestGuidePlaceholders checks that Xtream players see placeholder
+// programmes where the setting asks for them, never marked as playing
+// from an archive (D142).
+func TestGuidePlaceholders(t *testing.T) {
+	h := newHarness(t)
+	if err := h.store.SetPlaceholders(context.Background(), 2*time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Listings []listingJSON `json:"epg_listings"`
+	}
+	h.api(&got, "action", "get_short_epg", "stream_id", fmt.Sprint(h.ids["Plain"]))
+	if len(got.Listings) != 4 {
+		t.Fatalf("Plain's short guide: %+v", got.Listings)
+	}
+	for _, l := range got.Listings {
+		if l.title(t) != "Plain" {
+			t.Errorf("%+v", l)
+		}
+	}
+	h.api(&got, "action", "get_short_epg", "stream_id", fmt.Sprint(h.ids["Alpha"]))
+	if got.Listings[0].title(t) != "a & programme 30" {
+		t.Errorf("Alpha's short guide: %+v", got.Listings)
+	}
+	// Bravo's day keeps its archive's marks, and its placeholders have
+	// none.
+	h.api(&got, "action", "get_simple_data_table", "stream_id", fmt.Sprint(h.ids["Bravo"]))
+	archived, placeholders := 0, 0
+	for _, l := range got.Listings {
+		archived += *l.HasArchive
+		if l.title(t) == "Bravo" {
+			placeholders++
+			if *l.HasArchive != 0 {
+				t.Errorf("an archived placeholder: %+v", l)
+			}
+		}
+	}
+	if archived != 30 || placeholders < 19 || placeholders > 20 {
+		t.Errorf("Bravo's table: %d listings, %d archived, %d placeholders", len(got.Listings), archived, placeholders)
+	}
+}

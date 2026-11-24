@@ -178,3 +178,59 @@ func TestGetSimpleDataTable(t *testing.T) {
 		}
 	}
 }
+
+// TestPlaceholders checks that Stalker clients see placeholder
+// programmes where the setting asks for them, never marked as playing
+// from an archive (D142).
+func TestPlaceholders(t *testing.T) {
+	h := newHarness(t)
+	h.approve(macA)
+	entries := h.addGuide()
+	token := h.handshake(macA)
+	if err := h.store.SetPlaceholders(context.Background(), time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	id := entries["Channel 03"]
+	var ps []epgProgramme
+	h.js(h.call(fmt.Sprintf("type=itv&action=get_short_epg&ch_id=%d&size=4", id), macA, token), &ps)
+	if names(ps) != "Channel 03 Channel 03 Channel 03 Channel 03" {
+		t.Fatalf("programmes %+v", ps)
+	}
+	for i, p := range ps {
+		start, _ := strconv.ParseInt(p.StartTimestamp, 10, 64)
+		stop, _ := strconv.ParseInt(p.StopTimestamp, 10, 64)
+		entry, minute, ok := programmeOf(p.ID)
+		if p.MarkArchive != "0" || stop-start > 3600 || !ok || entry != id || minute.Unix() != start ||
+			i == 0 && (start > h.now.Unix() || stop <= h.now.Unix()) {
+			t.Errorf("%d: %+v", i, p)
+		}
+	}
+	// Channel 00's guide fills every hour; Channel 01's has one programme,
+	// with placeholders after it.
+	h.js(h.call(fmt.Sprintf("type=itv&action=get_short_epg&ch_id=%d&size=2", entries["Channel 00"]), macA, token), &ps)
+	if names(ps) != "P3 P4" {
+		t.Errorf("Channel 00: %+v", ps)
+	}
+	h.js(h.call(fmt.Sprintf("type=itv&action=get_short_epg&ch_id=%d&size=2", entries["Channel 01"]), macA, token), &ps)
+	if names(ps) != "Channel 01 now Channel 01" {
+		t.Errorf("Channel 01: %+v", ps)
+	}
+	var info struct{ Data map[string][]epgProgramme }
+	h.js(h.call("type=itv&action=get_epg_info&period=2", macA, token), &info)
+	if len(info.Data) <= 2 || names(info.Data[strconv.FormatInt(entries["Channel 00"], 10)]) != "P3 P4" ||
+		info.Data[strconv.FormatInt(entries["Channel 02"], 10)] != nil || len(info.Data[strconv.FormatInt(id, 10)]) < 2 {
+		t.Errorf("data %+v", info.Data)
+	}
+	// The day's table: Channel 03 has an archive, but no placeholder
+	// plays from it, and none is in the past.
+	var page epgPage
+	h.js(h.callIn("UTC", "type=epg&action=get_simple_data_table&ch_id="+strconv.FormatInt(id, 10), macA, token), &page)
+	if page.TotalItems == 0 || page.SelectedItem != 1 || page.Data[0].Name != "Channel 03" {
+		t.Errorf("the day's table: %+v", page)
+	}
+	for _, p := range page.Data {
+		if p.MarkArchive != "0" {
+			t.Errorf("an archived placeholder: %+v", p)
+		}
+	}
+}

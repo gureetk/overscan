@@ -25,9 +25,10 @@ import (
 // marks for adults do (D86), whether boxes show radio stations on their
 // Radio screen alone (D87), TMDB's key and language (D88), whose key the
 // API never gives back, the room that recordings may take (D89), how
-// many minutes of a box's live channel the server keeps (D92), and whether
+// many minutes of a box's live channel the server keeps (D92), whether
 // one connection to a source serves every screen that plays a channel
-// (D93).
+// (D93), and the length of placeholder programmes, in minutes, 0 for none
+// (D142).
 
 type apiSettings struct {
 	RepairDefault    bool   `json:"repair_default"`
@@ -46,6 +47,7 @@ type apiSettings struct {
 	SharedTuner      bool   `json:"shared_tuner"`
 	Outputs          bool   `json:"outputs"`
 	OutputsAnywhere  bool   `json:"outputs_anywhere"`
+	Placeholders     int    `json:"guide_placeholders"`
 }
 
 func (a *Admin) apiSettings(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
@@ -83,7 +85,11 @@ func (a *Admin) apiSettings(w http.ResponseWriter, r *http.Request, _ store.Admi
 	}
 	if err == nil {
 		if v.Outputs, err = a.store.Outputs(ctx); err == nil {
-			v.OutputsAnywhere, err = a.store.OutputsAnywhere(ctx)
+			if v.OutputsAnywhere, err = a.store.OutputsAnywhere(ctx); err == nil {
+				var block time.Duration
+				block, err = a.store.Placeholders(ctx)
+				v.Placeholders = int(block / time.Minute)
+			}
 		}
 	}
 	if a.editAnswer(w, err) {
@@ -241,6 +247,15 @@ func (a *Admin) apiChangeSettings(w http.ResponseWriter, r *http.Request, _ stor
 				return
 			}
 			if a.editAnswer(w, a.setOutputsAnywhere(r.Context(), on)) {
+				return
+			}
+		case "guide_placeholders":
+			var minutes int
+			if json.Unmarshal(v, &minutes) != nil {
+				apiError(w, http.StatusBadRequest, "bad_json", placeholdersHint)
+				return
+			}
+			if a.editAnswer(w, a.setPlaceholders(r.Context(), minutes)) {
 				return
 			}
 		default:

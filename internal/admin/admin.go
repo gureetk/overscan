@@ -121,6 +121,7 @@ func (a *Admin) Handler() http.Handler {
 	mux.Handle("POST /admin/sources/{id}/{action}", a.page(a.sourceAction))
 	mux.Handle("GET /admin/guides", a.page(a.guidesPage))
 	mux.Handle("POST /admin/guides", a.page(a.addGuideForm))
+	mux.Handle("POST /admin/guides/placeholders", a.page(a.placeholdersForm))
 	mux.Handle("GET /admin/guides/channels", a.page(a.guideChannelsPage))
 	mux.Handle("GET /admin/guides/channels/{id}", a.page(a.guideChoicePage))
 	mux.Handle("POST /admin/guides/channels/{id}", a.page(a.chooseGuideForm))
