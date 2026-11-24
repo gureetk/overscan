@@ -6,9 +6,14 @@
 // folder of films and series, runs Overscan against them, and simulates
 // boxes that sign in, load the channel list, watch channels and switch
 // between them, half through the Stalker API and half through the device
-// API, which also browse the films.
+// API, which also browse the films. With -own-guide, it adds a large
+// XMLTV guide of the household's own (D139) that fills the half of the
+// channels that the provider's guide leaves out, and with -placeholders,
+// it turns placeholder programmes on (D142) and reads the playlist's XMLTV
+// guide once, all before the server idles.
 //
 //	go run ./tools/soak -duration 10m -boxes 4
+//	go run ./tools/soak -own-guide 40000 -own-hours 168 -placeholders 60
 //
 // It prints a summary, writes the samples to a CSV file, and fails if the
 // server breaks the budgets given as flags. It reads the server's use from
@@ -24,10 +29,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"math/rand/v2"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"os/exec"
@@ -59,6 +68,9 @@ type options struct {
 	out       string
 	idleMB    float64
 	peakMB    float64
+	ownGuide  int // channels that the guide of the household's own lists (0: none)
+	ownHours  int // hours of one-hour programmes for each of them
+	holders   int // the length of placeholder programmes, in minutes (0: none)
 	cpuBudget float64
 }
 
@@ -79,6 +91,9 @@ func main() {
 	flag.Float64Var(&o.idleMB, "idle-mb", 60, "fail if the idle server's resident memory exceeds this, in MB (0: no limit)")
 	flag.Float64Var(&o.peakMB, "peak-mb", 150, "fail if resident memory ever exceeds this, in MB (0: no limit)")
 	flag.Float64Var(&o.cpuBudget, "cpu", 0, "fail if average CPU use under load exceeds this percentage of one core (0: no limit)")
+	flag.IntVar(&o.ownGuide, "own-guide", 0, "how many channels a guide of the household's own lists, filling the half of the lineup that the provider's guide leaves out (0: none)")
+	flag.IntVar(&o.ownHours, "own-hours", 168, "how many hours of one-hour programmes the guide of the household's own has for each channel")
+	flag.IntVar(&o.holders, "placeholders", 0, "turn placeholder programmes of this many minutes on, and read the XMLTV guide once (0: off)")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -107,7 +122,7 @@ func run(ctx context.Context, o options) error {
 		}
 	}
 
-	provider, err := startProvider(o.channels, o.guide, o.bitrate)
+	provider, err := startProvider(o.channels, o.guide, o.bitrate, o.ownGuide, o.ownHours)
 	if err != nil {
 		return err
 	}
@@ -156,6 +171,17 @@ func run(ctx context.Context, o options) error {
 		close(loaded)
 		loadWG.Wait()
 		return err
+	}
+	ready, err := m.read()
+	if err != nil {
+		return err
+	}
+	if o.ownGuide > 0 || o.holders > 0 {
+		if err := srv.guides(ctx, provider.URL, o); err != nil {
+			close(loaded)
+			loadWG.Wait()
+			return err
+		}
 	}
 
 	macs := make([]string, o.boxes)
@@ -226,7 +252,7 @@ func run(ctx context.Context, o options) error {
 	if err := writeCSV(o.out, samples); err != nil {
 		return err
 	}
-	return report(o, idle, samples, &st)
+	return report(o, ready, idle, samples, &st)
 }
 
 // sleep waits for d, or until ctx is done.
@@ -245,7 +271,7 @@ func sleep(ctx context.Context, d time.Duration) error {
 // /playlist.m3u, each channel as an endless MPEG-TS stream at bitrate, and,
 // unless guideHours is 0, their guide at /guide.xml: a programme an hour,
 // from the hour before it was asked for.
-func startProvider(n, guideHours, bitrate int) (*httpServer, error) {
+func startProvider(n, guideHours, bitrate, ownGuide, ownHours int) (*httpServer, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /playlist.m3u", func(w http.ResponseWriter, r *http.Request) {
 		bw := bufio.NewWriter(w)
@@ -264,11 +290,17 @@ func startProvider(n, guideHours, bitrate int) (*httpServer, error) {
 		w.Header().Set("Content-Type", "application/xml")
 		bw := bufio.NewWriter(w)
 		bw.WriteString("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<tv>\n")
-		for i := 1; i <= n; i++ {
+		// With a guide of the household's own, the provider's guide
+		// leaves out the second half of the channels, which it fills.
+		listed := n
+		if ownGuide > 0 {
+			listed = n / 2
+		}
+		for i := 1; i <= listed; i++ {
 			fmt.Fprintf(bw, "<channel id=\"ch%d.example\"><display-name>Soak channel %d</display-name></channel>\n", i, i)
 		}
 		start := time.Now().UTC().Truncate(time.Hour).Add(-time.Hour)
-		for i := 1; i <= n; i++ {
+		for i := 1; i <= listed; i++ {
 			for h := range guideHours {
 				from := start.Add(time.Duration(h) * time.Hour)
 				fmt.Fprintf(bw, "<programme start=\"%s\" stop=\"%s\" channel=\"ch%d.example\"><title>Programme %d of channel %d</title>"+
@@ -278,6 +310,45 @@ func startProvider(n, guideHours, bitrate int) (*httpServer, error) {
 		}
 		bw.WriteString("</tv>\n")
 		bw.Flush()
+	})
+	mux.HandleFunc("GET /own.xml", func(w http.ResponseWriter, r *http.Request) {
+		// The guide of the household's own: the provider's second half of
+		// channels, by name under guide IDs of its own, then channels that
+		// fill nothing, ownGuide in all, each with ownHours of programmes.
+		w.Header().Set("Content-Type", "application/xml")
+		bw := bufio.NewWriter(w)
+		bw.WriteString("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<tv>\n")
+		name := func(k int) string {
+			if i := n/2 + k; i <= n {
+				return fmt.Sprintf("Soak channel %d", i)
+			}
+			return fmt.Sprintf("Other channel %d", k)
+		}
+		for k := 1; k <= ownGuide; k++ {
+			fmt.Fprintf(bw, "<channel id=\"own%d.example\"><display-name>%s</display-name><icon src=\"http://%s/icon/%d.png\"/></channel>\n",
+				k, name(k), r.Host, k)
+		}
+		start := time.Now().UTC().Truncate(time.Hour).Add(-24 * time.Hour)
+		for k := 1; k <= ownGuide; k++ {
+			for h := range ownHours {
+				from := start.Add(time.Duration(h) * time.Hour)
+				fmt.Fprintf(bw, "<programme start=\"%s\" stop=\"%s\" channel=\"own%d.example\"><title>Own programme %d of %s</title>"+
+					"<desc>A programme of the household's own guide, with a line of description as guides have.</desc></programme>\n",
+					from.Format("20060102150405 -0700"), from.Add(time.Hour).Format("20060102150405 -0700"), k, h+1, name(k))
+			}
+		}
+		bw.WriteString("</tv>\n")
+		bw.Flush()
+	})
+	// The icons of the guide of the household's own: one small picture,
+	// which Overscan's check of logos (D141) fetches into its copies.
+	icon, err := iconPNG()
+	if err != nil {
+		return nil, err
+	}
+	mux.HandleFunc("GET /icon/{k}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(icon)
 	})
 	mux.HandleFunc("GET /live/{n}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "video/mp2t")
@@ -414,6 +485,155 @@ func (s *server) stop() {
 		_ = s.cmd.Process.Kill()
 		<-s.exited
 	}
+}
+
+// guides adds the provider's guide of the household's own, and waits for
+// its read, and turns placeholder programmes on and reads the playlist's
+// XMLTV guide once, as the options say.
+func (s *server) guides(ctx context.Context, provider string, o options) error {
+	const password = "soak-test-password"
+	cmd := exec.Command(s.bin, "-config", s.config, "admin", "password")
+	cmd.Stdin = strings.NewReader(password + "\n")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("overscan admin password: %w\n%s", err, out)
+	}
+	a, err := newAdminClient(s.base, "admin", password)
+	if err != nil {
+		return err
+	}
+	if o.ownGuide > 0 {
+		start := time.Now()
+		if err := a.call("POST", "guides", map[string]any{"name": "own", "address": provider + "/own.xml"}, nil); err != nil {
+			return err
+		}
+		for !strings.Contains(s.log.String(), "msg=\"guide read\" guide=own") {
+			if strings.Contains(s.log.String(), "guide=own") && strings.Contains(s.log.String(), "guide read failed") {
+				return fmt.Errorf("the guide of the household's own was not read:\n%s", s.log.String())
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-s.exited:
+				return fmt.Errorf("Overscan exited:\n%s", s.log.String())
+			case <-time.After(200 * time.Millisecond):
+			}
+		}
+		fmt.Printf("the guide of the household's own, %d channels with %d hours each, read in %s: %s\n", o.ownGuide, o.ownHours,
+			time.Since(start).Round(time.Millisecond), lastLine(s.log.String(), "msg=\"guide read\" guide=own"))
+	}
+	if o.holders > 0 {
+		var token struct {
+			Token string `json:"token"`
+		}
+		if err := a.call("PATCH", "settings", map[string]any{"outputs": true, "guide_placeholders": o.holders}, nil); err != nil {
+			return err
+		}
+		if err := a.call("PATCH", "accounts/1", map[string]any{"outputs": map[string]bool{"m3u": true}}, nil); err != nil {
+			return err
+		}
+		if err := a.call("POST", "accounts/1/token", nil, &token); err != nil {
+			return err
+		}
+		start := time.Now()
+		resp, err := http.Get(s.base + "/epg/" + token.Token + ".xml")
+		if err != nil {
+			return err
+		}
+		n, err := io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		if err != nil || resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("the XMLTV guide: %s, %v", resp.Status, err)
+		}
+		fmt.Printf("the XMLTV guide, with placeholders of %d minutes, read in %s: %.1f MB\n", o.holders,
+			time.Since(start).Round(time.Millisecond), float64(n)/(1<<20))
+	}
+	return nil
+}
+
+// iconPNG returns a small picture, a channel's icon.
+func iconPNG() ([]byte, error) {
+	img := image.NewRGBA(image.Rect(0, 0, 32, 16))
+	for y := range 16 {
+		for x := range 32 {
+			img.Set(x, y, color.RGBA{0x3d, 0xd9, 0xc1, 0xff})
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// lastLine returns the log's last line that holds text, "" if none.
+func lastLine(log, text string) string {
+	lines := strings.Split(log, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.Contains(lines[i], text) {
+			return strings.TrimSpace(lines[i])
+		}
+	}
+	return ""
+}
+
+// adminClient calls the admin API as the administrator.
+type adminClient struct {
+	base, csrf string
+	http       *http.Client
+}
+
+func newAdminClient(base, username, password string) (*adminClient, error) {
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return nil, err
+	}
+	a := &adminClient{base: base, http: &http.Client{Jar: jar, Timeout: 5 * time.Minute}}
+	var s struct {
+		CSRF string `json:"csrf_token"`
+	}
+	if err := a.call("POST", "session", map[string]string{"username": username, "password": password}, &s); err != nil {
+		return nil, fmt.Errorf("signing in to the admin: %w", err)
+	}
+	a.csrf = s.CSRF
+	return a, nil
+}
+
+func (a *adminClient) call(method, path string, body, out any) error {
+	var r io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		r = bytes.NewReader(data)
+	}
+	req, err := http.NewRequest(method, a.base+"/api/admin/v1/"+path, r)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Origin", a.base)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if a.csrf != "" {
+		req.Header.Set("X-CSRF-Token", a.csrf)
+	}
+	resp, err := a.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("%s %s: %s: %s", method, path, resp.Status, data)
+	}
+	if out != nil {
+		return json.Unmarshal(data, out)
+	}
+	return nil
 }
 
 func (s *server) devices(args ...string) error {
@@ -650,6 +870,7 @@ func (b *box) do(req *http.Request, v any) error {
 type sample struct {
 	at      time.Time
 	rssKB   int64
+	hwmKB   int64 // the most resident memory so far, which samples taken a second apart can miss
 	cpuTick int64 // user and system time, in clock ticks
 }
 
@@ -679,6 +900,9 @@ func (m *meter) read() (sample, error) {
 	for line := range strings.Lines(string(status)) {
 		if v, ok := strings.CutPrefix(line, "VmRSS:"); ok {
 			s.rssKB, _ = strconv.ParseInt(strings.Fields(v)[0], 10, 64)
+		}
+		if v, ok := strings.CutPrefix(line, "VmHWM:"); ok {
+			s.hwmKB, _ = strconv.ParseInt(strings.Fields(v)[0], 10, 64)
 		}
 	}
 	return s, nil
@@ -718,13 +942,19 @@ func cpuPercent(a, b sample) float64 {
 
 func mb(kb int64) float64 { return float64(kb) / 1024 }
 
-func report(o options, idle sample, samples []sample, st *stats) error {
+// report prints the summary. ready is a sample taken once the sources
+// were read, before the guides of the household's own, and idle the one
+// before the boxes start.
+func report(o options, ready, idle sample, samples []sample, st *stats) error {
 	// The samples before idle are those taken while the server read its
-	// sources; CPU counts from idle on, under the boxes' load.
+	// sources; CPU counts from idle on, under the boxes' load. The peaks
+	// are the kernel's high-water marks where it has them: the most
+	// resident memory by idle is the peak while reading, and a higher mark
+	// at the end was reached under load.
 	var peak, loadPeak, runPeak int64
 	peakCPU := 0.0
 	for i, s := range samples {
-		peak = max(peak, s.rssKB)
+		peak = max(peak, s.rssKB, s.hwmKB)
 		if s.at.Before(idle.at) {
 			loadPeak = max(loadPeak, s.rssKB)
 			continue
@@ -735,11 +965,18 @@ func report(o options, idle sample, samples []sample, st *stats) error {
 		}
 	}
 	last := samples[len(samples)-1]
+	loadPeak = max(loadPeak, idle.hwmKB)
+	if last.hwmKB > idle.hwmKB {
+		runPeak = max(runPeak, last.hwmKB)
+	}
 	avgCPU := cpuPercent(idle, last)
 	fmt.Printf("\nSoak test: %s, %d boxes, %d channels with %d hours of guide, %d films and %d series, %.1f Mbit/s a stream, a new channel every %s on average\n",
 		o.duration, o.boxes, o.channels, o.guide, o.films, o.series, float64(o.bitrate)/1e6, o.zap)
 	fmt.Printf("Resident memory: %.1f MB at the peak while reading the sources, %.1f MB idle with them loaded, %.1f MB at the peak under load, %.1f MB at the end\n",
 		mb(loadPeak), mb(idle.rssKB), mb(runPeak), mb(last.rssKB))
+	if (o.ownGuide > 0 || o.holders > 0) && ready.hwmKB > 0 {
+		fmt.Printf("Of the peak while reading: %.1f MB before the guide of the household's own and the XMLTV guide\n", mb(ready.hwmKB))
+	}
 	fmt.Printf("CPU: %.1f%% of one core on average under load, %.1f%% at the peak over %s\n", avgCPU, peakCPU, o.sample)
 	fmt.Printf("Streams: %d played, %d failed, %.2f GB proxied; channel lists loaded: %d; shelves of films read: %d\n",
 		st.streams.Load(), st.failedStreams.Load(), float64(st.bytes.Load())/1e9, st.listings.Load(), st.shelves.Load())

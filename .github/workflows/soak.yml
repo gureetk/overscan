@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # Runs the soak test (tools/soak, docs/testing.md): Overscan with a lineup
-# of 20,000 channels and their guide, a folder of films and series, and four
+# of 20,000 channels and their guide, a folder of films and series, a guide
+# of the household's own with a week of programmes for 20,000 channels,
+# hour-long placeholder programmes and a read of the XMLTV guide, and four
 # simulated boxes that watch channels, switch between them and browse the
 # films, checked against the memory budgets of the plan (section 15). It
 # runs for ten minutes every Monday, and on demand for as long as asked, up
@@ -58,7 +60,7 @@ jobs:
             echo "::error::'$DURATION' is longer than 330 minutes, which a job of six hours cannot hold with the build and the setting up"
             exit 1
           fi
-          go run ./tools/soak -duration "$DURATION" -out soak.csv
+          go run ./tools/soak -duration "$DURATION" -own-guide 20000 -own-hours 168 -placeholders 60 -out soak.csv
 
       - name: Keep the samples
         if: always()
