@@ -698,6 +698,14 @@ table.list { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
 .pin-forms + .switch-row { margin-top: 1rem; }
 .tmdb-remove { margin-top: 0.75rem; }
 .tmdb-pictures { margin-top: 1rem; }
+.move-targets { margin: 0; padding: 0; border: 0; display: flex; flex-wrap: wrap; gap: 0.625rem 1.5rem; }
+.move-targets label { display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 500; }
+.move-list td:first-child, .move-list th:first-child { width: 2.75rem; }
+.move-actions { display: flex; justify-content: flex-end; margin: 1rem 0; }
+.move-summary { margin-top: 1.25rem; }
+.unmatched { margin-top: 1rem; }
+.unmatched summary { cursor: pointer; font-weight: 600; }
+.unmatched ul { margin: 0.75rem 0 0; padding-left: 1.25rem; columns: 2 18rem; column-gap: 2rem; }
 .panel > .table-wrap { width: calc(100% + 2.5rem); margin: 0.875rem -1.25rem -1.25rem; }
 .recordings td { overflow-wrap: break-word; }
 .recordings .nowrap { white-space: nowrap; }

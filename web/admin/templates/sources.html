@@ -60,8 +60,11 @@
       {{- end}}
       <a class="button small" href="/admin/sources/{{.S.ID}}">Change</a>
       <details class="popover">
-        <summary class="button small icon" aria-label="More for {{.S.Name}}: turn it off, delete it" title="Turn off, delete">{{template "i-more"}}</summary>
+        <summary class="button small icon" aria-label="More for {{.S.Name}}: move its channels, turn it off, delete it" title="Move channels, turn off, delete">{{template "i-more"}}</summary>
         <div class="menu">
+          {{- if not .S.LibraryOnly}}
+          <a href="/admin/sources/{{.S.ID}}/move">Move its channels to other sources…</a>
+          {{- end}}
           {{- if .S.Enabled}}
           {{template "source-action" (dict "ID" .S.ID "Action" "off" "Label" "Turn off" "Menu" true "CSRF" .CSRF)}}
           {{- end}}

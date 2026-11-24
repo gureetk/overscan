@@ -1,0 +1,75 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+{{/* Moving a source's channels to other sources (D144): the sources to
+     move them to, then the matches to confirm. */}}
+{{define "content"}}
+{{- $d := .Data}}
+<div id="move-main">
+<p class="crumbs"><a href="/admin/sources">Sources</a></p>
+<div class="page-head">
+  <div>
+    <h1>Move {{$d.From.Name}}'s channels</h1>
+    <p class="lead">For a new provider, or a source that replaces this one: each of {{$d.From.Name}}'s channels that another source has, by its guide ID or else by its name, plays from that source in every lineup, and keeps its number, name, group, logo, favourites, locks, backups and guide chosen by hand. Nothing moves until you confirm, and {{$d.From.Name}} stays, with the channels that did not move, until you delete it.</p>
+  </div>
+</div>
+{{template "alerts" .}}
+{{- if $d.Moved}}
+<p class="summary-line">{{count $d.Moved}} of {{$d.From.Name}}'s channels moved to other sources before.</p>
+{{- end}}
+{{- if not $d.Others}}
+<section class="card"><p class="empty">There is no other source of channels to move to. Add the new one on <a href="/admin/sources">Sources</a>, and once it has been read, come back here.</p></section>
+{{- else}}
+<section class="card form-card" aria-labelledby="move-to-title">
+  <h2 id="move-to-title">Move to</h2>
+  <form method="get" action="/admin/sources/{{$d.From.ID}}/move" class="stack">
+    <fieldset class="move-targets">
+      <legend class="sr">The sources to move to</legend>
+      {{- range $d.Others}}
+      <label><input type="checkbox" name="to" value="{{.ID}}"{{if $d.Chosen .ID}} checked{{end}}> {{.Name}}</label>
+      {{- end}}
+    </fieldset>
+    <p class="hint">Where two of them have a channel, the first, in this order, gives it.</p>
+    <button type="submit">Find matches</button>
+  </form>
+</section>
+{{- end}}
+{{- if $d.Targets}}
+<form method="post" action="/admin/sources/{{$d.From.ID}}/move" hx-post="/admin/sources/{{$d.From.ID}}/move" hx-target="#move-main" hx-select="#sources-main, #move-main" hx-swap="outerHTML" hx-confirm="Move the ticked channels to {{$d.TargetNames}}? Their entries in every lineup play from there, and this cannot be undone here.">
+  <input type="hidden" name="csrf" value="{{$d.CSRF}}">
+  {{- range $d.Targets}}<input type="hidden" name="to" value="{{.ID}}">{{end}}
+  <p class="summary-line move-summary">
+    {{- if $d.Rows}}{{count (len $d.Rows)}} of {{$d.From.Name}}'s channels {{if eq (len $d.Rows) 1}}has{{else}}have{{end}} a match in {{$d.TargetNames}}: {{count $d.ByID}} by guide ID, {{count (sub (len $d.Rows) $d.ByID)}} by name. Untick any that is wrong.{{else}}None of {{$d.From.Name}}'s channels has a match in {{$d.TargetNames}}.{{end}}
+    {{- if $d.Unmatched}} {{count (len $d.Unmatched)}} {{if eq (len $d.Unmatched) 1}}has{{else}}have{{end}} none, and stay on {{$d.From.Name}}.{{end}}</p>
+  {{- if $d.Rows}}
+  <section class="card guide-list" aria-label="Matches">
+    <div class="table-wrap">
+    <table class="list move-list">
+      <thead><tr><th><span class="sr">Move</span></th><th>{{$d.From.Name}}'s channel</th><th>Plays from</th><th>Found by</th></tr></thead>
+      <tbody>
+      {{- range $d.Rows}}
+        <tr>
+          <td><input type="checkbox" name="move" value="{{.Value}}" checked aria-label="Move {{.From.Name}} to {{.ToSource}}'s {{.To.Name}}"></td>
+          <td><span class="strong">{{.From.Name}}</span>{{with .From.Category}}<div class="note">{{.}}</div>{{end}}</td>
+          <td><span class="strong">{{.To.Name}}</span><div class="note">{{.ToSource}}{{with .To.Category}} · {{.}}{{end}}</div></td>
+          <td>{{if .ByName}}Its name{{else}}Its guide ID{{end}}</td>
+        </tr>
+      {{- end}}
+      </tbody>
+    </table>
+    </div>
+  </section>
+  <div class="move-actions"><button type="submit" class="primary">Move the ticked channels</button></div>
+  {{- end}}
+</form>
+{{- if $d.Unmatched}}
+<details class="card unmatched">
+  <summary>{{count (len $d.Unmatched)}} without a match, which stay on {{$d.From.Name}}</summary>
+  <ul>
+    {{- range $d.Unmatched}}
+    <li>{{.Channel.Name}}{{with .Channel.Category}} <span class="note">{{.}}</span>{{end}}{{with .Taken}} <span class="note">its match goes to {{.}}</span>{{end}}</li>
+    {{- end}}
+  </ul>
+</details>
+{{- end}}
+{{- end}}
+</div>
+{{end}}

@@ -118,6 +118,8 @@ func (a *Admin) Handler() http.Handler {
 	// A source's categories can run to a thousand, each sent with the form.
 	mux.Handle("POST /admin/sources/{id}/categories", a.pageWithin(maxCategoriesFormBytes, a.categoriesForm))
 	mux.Handle("POST /admin/sources/{id}/categories/read", a.page(a.categoriesRead))
+	mux.Handle("GET /admin/sources/{id}/move", a.page(a.movePage))
+	mux.Handle("POST /admin/sources/{id}/move", a.pageWithin(maxMoveFormBytes, a.moveForm))
 	mux.Handle("POST /admin/sources/{id}/{action}", a.page(a.sourceAction))
 	mux.Handle("GET /admin/guides", a.page(a.guidesPage))
 	mux.Handle("POST /admin/guides", a.page(a.addGuideForm))
@@ -218,7 +220,7 @@ type view struct {
 
 // pageNames are the pages in admin/templates, each of which defines
 // "content" for the layout.
-var pageNames = []string{"sign-in", "home", "password", "message", "devices", "accounts", "account", "lineup", "rules", "library", "sources", "guides", "guide-channels", "categories", "group-categories", "capture", "health", "settings"}
+var pageNames = []string{"sign-in", "home", "password", "message", "devices", "accounts", "account", "lineup", "rules", "library", "sources", "guides", "guide-channels", "move", "categories", "group-categories", "capture", "health", "settings"}
 
 // pageParts are the parts in admin/templates that pages share, by page.
 var pageParts = map[string][]string{"lineup": {"lineup-nav", "replace-form"}, "rules": {"lineup-nav"}, "library": {"replace-form"},

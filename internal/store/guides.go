@@ -472,7 +472,7 @@ func (s *Store) MatchCandidates(ctx context.Context) ([]MatchCandidate, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.id, c.xmltv_id, c.name, COALESCE(k.name, ''), c.archive_days
 		FROM channels c LEFT JOIN categories k ON k.id = c.category_id
-		WHERE c.missing_since IS NULL AND NOT EXISTS (
+		WHERE c.missing_since IS NULL AND c.moved_to IS NULL AND NOT EXISTS (
 			SELECT 1 FROM programmes p JOIN source_guides sg ON sg.source_id = p.source_id AND sg.generation = p.generation
 			WHERE p.channel_id = c.id)
 			AND NOT EXISTS (SELECT 1 FROM channel_guide_choices hc WHERE hc.channel_id = c.id)
@@ -624,7 +624,7 @@ func (s *Store) ChannelsWithoutGuide(ctx context.Context) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, `
 		SELECT count(*) FROM channels c JOIN sources s ON s.id = c.source_id
-		WHERE c.missing_since IS NULL AND s.enabled = 1
+		WHERE c.missing_since IS NULL AND c.moved_to IS NULL AND s.enabled = 1
 			AND NOT EXISTS (SELECT 1 FROM channel_guide_matches m WHERE m.channel_id = c.id)
 			AND NOT EXISTS (SELECT 1 FROM channel_guide_choices hc WHERE hc.channel_id = c.id)
 			AND NOT EXISTS (
