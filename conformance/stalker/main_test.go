@@ -186,13 +186,18 @@ func start(dir, provider string) (*server, error) {
 		close(s.exited)
 	}()
 	deadline := time.After(30 * time.Second)
-	for !strings.Contains(s.log.String(), "source refreshed") || !strings.Contains(s.log.String(), "guide read") {
+	// Overscan reads its sources before it listens: wait for both.
+	ready := func() bool {
+		log := s.log.String()
+		return strings.Contains(log, "source refreshed") && strings.Contains(log, "guide read") && strings.Contains(log, "msg=listening")
+	}
+	for !ready() {
 		select {
 		case <-s.exited:
 			return nil, fmt.Errorf("Overscan exited:\n%s", s.log.String())
 		case <-deadline:
 			s.stop()
-			return nil, fmt.Errorf("Overscan did not read the lineup and its guide in time:\n%s", s.log.String())
+			return nil, fmt.Errorf("Overscan did not read the lineup and its guide, and listen, in time:\n%s", s.log.String())
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
