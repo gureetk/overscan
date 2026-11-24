@@ -218,7 +218,8 @@ func (p *provider) extraGuide(w http.ResponseWriter, r *http.Request) {
 		channels = append(channels, listed{fmt.Sprintf("extra-%d.example", i+1), name})
 	}
 	for _, c := range channels {
-		fmt.Fprintf(&b, "<channel id=\"%s\"><display-name>%s</display-name></channel>\n", c.id, c.name)
+		fmt.Fprintf(&b, "<channel id=\"%s\"><display-name>%s</display-name><icon src=\"%s/logo/%s-icon.png\"/></channel>\n",
+			c.id, c.name, p.url, c.id)
 	}
 	const layout = "20060102150405 -0700"
 	for _, c := range channels {

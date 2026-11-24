@@ -58,6 +58,9 @@ type Source struct {
 	// CatchupZone is the time zone of its catch-up addresses (D81): "" for
 	// the server's own.
 	CatchupZone string
+	// GuideLogos says how the icons of the source's guide are used as its
+	// channels' logos (D141): a GuideLogos way, GuideLogosNone at first.
+	GuideLogos string
 	// NewCategoriesHidden makes the categories that the source adds later
 	// start hidden in the lineup (D47).
 	NewCategoriesHidden bool
@@ -110,7 +113,7 @@ func (src Source) Settings() source.Settings {
 
 const sourceSelect = `
 	SELECT s.id, s.name, s.type, s.host, s.user_agent, s.enabled, s.max_connections, s.refresh_seconds,
-		s.numbers, s.catchup_zone, s.new_categories_hidden, s.public_only, s.refreshed_at, s.refresh_error, ss.secret,
+		s.numbers, s.catchup_zone, s.new_categories_hidden, s.guide_logos, s.public_only, s.refreshed_at, s.refresh_error, ss.secret,
 		(SELECT count(*) FROM channels c WHERE c.source_id = s.id AND c.missing_since IS NULL),
 		s.account_status, s.account_expires, s.account_connections, s.account_time_zone,
 		g.read_at, COALESCE(g.read_from, ''), COALESCE(g.read_error, ''), COALESCE(g.channels, 0),
@@ -126,7 +129,7 @@ func (s *Store) scanSource(row rowScanner) (Source, []byte, error) {
 	var refreshed, expires, guideRead sql.NullString
 	var sealed []byte
 	if err := row.Scan(&src.ID, &src.Name, &src.Type, &src.Host, &src.UserAgent, &src.Enabled, &src.MaxConnections,
-		&seconds, &src.Numbers, &src.CatchupZone, &src.NewCategoriesHidden, &src.PublicOnly, &refreshed, &src.RefreshError, &sealed, &src.Channels,
+		&seconds, &src.Numbers, &src.CatchupZone, &src.NewCategoriesHidden, &src.GuideLogos, &src.PublicOnly, &refreshed, &src.RefreshError, &sealed, &src.Channels,
 		&src.Account.Status, &expires, &src.Account.MaxConnections, &src.Account.TimeZone,
 		&guideRead, &src.Guide.ReadFrom, &src.Guide.Error, &src.Guide.Channels, &src.Guide.Programmes,
 		&src.Guide.Listed); err != nil {

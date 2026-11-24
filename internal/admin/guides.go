@@ -165,6 +165,7 @@ type apiOwnGuide struct {
 	Address    string  `json:"address"` // saved or locked
 	UserAgent  string  `json:"user_agent"`
 	PublicOnly bool    `json:"public_only"`
+	Logos      string  `json:"logos"`
 	Enabled    bool    `json:"enabled"`
 	Position   int     `json:"position"`
 	Reading    bool    `json:"reading"`
@@ -181,7 +182,7 @@ type apiOwnGuide struct {
 
 func (a *Admin) ownGuideBody(g store.Guide) apiOwnGuide {
 	out := apiOwnGuide{ID: g.ID, Name: g.Name, Host: g.Host, Address: addressNames[g.Address], UserAgent: g.UserAgent,
-		PublicOnly: g.PublicOnly, Enabled: g.Enabled, Position: g.Position, Reading: a.guideReading() == g.ID,
+		PublicOnly: g.PublicOnly, Logos: g.Logos, Enabled: g.Enabled, Position: g.Position, Reading: a.guideReading() == g.ID,
 		ReadError: g.ReadError, Listed: g.Listed, Channels: g.Channels, Programmes: g.Programmes,
 		Fills: g.Matched, ByName: g.ByName, ByHand: g.ByHand, Waiting: g.Waiting}
 	if !g.ReadAt.IsZero() {
@@ -242,6 +243,7 @@ type apiGuideChange struct {
 	Address    *string `json:"address"`
 	UserAgent  *string `json:"user_agent"`
 	PublicOnly *bool   `json:"public_only"`
+	Logos      *string `json:"logos"`
 	Enabled    *bool   `json:"enabled"`
 	Position   *int    `json:"position"`
 }
@@ -259,6 +261,12 @@ func (c apiGuideChange) apply(g store.GuideSettings) store.GuideSettings {
 	}
 	if c.PublicOnly != nil {
 		g.PublicOnly = *c.PublicOnly
+	}
+	if c.Logos != nil {
+		g.Logos = strings.TrimSpace(*c.Logos)
+		if g.Logos == "" {
+			g.Logos = "-" // "" keeps it: make it a mistake
+		}
 	}
 	return g
 }
@@ -312,7 +320,7 @@ func (a *Admin) apiChangeGuide(w http.ResponseWriter, r *http.Request, _ store.A
 	if a.editAnswer(w, guideError(err)) {
 		return
 	}
-	if body.Name != nil || body.Address != nil || body.UserAgent != nil || body.PublicOnly != nil {
+	if body.Name != nil || body.Address != nil || body.UserAgent != nil || body.PublicOnly != nil || body.Logos != nil {
 		settings := body.apply(store.GuideSettings{Name: g.Name, UserAgent: g.UserAgent, PublicOnly: g.PublicOnly})
 		if a.editAnswer(w, a.updateGuide(ctx, id, settings)) {
 			return
@@ -435,6 +443,17 @@ func (r guideRow) AddressLocked() bool { return r.Address == store.AddressLocked
 // IsFile reports whether the guide is a file on the server.
 func (r guideRow) IsFile() bool { return strings.HasPrefix(r.Host, "file ") }
 
+// logosText names the ways a guide's logos are used, as the admin shows
+// them.
+var logosText = map[string]string{
+	store.GuideLogosFill:  "Where a channel's own is missing or does not load",
+	store.GuideLogosFirst: "Before a channel's own",
+	store.GuideLogosNone:  "Not used",
+}
+
+// LogosText says how the guide's icons are used as logos.
+func (r guideRow) LogosText() string { return logosText[r.Logos] }
+
 // HostText is what the card shows of the guide's address.
 func (r guideRow) HostText() string {
 	if name, ok := strings.CutPrefix(r.Host, "file "); ok {
@@ -556,7 +575,7 @@ func (a *Admin) guidePage(w http.ResponseWriter, r *http.Request, s store.AdminS
 		a.notFound(w, r)
 		return
 	}
-	form := guideForm{ID: id, Settings: store.GuideSettings{Name: g.Name, UserAgent: g.UserAgent, PublicOnly: g.PublicOnly},
+	form := guideForm{ID: id, Settings: store.GuideSettings{Name: g.Name, UserAgent: g.UserAgent, PublicOnly: g.PublicOnly, Logos: g.Logos},
 		Host: g.Host, Address: g.Address}
 	a.showGuides(w, r, s, http.StatusOK, form, true, view{})
 }
@@ -568,6 +587,7 @@ func formGuide(r *http.Request) store.GuideSettings {
 		Address:    strings.TrimSpace(r.PostFormValue("address")),
 		UserAgent:  strings.TrimSpace(r.PostFormValue("user_agent")),
 		PublicOnly: r.PostFormValue("public_only") == "1",
+		Logos:      r.PostFormValue("logos"),
 	}
 }
 

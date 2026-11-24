@@ -34,9 +34,10 @@ type features struct {
 	// and by the best picture, and channels hidden until they play.
 	playlists bool
 	// guides is v1.2.0's: guides of the household's own (from its first
-	// pre-release on), and handGuides channels' guides chosen by hand
-	// (from v1.2.0-alpha.2 on).
-	guides, handGuides bool
+	// pre-release on), handGuides channels' guides chosen by hand (from
+	// v1.2.0-alpha.2 on), and logos logos set by hand and guides' logos
+	// (from alpha.3 on).
+	guides, handGuides, logos bool
 }
 
 func featuresOf(version string) features {
@@ -53,10 +54,12 @@ func featuresOf(version string) features {
 	from := func(wantMajor, wantMinor int) bool {
 		return major > wantMajor || major == wantMajor && minor >= wantMinor
 	}
-	// An alpha before alpha.2 of 1.2.0 lacks guides chosen by hand.
+	// An alpha of 1.2.0 has what the alphas before it brought.
 	alpha, _ := strconv.Atoi(strings.TrimPrefix(pre, "alpha."))
-	early12 := major == 1 && minor == 2 && strings.HasPrefix(pre, "alpha.") && alpha < 2
-	return features{households: at(4), hub: at(5), playlists: from(1, 1), guides: from(1, 2), handGuides: from(1, 2) && !early12}
+	since := func(n int) bool {
+		return from(1, 2) && !(major == 1 && minor == 2 && strings.HasPrefix(pre, "alpha.") && alpha < n)
+	}
+	return features{households: at(4), hub: at(5), playlists: from(1, 1), guides: from(1, 2), handGuides: since(2), logos: since(3)}
 }
 
 // household holds what the setup made, by name, so that the probes can
@@ -206,6 +209,12 @@ func (h *household) setUp(a *admin, base string, since time.Time) error {
 			name string
 			run  func() error
 		}{"channels' guides chosen by hand", func() error { return h.setUpHandGuides(a) }})
+	}
+	if h.f.logos {
+		steps = append(steps, struct {
+			name string
+			run  func() error
+		}{"logos", func() error { return h.setUpLogos(a) }})
 	}
 	for _, s := range steps {
 		if err := s.run(); err != nil {
@@ -799,6 +808,42 @@ func (h *household) setUpHandGuides(a *admin) error {
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
+}
+
+// setUpLogos sets logos (D141): Cobalt Extra's by hand, none for Willow
+// Kids, the guide of the household's own's icons before channels' own, and
+// the source main's guide's icons where a channel's own is missing.
+func (h *household) setUpLogos(a *admin) error {
+	var channels struct {
+		Channels []struct {
+			ID          int64  `json:"id"`
+			ChannelName string `json:"channel_name"`
+		} `json:"channels"`
+	}
+	if err := a.call("GET", "lineup/channels?limit=1000", nil, &channels); err != nil {
+		return err
+	}
+	ids := map[string]int64{}
+	for _, c := range channels.Channels {
+		ids[c.ChannelName] = c.ID
+	}
+	if ids["Cobalt Extra"] == 0 || ids["Willow Kids"] == 0 {
+		return errors.New("the lineup lacks Cobalt Extra or Willow Kids")
+	}
+	for _, c := range []struct {
+		method, path string
+		body         any
+	}{
+		{"PATCH", fmt.Sprintf("lineup/channels/%d", ids["Cobalt Extra"]), map[string]any{"logo": h.p.url + "/logo/by-hand.png"}},
+		{"PATCH", fmt.Sprintf("lineup/channels/%d", ids["Willow Kids"]), map[string]any{"logo": ""}},
+		{"PATCH", fmt.Sprintf("guides/%d", h.guide), map[string]any{"logos": "first"}},
+		{"PATCH", fmt.Sprintf("sources/%d", h.sources["main"]), map[string]any{"guide_logos": "fill"}},
+	} {
+		if err := a.call(c.method, c.path, c.body, nil); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // A probe is one request whose answer the upgrade must keep.

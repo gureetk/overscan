@@ -111,11 +111,11 @@ func exportLineup(ctx context.Context, tx *sql.Tx, id int64, sources map[int64]s
 	// The channels changed by hand, or given backups.
 	rows, err = tx.QueryContext(ctx, `
 		SELECT e.id, c.source_id, c.identity_key, c.name, e.pinned, COALESCE(e.number, 0), COALESCE(e.name, ''),
-			COALESCE(g.name, ''), e.hidden, e.locked
+			COALESCE(g.name, ''), e.hidden, e.locked, e.logo
 		FROM lineup_entries e JOIN channels c ON c.id = e.channel_id
 			LEFT JOIN lineup_groups g ON g.id = e.group_id
 		WHERE e.lineup_id = ? AND (e.pinned = 1 OR e.name IS NOT NULL OR e.group_id IS NOT NULL
-			OR e.hidden IS NOT NULL OR e.locked = 1
+			OR e.hidden IS NOT NULL OR e.locked = 1 OR e.logo IS NOT NULL
 			OR EXISTS (SELECT 1 FROM lineup_entry_backups b WHERE b.entry_id = e.id))`, id)
 	if err != nil {
 		return l, err
@@ -125,10 +125,17 @@ func exportLineup(ctx context.Context, tx *sql.Tx, id int64, sources map[int64]s
 		var entry, source int64
 		var pinned bool
 		var hidden sql.NullBool
+		var logo sql.NullString
 		var c lineupfile.Channel
-		if err := rows.Scan(&entry, &source, &c.Key, &c.Title, &pinned, &c.Number, &c.Name, &c.Group, &hidden, &c.Locked); err != nil {
+		if err := rows.Scan(&entry, &source, &c.Key, &c.Title, &pinned, &c.Number, &c.Name, &c.Group, &hidden, &c.Locked, &logo); err != nil {
 			rows.Close()
 			return l, err
+		}
+		switch {
+		case logo.Valid && logo.String == "":
+			c.Logo = lineupfile.NoLogo
+		case logo.Valid:
+			c.Logo = logo.String
 		}
 		c.Source = sources[source]
 		if !pinned {
@@ -389,9 +396,16 @@ func importLineup(ctx context.Context, tx *sql.Tx, l lineupfile.Lineup, sources 
 		if err != nil {
 			return res, err
 		}
-		var name, groupID, hidden any
+		var name, groupID, hidden, logo any
 		if c.Name != "" {
 			name = c.Name
+		}
+		switch c.Logo {
+		case "":
+		case lineupfile.NoLogo:
+			logo = ""
+		default:
+			logo = c.Logo
 		}
 		if c.Group != "" {
 			if groupID, err = group(c.Group); err != nil {
@@ -401,8 +415,8 @@ func importLineup(ctx context.Context, tx *sql.Tx, l lineupfile.Lineup, sources 
 		if c.Hidden != nil {
 			hidden = *c.Hidden
 		}
-		if _, err := tx.ExecContext(ctx, "UPDATE lineup_entries SET name = ?, group_id = ?, hidden = ?, locked = ? WHERE id = ?",
-			name, groupID, hidden, c.Locked, entry); err != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE lineup_entries SET name = ?, group_id = ?, hidden = ?, locked = ?, logo = ? WHERE id = ?",
+			name, groupID, hidden, c.Locked, logo, entry); err != nil {
 			return res, err
 		}
 		position := 0

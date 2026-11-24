@@ -153,6 +153,57 @@ type GuideWriter struct {
 	channels   map[int64]bool
 	count      int
 	keep       time.Duration // how long past programmes are carried over, at least; 0 for none
+	icons      map[int64]string
+}
+
+// SetIcon records the icon of the guide's channel that a channel of the
+// source matched (D141). Commit keeps the icons set, and none for the
+// source's other channels.
+func (w *GuideWriter) SetIcon(channelID int64, icon string) {
+	if w.icons == nil {
+		w.icons = map[int64]string{}
+	}
+	w.icons[channelID] = icon
+}
+
+// keepIcons gives the source's channels the icons set, and the others none.
+func (w *GuideWriter) keepIcons(ctx context.Context) error {
+	return w.s.inTx(ctx, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, "SELECT id, guide_icon FROM channels WHERE source_id = ?", w.sourceID)
+		if err != nil {
+			return err
+		}
+		changed := map[int64]string{}
+		for rows.Next() {
+			var id int64
+			var have string
+			if err := rows.Scan(&id, &have); err != nil {
+				rows.Close()
+				return err
+			}
+			if want := w.icons[id]; want != have {
+				changed[id] = want
+			}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		if len(changed) == 0 {
+			return nil
+		}
+		update, err := tx.PrepareContext(ctx, "UPDATE channels SET guide_icon = ? WHERE id = ?")
+		if err != nil {
+			return err
+		}
+		defer update.Close()
+		for id, icon := range changed {
+			if _, err := update.ExecContext(ctx, icon, id); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // BeginGuide starts a new generation of a source's programmes, and clears
@@ -239,6 +290,9 @@ func (w *GuideWriter) Commit(ctx context.Context, at time.Time, from string) err
 	_, err := w.s.db.ExecContext(ctx, `
 		UPDATE source_guides SET generation = ?, read_at = ?, read_from = ?, read_error = '', channels = ?, programmes = ?
 		WHERE source_id = ?`, w.generation, formatTime(at), from, channels, count, w.sourceID)
+	if err == nil {
+		err = w.keepIcons(ctx)
+	}
 	if err != nil {
 		return fmt.Errorf("store: guide of source %d: %w", w.sourceID, err)
 	}

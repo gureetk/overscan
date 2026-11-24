@@ -90,7 +90,13 @@ type Cache struct {
 
 	mu       sync.Mutex
 	inflight map[string]*fetch
-	failed   map[string]time.Time
+	failed   map[string]failure
+}
+
+// failure is a fetch that failed: when, and why.
+type failure struct {
+	at  time.Time
+	err error
 }
 
 // fetch is a fetch under way, which callers for the same image wait for.
@@ -110,7 +116,7 @@ func New(dir string, log *slog.Logger, version string) *Cache {
 		now:       time.Now,
 		slots:     make(chan struct{}, maxFetches),
 		inflight:  map[string]*fetch{},
-		failed:    map[string]time.Time{},
+		failed:    map[string]failure{},
 	}
 }
 
@@ -133,6 +139,28 @@ func LogoPath(entryID int64, logo string) string {
 // ErrUnusable is the error for an address that gives no image Overscan can
 // serve.
 var ErrUnusable = errors.New("artwork: not an image that devices can be given")
+
+// StatusError is the error for an image's server that answered with
+// something other than the image.
+type StatusError struct{ Code int }
+
+func (e *StatusError) Error() string { return fmt.Sprintf("the image's server answered %d", e.Code) }
+
+// Settled reports whether an error says that an image cannot be had from
+// its address, rather than that it could not be fetched this time: it is
+// no image that devices can be given, or its server says that it is not
+// there or may not be had.
+func Settled(err error) bool {
+	var status *StatusError
+	switch {
+	case errors.Is(err, ErrUnusable):
+		return true
+	case errors.As(err, &status):
+		return status.Code >= 400 && status.Code < 500 && status.Code != http.StatusRequestTimeout &&
+			status.Code != http.StatusTooManyRequests
+	}
+	return false
+}
 
 // TitlePath returns the path on Overscan that serves a picture of a kind
 // for a film, a series or an episode, by its ID, "" for one without it.
@@ -181,9 +209,9 @@ func (c *Cache) GetWith(ctx context.Context, kind Kind, address string, read fun
 	}
 	id := kind.Name + "/" + key
 	c.mu.Lock()
-	if at, ok := c.failed[id]; ok && c.now().Sub(at) < retryAfter {
+	if f, ok := c.failed[id]; ok && c.now().Sub(f.at) < retryAfter {
 		c.mu.Unlock()
-		return "", "", ErrUnusable
+		return "", "", f.err
 	}
 	f, ok := c.inflight[id]
 	if !ok {
@@ -227,7 +255,7 @@ func (c *Cache) run(f *fetch, kind Kind, key string, read func() ([]byte, error)
 	c.mu.Lock()
 	delete(c.inflight, id)
 	if err != nil {
-		c.failed[id] = c.now()
+		c.failed[id] = failure{c.now(), err}
 	} else {
 		delete(c.failed, id)
 	}
@@ -305,7 +333,7 @@ func (c *Cache) get(address, userAgent string, publicOnly bool) ([]byte, error) 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("the image's server answered %d", resp.StatusCode)
+		return nil, &StatusError{resp.StatusCode}
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxFetchBytes+1))
 	if err != nil {

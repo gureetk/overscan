@@ -91,6 +91,9 @@ type Services struct {
 	Checks *playcheck.Clips
 	// Recorder records programmes (D89); without it, boxes cannot record.
 	Recorder *recorder.Recorder
+	// Artwork keeps the pictures that devices are given; without it, the
+	// server keeps its own in the data directory.
+	Artwork *artwork.Cache
 }
 
 // stalkerPaths are where Stalker clients look for the portal API (protocol
@@ -123,7 +126,11 @@ func New(cfg config.Config, log *slog.Logger, version string, svc Services) *Ser
 		dev.UseRecorder(svc.Recorder)
 	}
 	mux.Handle(device.Prefix, dev)
-	mux.Handle("GET /artwork/", artwork.Handler(svc.Store, artwork.New(filepath.Join(cfg.DataDir, "artwork"), log, version), log))
+	art := svc.Artwork
+	if art == nil {
+		art = artwork.New(filepath.Join(cfg.DataDir, "artwork"), log, version)
+	}
+	mux.Handle("GET /artwork/", artwork.Handler(svc.Store, art, log))
 	for _, path := range magPaths {
 		mux.Handle("GET "+path, s.magFiles(path))
 	}

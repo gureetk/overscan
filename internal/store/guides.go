@@ -52,8 +52,12 @@ type GuideSettings struct {
 	// UserAgent is sent when the guide is fetched; "" for Overscan's own.
 	UserAgent string
 	// PublicOnly keeps the guide's requests off the server's own networks
-	// (D121).
+	// (D121), its icons' too.
 	PublicOnly bool
+	// Logos says how its channels' icons are used as logos (D141): a
+	// GuideLogos way; "" keeps a saved guide's, and gives a new one
+	// GuideLogosFill.
+	Logos string
 }
 
 // Check reports the first setting that breaks a rule, as a *source.Error.
@@ -68,6 +72,8 @@ func (g GuideSettings) Check(saved bool) error {
 		return bad("address", "The guide's address must be an http or https address, or the absolute path of a file on this server.")
 	case !source.ValidUserAgent(g.UserAgent):
 		return bad("user_agent", "A user agent is at most 200 bytes of text, without control characters.")
+	case g.Logos != "" && !ValidGuideLogos(g.Logos):
+		return bad("logos", `How its logos are used is "fill", "first" or "none".`)
 	}
 	return nil
 }
@@ -82,6 +88,7 @@ type Guide struct {
 	Host       string // what the admin shows of its address: its host, or "file" and a file's name
 	UserAgent  string // "" for Overscan's own
 	PublicOnly bool
+	Logos      string // how its icons are used as logos (D141)
 	Enabled    bool
 	// Position orders the guides, from 1: where two guides' channels could
 	// fill a channel, the first's does.
@@ -109,7 +116,7 @@ type Guide struct {
 func addedGuideContext(id int64) string { return "guide/" + strconv.FormatInt(id, 10) }
 
 const guideSelect = `
-	SELECT g.id, g.name, g.host, g.user_agent, g.public_only, g.enabled, g.position, g.added_at, g.address,
+	SELECT g.id, g.name, g.host, g.user_agent, g.public_only, g.logos, g.enabled, g.position, g.added_at, g.address,
 		g.read_at, g.read_from, g.read_error, g.listed, g.channels, g.programmes,
 		(SELECT count(*) FROM channel_guide_matches m JOIN guide_channels gc ON gc.id = m.guide_channel_id
 			WHERE gc.guide_id = g.id),
@@ -126,7 +133,7 @@ func (s *Store) scanGuide(row rowScanner) (Guide, error) {
 	var added string
 	var read sql.NullString
 	var sealed []byte
-	if err := row.Scan(&g.ID, &g.Name, &g.Host, &g.UserAgent, &g.PublicOnly, &g.Enabled, &g.Position, &added, &sealed,
+	if err := row.Scan(&g.ID, &g.Name, &g.Host, &g.UserAgent, &g.PublicOnly, &g.Logos, &g.Enabled, &g.Position, &added, &sealed,
 		&read, &g.ReadFrom, &g.ReadError, &g.Listed, &g.Channels, &g.Programmes, &g.Matched, &g.ByName, &g.ByHand, &g.Waiting); err != nil {
 		return Guide{}, err
 	}
@@ -185,8 +192,8 @@ func (s *Store) Guide(ctx context.Context, id int64) (Guide, error) {
 func (s *Store) GuideSettings(ctx context.Context, id int64) (GuideSettings, error) {
 	var g GuideSettings
 	var sealed []byte
-	err := s.db.QueryRowContext(ctx, "SELECT name, address, user_agent, public_only FROM guides WHERE id = ?", id).
-		Scan(&g.Name, &sealed, &g.UserAgent, &g.PublicOnly)
+	err := s.db.QueryRowContext(ctx, "SELECT name, address, user_agent, public_only, logos FROM guides WHERE id = ?", id).
+		Scan(&g.Name, &sealed, &g.UserAgent, &g.PublicOnly, &g.Logos)
 	if errors.Is(err, sql.ErrNoRows) {
 		return GuideSettings{}, ErrNotFound
 	}
@@ -216,9 +223,9 @@ func (s *Store) AddGuide(ctx context.Context, g GuideSettings, at time.Time) (in
 			return ErrTooManyGuides
 		}
 		err := tx.QueryRowContext(ctx, `
-			INSERT INTO guides (name, address, host, user_agent, public_only, position, added_at)
-			VALUES (?, x'', ?, ?, ?, (SELECT COALESCE(max(position), 0) + 1 FROM guides), ?) RETURNING id`,
-			g.Name, source.Host(g.Address), g.UserAgent, g.PublicOnly, formatTime(at)).Scan(&id)
+			INSERT INTO guides (name, address, host, user_agent, public_only, logos, position, added_at)
+			VALUES (?, x'', ?, ?, ?, COALESCE(NULLIF(?, ''), 'fill'), (SELECT COALESCE(max(position), 0) + 1 FROM guides), ?) RETURNING id`,
+			g.Name, source.Host(g.Address), g.UserAgent, g.PublicOnly, g.Logos, formatTime(at)).Scan(&id)
 		if errors.Is(err, sqlite3.CONSTRAINT_UNIQUE) {
 			return ErrGuideExists
 		}
@@ -258,8 +265,8 @@ func (s *Store) UpdateGuide(ctx context.Context, id int64, g GuideSettings) erro
 		if err != nil {
 			return err
 		}
-		res, err := tx.ExecContext(ctx, "UPDATE guides SET name = ?, user_agent = ?, public_only = ? WHERE id = ?",
-			g.Name, g.UserAgent, g.PublicOnly, id)
+		res, err := tx.ExecContext(ctx, `UPDATE guides SET name = ?, user_agent = ?, public_only = ?,
+			logos = COALESCE(NULLIF(?, ''), logos) WHERE id = ?`, g.Name, g.UserAgent, g.PublicOnly, g.Logos, id)
 		if errors.Is(err, sqlite3.CONSTRAINT_UNIQUE) {
 			return ErrGuideExists
 		}

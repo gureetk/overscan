@@ -2244,6 +2244,13 @@ paths:
                   type: [integer, "null"]
                   minimum: 1
                   maximum: 999999
+                logo:
+                  type: [string, "null"]
+                  maxLength: 2048
+                  description: >-
+                    Its logo set by hand: an http or https address, or empty for
+                    no logo at all; null gives it back to its rules, source and
+                    guide (D141).
       responses:
         "200":
           description: The channel.
@@ -4414,7 +4421,7 @@ components:
                 description: Its source no longer has the category.
     Channel:
       type: object
-      required: [id, channel_id, source_id, source, number, pinned, name, channel_name, renamed, group_id, group, moved, category, visibility, hidden, missing, left_out, locked, group_locked, repair, repair_own, adult, radio, rules, backups, health]
+      required: [id, channel_id, source_id, source, number, pinned, name, channel_name, renamed, group_id, group, moved, category, visibility, hidden, missing, left_out, locked, group_locked, repair, repair_own, adult, radio, rules, backups, health, logo, logo_by_hand]
       properties:
         id:
           type: integer
@@ -4506,6 +4513,19 @@ components:
           description: The channel that a merge rule makes it a backup of, by its name in the lineup; null if none (D113).
         health:
           $ref: "#/components/schemas/ChannelHealth"
+        logo:
+          type: [string, "null"]
+          description: >-
+            Where Overscan serves its logo, as devices are given it; null if it
+            has none, and devices show its name. The logo is, in this order,
+            the one set by hand, a rule's, its source's if it loads, and its
+            guide's if it loads; a guide set to give its logos first comes
+            before its source's (D141).
+        logo_by_hand:
+          type: [string, "null"]
+          description: >-
+            Its logo set by hand: an address, or empty for no logo at all;
+            null if none is set.
     RuleMatch:
       type: object
       additionalProperties: false
@@ -4692,7 +4712,7 @@ components:
         A guide of the household's own (D139), without its address, and what
         its last read found.
       required: [id, name, host, address, user_agent, public_only, enabled, position, reading, read_at, read_error,
-        listed, channels, programmes, fills, by_name, by_hand, waiting]
+        listed, channels, programmes, fills, by_name, by_hand, waiting, logos]
       properties:
         id:
           type: integer
@@ -4710,7 +4730,9 @@ components:
           description: Sent when it is fetched; empty for Overscan's own.
         public_only:
           type: boolean
-          description: Its requests go to public addresses only (D121).
+          description: Its requests go to public addresses only (D121), those for its icons too.
+        logos:
+          $ref: "#/components/schemas/GuideLogos"
         enabled:
           type: boolean
         position:
@@ -4746,6 +4768,14 @@ components:
         waiting:
           type: integer
           description: Of those, the ones whose programmes its next read brings, since no channel used them at its last read.
+    GuideLogos:
+      type: string
+      enum: [none, fill, first]
+      description: >-
+        How a guide's icons are used as the logos of the channels that it
+        fills (D141): `fill` where a channel's own logo is missing or does not
+        load, `first` before it, `none` never. A guide of the household's own
+        starts with `fill`, a source's guide with `none`.
     ProgrammeNow:
       type: object
       required: [start, stop, title]
@@ -4916,6 +4946,8 @@ components:
           maxLength: 200
         public_only:
           type: boolean
+        logos:
+          $ref: "#/components/schemas/GuideLogos"
         enabled:
           type: boolean
         position:
@@ -4952,7 +4984,7 @@ components:
     Source:
       type: object
       required: [id, name, type, host, address, enabled, max_connections, refresh_seconds, user_agent, numbers,
-        new_categories_hidden, public_only, channels, refreshed_at, refresh_error, stream_limit, account, guide, films, series,
+        new_categories_hidden, guide_logos, public_only, channels, refreshed_at, refresh_error, stream_limit, account, guide, films, series,
         categories]
       properties:
         id:
@@ -5009,6 +5041,8 @@ components:
         new_categories_hidden:
           type: boolean
           description: Whether the categories that it adds later start hidden in the lineup (D47).
+        guide_logos:
+          $ref: "#/components/schemas/GuideLogos"
         public_only:
           type: boolean
           description: >-
@@ -5593,6 +5627,8 @@ components:
           type: boolean
         new_categories_hidden:
           type: boolean
+        guide_logos:
+          $ref: "#/components/schemas/GuideLogos"
         public_only:
           type: boolean
           description: >-
@@ -5857,8 +5893,8 @@ components:
             $ref: "#/components/schemas/ChannelGuide"
     OwnGuideMistake:
       description: >-
-        A setting breaks a rule: `bad_name`, `bad_address`, `bad_user_agent`
-        or `bad_position`; or the body is not the JSON the path takes
+        A setting breaks a rule: `bad_name`, `bad_address`, `bad_user_agent`,
+        `bad_logos` or `bad_position`; or the body is not the JSON the path takes
         (`bad_json`). The message never quotes the address.
       content:
         application/json:

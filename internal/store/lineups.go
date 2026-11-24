@@ -151,8 +151,8 @@ func (s *Store) CopyLineup(ctx context.Context, from int64, name string) (int64,
 				JOIN lineup_groups o ON o.id = m.group_id
 				JOIN lineup_groups n ON n.lineup_id = ?1 AND n.name = o.name
 			WHERE m.lineup_id = ?2`, `
-			INSERT INTO lineup_entries (lineup_id, channel_id, number, pinned, name, group_id, hidden, locked, numbered_in)
-			SELECT ?1, e.channel_id, e.number, e.pinned, e.name, n.id, e.hidden, e.locked, nn.id
+			INSERT INTO lineup_entries (lineup_id, channel_id, number, pinned, name, group_id, hidden, locked, numbered_in, logo)
+			SELECT ?1, e.channel_id, e.number, e.pinned, e.name, n.id, e.hidden, e.locked, nn.id, e.logo
 			FROM lineup_entries e
 				LEFT JOIN lineup_groups o ON o.id = e.group_id
 				LEFT JOIN lineup_groups n ON n.lineup_id = ?1 AND n.name = o.name

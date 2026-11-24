@@ -23,6 +23,7 @@ import (
 
 	"overscan.gureet.ca/internal/adapters/stalker"
 	"overscan.gureet.ca/internal/admin"
+	"overscan.gureet.ca/internal/artwork"
 	"overscan.gureet.ca/internal/catalog"
 	"overscan.gureet.ca/internal/config"
 	"overscan.gureet.ca/internal/guide"
@@ -281,6 +282,10 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger, recent *log
 	var background sync.WaitGroup
 	background.Go(func() { refresher.Run(bgCtx) })
 	background.Go(func() { ownGuides.Run(bgCtx) })
+	// Logos are checked in the background, into the cache that serves
+	// them (D141).
+	art := artwork.New(filepath.Join(cfg.DataDir, "artwork"), log, version)
+	background.Go(func() { artwork.NewChecker(st, art, log).Run(bgCtx) })
 	background.Go(func() { streams.Run(bgCtx) })
 	background.Go(func() { lib.Run(bgCtx) })
 	// Programmes that boxes schedule are recorded through the hub, into the
@@ -299,7 +304,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger, recent *log
 	code := 0
 	support := admin.Support{Log: recent.Lines, Facts: serverFacts(cfg, ffmpegPath, ffmpegVersion, ffprobePath, ffprobeVersion), Listen: cfg.Listen}
 	svc := server.Services{Store: st, Hub: streams, AdminToken: adminToken, Sources: refresher, Guides: ownGuides,
-		Support: support, Library: lib, Checks: checks, Recorder: rec}
+		Support: support, Library: lib, Checks: checks, Recorder: rec, Artwork: art}
 	if err := server.New(cfg, log, version, svc).Run(ctx); err != nil {
 		log.Error("server failed", "error", err)
 		code = 1

@@ -401,6 +401,23 @@
       <input id="f-name" name="name" maxlength="200" value="{{if .E.Renamed}}{{.E.Name}}{{end}}" placeholder="{{.E.ChannelName}}">
       <p class="hint">Empty, it takes its source's name.</p>
     </div>
+    {{- $logo := .LogoChoice}}
+    <fieldset class="field logo-field">
+      <legend>Logo</legend>
+      {{- with .LogoText}}
+      <div class="logo-now">
+        {{- with $.LogoPath}}<img src="{{.}}" alt="" class="logo-preview" width="120" height="48">{{end}}
+        <span class="note">{{.}}</span>
+      </div>
+      {{- end}}
+      <div class="segmented">
+        <label><input type="radio" name="logo_choice" value="auto"{{if eq $logo "auto"}} checked{{end}}><span>Automatic</span></label>
+        <label><input type="radio" name="logo_choice" value="address"{{if eq $logo "address"}} checked{{end}}><span>An address</span></label>
+        <label><input type="radio" name="logo_choice" value="none"{{if eq $logo "none"}} checked{{end}}><span>None</span></label>
+      </div>
+      <input name="logo" maxlength="2048" value="{{.LogoAddress}}" placeholder="https://logos.example/channel.png" aria-label="The logo's address" spellcheck="false" autocomplete="off">
+      <p class="hint">Automatic: a rule's, else its source's if it loads, else its guide's. An address is used only with <em>An address</em> chosen.</p>
+    </fieldset>
     <div class="field">
       <label for="f-group">Group</label>
       <select id="f-group" name="group">

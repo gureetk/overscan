@@ -94,7 +94,11 @@ func TestParseRefuses(t *testing.T) {
 	for name, c := range map[string]struct{ text, says string }{
 		"empty":      {"", "empty"},
 		"not a file": {"lineups: []\n", "not a file of Overscan's lineups"},
-		"later":      {"kind: overscan-lineups\nversion: 3\nlineups: []\n", "Upgrade Overscan"},
+		"later":      {"kind: overscan-lineups\nversion: 4\nlineups: []\n", "Upgrade Overscan"},
+		"a logo in version 2": {"kind: overscan-lineups\nversion: 2\nlineups:\n  - name: Kids\n    channels:\n      - {source: main, key: a, logo: none}\n",
+			"change its version to 3"},
+		"a bad logo": {"kind: overscan-lineups\nversion: 3\nlineups:\n  - name: Kids\n    channels:\n      - {source: main, key: a, logo: ftp://logos.example/a.png}\n",
+			"a logo is an address"},
 		"own groups in version 1": {head + "lineups:\n  - name: Kids\n    own_groups: true\n",
 			"change its version to 2"},
 		"the best copy in version 1": {head + "lineups:\n  - name: Kids\n    rules:\n      - {action: merge, copies: name, prefer: best}\n",

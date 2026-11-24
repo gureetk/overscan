@@ -189,8 +189,17 @@ func (s *Store) SearchProgrammes(ctx context.Context, lineupID int64, query stri
 // addresses only (D121). It returns ErrNotFound for an entry that devices
 // do not see.
 func (s *Store) EntryLogo(ctx context.Context, entryID int64) (logo string, src ArtSource, err error) {
-	err = s.db.QueryRowContext(ctx, "SELECT "+entryLogo+", s.id, s.type, s.user_agent, s.public_only"+lineupEntryJoins+
-		" WHERE e.id = ? AND "+shownEntry, entryID).Scan(&logo, &src.ID, &src.Type, &src.UserAgent, &src.PublicOnly)
+	// A guide's icon is fetched as its guide is (D141).
+	var icon, agent sql.NullString
+	var public sql.NullBool
+	err = s.db.QueryRowContext(ctx, "SELECT "+entryLogo+", s.id, s.type, s.user_agent, s.public_only, gc.icon, lg.user_agent, lg.public_only"+
+		lineupEntryJoins+`
+		LEFT JOIN channel_guide_matches lm ON lm.channel_id = c.id
+		LEFT JOIN guide_channels gc ON gc.id = lm.guide_channel_id LEFT JOIN guides lg ON lg.id = gc.guide_id
+		WHERE e.id = ? AND `+shownEntry, entryID).Scan(&logo, &src.ID, &src.Type, &src.UserAgent, &src.PublicOnly, &icon, &agent, &public)
+	if err == nil && icon.Valid && logo == icon.String {
+		src.UserAgent, src.PublicOnly = agent.String, public.Bool
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", ArtSource{}, ErrNotFound
 	}

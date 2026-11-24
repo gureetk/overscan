@@ -272,7 +272,14 @@ func (g *Reader) fill(ctx context.Context, src source.Settings, id int64, addres
 		Programme: func(p xmltv.Programme) error { return m.programme(ctx, p, w) },
 	})
 	if err == nil {
+		if !m.matched {
+			// A guide that lists channels and no programmes.
+			m.match()
+		}
 		err = m.finish(ctx, w)
+	}
+	for id, icon := range m.icons {
+		w.SetIcon(id, icon)
 	}
 	programmes, matched := w.Count()
 	return Result{Channels: matched, Programmes: programmes, Skipped: skipped + m.skipped,
@@ -399,6 +406,9 @@ type matcher struct {
 	// For the log: the guide's channels, and the source's that names matched.
 	listed      int
 	byNameCount int
+	// icons are the icons of the guide's channels, by the source's
+	// channels that they matched (D141).
+	icons map[int64]string
 }
 
 func newMatcher(channels []store.GuideChannel, now time.Time) *matcher {
@@ -431,12 +441,19 @@ func (m *matcher) channel(c xmltv.Channel) error {
 func (m *matcher) match() {
 	m.matched = true
 	m.listed = len(m.named)
+	m.icons = map[int64]string{}
+	icon := func(gc xmltv.Channel, c store.GuideChannel) {
+		if _, ok := m.icons[c.ID]; !ok && gc.Icon != "" {
+			m.icons[c.ID] = gc.Icon
+		}
+	}
 	byID := map[int64]bool{}
 	for _, gc := range m.named {
 		if ours := m.byID[strings.ToLower(gc.ID)]; len(ours) > 0 {
 			m.targets[gc.ID] = ours
 			for _, c := range ours {
 				byID[c.ID] = true
+				icon(gc, c)
 			}
 		}
 	}
@@ -448,6 +465,7 @@ func (m *matcher) match() {
 				if !byID[c.ID] && !taken[c.ID] {
 					taken[c.ID] = true
 					ours = append(ours, c)
+					icon(gc, c)
 				}
 			}
 		}
