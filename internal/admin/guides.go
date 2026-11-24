@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -520,6 +521,66 @@ func (r guideRow) DeleteQuestion() string {
 	return "Remove " + r.Name + "? The channels that it fills lose its programmes, and take another guide's where one has their guide IDs or names. Those whose guide you chose from it find theirs as before."
 }
 
+// placeholdersHint says what the length of placeholder programmes can be.
+const placeholdersHint = "guide_placeholders is 0 for none, or 30, 60, 120 or 180 minutes."
+
+// setPlaceholders sets the length of placeholder programmes' blocks, in
+// minutes, or 0 for none (D142).
+func (a *Admin) setPlaceholders(ctx context.Context, minutes int) error {
+	block := time.Duration(minutes) * time.Minute
+	if minutes != 0 && !slices.Contains(store.PlaceholderBlocks, block) {
+		return badEdit(http.StatusBadRequest, "bad_json", placeholdersHint)
+	}
+	if err := a.store.SetPlaceholders(ctx, block); err != nil {
+		return err
+	}
+	a.log.Info("placeholder programmes set in the admin", "minutes", minutes)
+	return nil
+}
+
+// placeholdersText says, for the guides page, what placeholder
+// programmes of a length in minutes do.
+func placeholdersText(minutes int) string {
+	if minutes == 0 {
+		return "Off: a channel shows no programme where its guide has none, and players show an empty row."
+	}
+	return fmt.Sprintf("Boxes and players show a programme named after the channel in every %s in which it has none, over the next two days. "+
+		"They cannot be recorded or played from an archive, and searches do not find them.", placeholderSpan(minutes))
+}
+
+// placeholderSpan names the length of placeholder programmes.
+func placeholderSpan(minutes int) string {
+	switch minutes {
+	case 30:
+		return "half hour"
+	case 60:
+		return "hour"
+	}
+	return fmt.Sprintf("%d hours", minutes/60)
+}
+
+// PlaceholdersText says what the placeholders that the page shows do.
+func (d guidesData) PlaceholdersText() string { return placeholdersText(d.Placeholders) }
+
+// placeholdersForm sets the length of placeholder programmes from the
+// guides page.
+func (a *Admin) placeholdersForm(w http.ResponseWriter, r *http.Request, s store.AdminSession) {
+	minutes, err := strconv.Atoi(r.PostFormValue("placeholders"))
+	if err != nil {
+		minutes = -1
+	}
+	err = a.setPlaceholders(r.Context(), minutes)
+	var bad *editError
+	if errors.As(err, &bad) {
+		err = badEdit(http.StatusBadRequest, "bad_placeholders", "Choose how long placeholder programmes are, or none.")
+	}
+	done := "Channels show no programme where their guides have none."
+	if minutes > 0 {
+		done = "Channels show a placeholder in every " + placeholderSpan(minutes) + " in which they have no programme."
+	}
+	a.guideDone(w, r, s, err, done, guideForm{}, false)
+}
+
 // guidesData is what the guides page shows.
 type guidesData struct {
 	Guides  []guideRow
@@ -531,6 +592,9 @@ type guidesData struct {
 	Filled       int // the channels that the guides fill
 	Full         bool
 	Now          time.Time
+	// Placeholders is the length of placeholder programmes, in minutes,
+	// or 0 for none (D142).
+	Placeholders int
 }
 
 func (a *Admin) showGuides(w http.ResponseWriter, r *http.Request, s store.AdminSession, status int, form guideForm, editing bool, v view) {
@@ -538,6 +602,11 @@ func (a *Admin) showGuides(w http.ResponseWriter, r *http.Request, s store.Admin
 	gs, err := a.store.Guides(r.Context())
 	if err == nil {
 		data.WithoutGuide, err = a.store.ChannelsWithoutGuide(r.Context())
+	}
+	if err == nil {
+		var block time.Duration
+		block, err = a.store.Placeholders(r.Context())
+		data.Placeholders = int(block / time.Minute)
 	}
 	if err != nil {
 		a.log.Error("cannot show the guides", "error", err)

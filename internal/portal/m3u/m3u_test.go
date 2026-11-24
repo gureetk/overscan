@@ -460,3 +460,54 @@ func FuzzArchiveSpan(f *testing.F) {
 		}
 	})
 }
+
+// TestGuidePlaceholders checks that the XMLTV guide gives placeholder
+// programmes where the setting asks for them: after a channel's own
+// programmes run out, and over the next two days on a channel without
+// any (D142).
+func TestGuidePlaceholders(t *testing.T) {
+	h := newHarness(t)
+	if err := h.store.SetPlaceholders(context.Background(), time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	_, body := h.get("/epg/" + h.token + ".xml")
+	var tv struct {
+		Programmes []struct {
+			Start   string `xml:"start,attr"`
+			Stop    string `xml:"stop,attr"`
+			Channel string `xml:"channel,attr"`
+			Title   string `xml:"title"`
+		} `xml:"programme"`
+	}
+	if err := xml.Unmarshal([]byte(body), &tv); err != nil {
+		t.Fatalf("the guide is not XML: %v", err)
+	}
+	a, r := fmt.Sprint(h.ids[`Alpha "One"`]), fmt.Sprint(h.ids["Radio <Three>"])
+	real, filled, radio := 0, 0, 0
+	lastReal := ""
+	for _, p := range tv.Programmes {
+		switch {
+		case p.Channel == a && strings.HasPrefix(p.Title, "a & programme"):
+			real++
+			lastReal = p.Stop
+		case p.Channel == a:
+			if p.Title != `Alpha "One"` || p.Start < lastReal {
+				t.Errorf("Alpha's placeholder %+v, after %s", p, lastReal)
+			}
+			filled++
+		case p.Channel == r:
+			if p.Title != "Radio <Three>" {
+				t.Errorf("Radio's placeholder %+v", p)
+			}
+			radio++
+		}
+	}
+	// Alpha's guide runs out ten hours from now; the placeholders go on
+	// to two days from now. Radio has them for two days.
+	if real != 34 || filled < 37 || filled > 39 || radio < 48 || radio > 49 {
+		t.Errorf("Alpha: %d programmes, %d placeholders; Radio: %d placeholders", real, filled, radio)
+	}
+	if !strings.Contains(body, "<title>Radio &lt;Three&gt;</title>") {
+		t.Errorf("a placeholder's title is not escaped")
+	}
+}

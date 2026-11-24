@@ -315,6 +315,15 @@ func (a *Admin) bundleGuides(ctx context.Context, now time.Time) (string, error)
 		return "", err
 	}
 	fmt.Fprintf(&b, "Logos checked (D141): %s, of which %s do not load\n", count(checked), count(failing))
+	block, err := a.store.Placeholders(ctx)
+	if err != nil {
+		return "", err
+	}
+	if block == 0 {
+		b.WriteString("Placeholder programmes (D142): off\n")
+	} else {
+		fmt.Fprintf(&b, "Placeholder programmes (D142): blocks of %d minutes\n", int(block/time.Minute))
+	}
 	return b.String(), nil
 }
 

@@ -344,7 +344,7 @@ export class GuideScreen implements Screen {
     const rec = p.stop > t ? this.ctx.recordings.forProgramme(c.id, p.start, p.stop) : null;
     const recText = rec ? (recordingNow(rec, t) ? ' · Recording' : ' · To be recorded') : '';
     setHTML(this.meta, escape(day(p.start) + ', ' + span(p.start, p.stop) + (p.category ? ' · ' + p.category : '') + (archived ? ' · Catch-up' : '') + recText));
-    setText(this.description, p.description || p.subtitle || '');
+    setText(this.description, p.placeholder ? 'No guide for this time.' : p.description || p.subtitle || '');
     const self = this;
     if (!details) {
       this.ctx.guide.wantDetails(c.id, function () {
@@ -498,7 +498,7 @@ export class GuideScreen implements Screen {
     }
     const p = this.focused();
     const t = now();
-    if (!p || (p.start <= t && t < p.stop)) {
+    if (!p || p.placeholder || (p.start <= t && t < p.stop)) {
       this.ctx.watch(c, this.channels, true, this.groupKey);
     } else if (p.start > t) {
       this.ctx.toast(p.title + ' starts at ' + clock(p.start) + ' ' + onDay(p.start) + '.');
@@ -520,7 +520,8 @@ export class GuideScreen implements Screen {
     const self = this;
     const c = this.focusedChannel();
     if (c) {
-      record(this.ctx, c, this.focused(), function () {
+      const p = this.focused();
+      record(this.ctx, c, p && !p.placeholder ? p : null, function () {
         self.render();
       });
     }
@@ -604,7 +605,7 @@ export class GuideScreen implements Screen {
 
 /** inArchive says whether a programme has ended and plays from its channel's archive at t (D81). */
 export function inArchive(c: Channel, p: Programme, t: number): boolean {
-  return !!c.archive && p.stop <= t && p.start > t - c.archive * 86400;
+  return !!c.archive && !p.placeholder && p.stop <= t && p.start > t - c.archive * 86400;
 }
 
 /** daysBack returns how many days back the guide reaches on a channel: a day, or as far as its archive. */

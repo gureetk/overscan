@@ -2711,6 +2711,12 @@ paths:
                   description: >-
                     The outputs answer players from any address, not only
                     from this server's own networks.
+                guide_placeholders:
+                  type: integer
+                  enum: [0, 30, 60, 120, 180]
+                  description: >-
+                    The length of placeholder programmes, in minutes, or 0
+                    for none (D142).
       responses:
         "200":
           $ref: "#/components/responses/Settings"
@@ -5761,7 +5767,7 @@ components:
         application/json:
           schema:
             type: object
-            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes, adult_marks, radio_apart, tmdb_key_set, tmdb_language, recordings_cap, recordings_until, recordings_max_hours, timeshift_minutes, shared_tuner, outputs, outputs_anywhere]
+            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes, adult_marks, radio_apart, tmdb_key_set, tmdb_language, recordings_cap, recordings_until, recordings_max_hours, timeshift_minutes, shared_tuner, outputs, outputs_anywhere, guide_placeholders]
             properties:
               repair_default:
                 type: boolean
@@ -5863,6 +5869,13 @@ components:
                   The outputs answer players from any address. Off at first:
                   only private, loopback, link-local and shared (RFC 6598)
                   addresses.
+              guide_placeholders:
+                type: integer
+                enum: [0, 30, 60, 120, 180]
+                description: >-
+                  The length, in minutes, of the placeholder programmes that
+                  the guides that boxes and players read give a channel
+                  where it has none (D142), or 0 for none. Off at first.
     NoRecorder:
       description: This server cannot record (`no_recorder`).
       content:

@@ -129,3 +129,50 @@ func TestChannelGuide(t *testing.T) {
 		t.Errorf("without a session: %d", code)
 	}
 }
+
+// TestGuidePlaceholders checks that the box's guide marks placeholder
+// programmes, where the setting asks for them, and never in place of a
+// programme (D142).
+func TestGuidePlaceholders(t *testing.T) {
+	h := newHarness(t)
+	h.approve(macA)
+	entries := h.addGuide()
+	token := h.session(macA).Token
+	if err := h.store.SetPlaceholders(context.Background(), time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	ch0, ch1, bare := fmt.Sprint(entries["Channel 0"]), fmt.Sprint(entries["Channel 1"]), fmt.Sprint(entries["Ungrouped"])
+	var got guideResponse
+	if code := h.call("GET", Prefix+"guide?ids="+ch0+","+ch1+","+bare, token, "", &got); code != http.StatusOK {
+		t.Fatalf("status %d", code)
+	}
+	if titles(got.Channels[ch0]) != "P2 P3 P4" {
+		t.Errorf("Channel 0, whose guide fills every hour: %+v", got.Channels[ch0])
+	}
+	ps := got.Channels[bare]
+	if len(ps) < 3 || ps[0].Start > got.From || ps[0].Stop <= got.From || ps[len(ps)-1].Start >= got.To {
+		t.Fatalf("Ungrouped: %+v", ps)
+	}
+	for i, p := range ps {
+		if !p.Placeholder || p.Title != "Ungrouped" || p.Stop-p.Start > 3600 || i > 0 && (p.Start != ps[i-1].Stop || p.ID == ps[i-1].ID) {
+			t.Errorf("Ungrouped's %d: %+v", i, p)
+		}
+	}
+	// Channel 1's programme comes with placeholders after it, which do
+	// not reach back into it.
+	ps = got.Channels[ch1]
+	if len(ps) < 2 || ps[0].Title != "Match" || ps[0].Placeholder || !ps[1].Placeholder || ps[1].Start < ps[0].Stop {
+		t.Errorf("Channel 1: %+v", ps)
+	}
+	var raw map[string]json.RawMessage
+	h.call("GET", fmt.Sprintf("%schannels/%s/guide", Prefix, bare), token, "", &raw)
+	if !strings.Contains(string(raw["programmes"]), `"title":"Ungrouped","start":`) ||
+		!strings.Contains(string(raw["programmes"]), `"placeholder":true`) {
+		t.Errorf("Ungrouped's own guide: %s", raw["programmes"])
+	}
+	var full channelGuideResponse
+	h.call("GET", fmt.Sprintf("%schannels/%s/guide", Prefix, ch0), token, "", &full)
+	if len(full.Programmes) != 24 || full.Programmes[0].Placeholder {
+		t.Errorf("Channel 0's own guide: %d programmes", len(full.Programmes))
+	}
+}

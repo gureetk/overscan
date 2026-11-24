@@ -98,8 +98,9 @@ func (a *API) deviceZone(r *http.Request) *time.Location {
 
 // entryProgrammes returns the programmes of the channel that the ch_id
 // parameter names, in the lineup of d's account, between from and to, with
-// the account. A channel that d does not see has none, nor does one of
-// sources that the account does not use (D114).
+// the account, and placeholders where the setting asks for them (D142). A
+// channel that d does not see has none, nor does one of sources that the
+// account does not use (D114).
 func (a *API) entryProgrammes(r *http.Request, d store.Device, from, to time.Time) (int64, store.Account, []store.Programme, error) {
 	acct, err := a.store.Account(r.Context(), d.AccountID)
 	if err != nil {
@@ -116,7 +117,7 @@ func (a *API) entryProgrammes(r *http.Request, d store.Device, from, to time.Tim
 			return 0, acct, nil, err
 		}
 	}
-	ps, err := a.store.EntryProgrammes(r.Context(), acct.LineupID, entryID, from, to)
+	ps, err := a.store.EntryListings(r.Context(), acct.LineupID, entryID, from, to, a.now())
 	if errors.Is(err, store.ErrNotFound) {
 		return entryID, acct, nil, nil
 	}
@@ -145,8 +146,9 @@ func (a *API) getShortEPG(w http.ResponseWriter, r *http.Request, d store.Device
 }
 
 // getEPGInfo answers itv/get_epg_info: the programmes of every channel in
-// the device's lineup over the next period hours, by channel ID. Channels
-// without any are left out.
+// the device's lineup over the next period hours, by channel ID, with
+// placeholders where the setting asks for them (D142). Channels without
+// any are left out.
 func (a *API) getEPGInfo(w http.ResponseWriter, r *http.Request, d store.Device) {
 	hours, err := strconv.Atoi(r.Form.Get("period"))
 	if err != nil || hours <= 0 {
@@ -159,7 +161,7 @@ func (a *API) getEPGInfo(w http.ResponseWriter, r *http.Request, d store.Device)
 		return
 	}
 	now := a.now()
-	byEntry, err := a.store.LineupProgrammes(r.Context(), acct.LineupID, now, now.Add(time.Duration(hours)*time.Hour))
+	byEntry, err := a.store.LineupListings(r.Context(), acct.LineupID, now, now.Add(time.Duration(hours)*time.Hour), now)
 	if err != nil {
 		a.internalError(w, "read the guide", err)
 		return

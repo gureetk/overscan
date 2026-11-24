@@ -62,6 +62,8 @@ What to check when something goes wrong, by what you see. [guide.md](guide.md) s
 
 **A player gets *403*: *Overscan's outputs answer players on its own networks only.*** The player is not on your own networks, or comes through a reverse proxy that names no client. Away from home, connect through a VPN into your home network; behind a reverse proxy, name it in `trusted_proxies` ([outputs.md](outputs.md), D119).
 
+**Programmes named after their channel fill a player's guide.** These are placeholder programmes, for the hours in which a channel has none: *Guides* → *Placeholder programmes* → *Nothing* turns them off (D142). Players keep the guide they read until they read it again.
+
 **A player's login fails though it is right.** After five wrong logins from one address within 15 minutes, even the right one waits until the first of them is 15 minutes old.
 
 ## Recordings

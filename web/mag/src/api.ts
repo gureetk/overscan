@@ -151,6 +151,8 @@ export interface Programme {
   subtitle?: string;
   description?: string;
   category?: string;
+  /** A placeholder named after its channel, where it has no programme (D142): never recorded or played from an archive. */
+  placeholder?: boolean;
 }
 
 export interface Guide {

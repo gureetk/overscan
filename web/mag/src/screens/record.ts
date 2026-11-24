@@ -12,9 +12,9 @@ import { type Recording, recordingNow } from '../recordings';
 import { clock, now, onDay } from '../time';
 import type { Ctx } from './screen';
 
-/** recordable says whether the guide can offer to record p now: the server records, and p has not ended. */
+/** recordable says whether the guide can offer to record p now: the server records, p has not ended, and it is not a placeholder (D142). */
 export function recordable(ctx: Ctx, p: Programme | null): boolean {
-  return ctx.recordings.on && !!p && p.stop > now();
+  return ctx.recordings.on && !!p && !p.placeholder && p.stop > now();
 }
 
 /** recordText says what the record key does to programme p of channel c: record it, stop its recording, or call it off. */

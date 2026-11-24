@@ -240,7 +240,7 @@ func (o *Output) shortGuide(w http.ResponseWriter, r *http.Request, acct store.A
 		limit = min(n, maxShortGuide)
 	}
 	now := o.now()
-	ps, err := o.store.EntryProgrammes(ctx, acct.LineupID, c.EntryID, now, now.Add(guideAhead))
+	ps, err := o.store.EntryListings(ctx, acct.LineupID, c.EntryID, now, now.Add(guideAhead), now)
 	if errors.Is(err, store.ErrNotFound) {
 		writeJSON(w, empty)
 		return
@@ -279,7 +279,7 @@ func (o *Output) dayTable(w http.ResponseWriter, r *http.Request, acct store.Acc
 	if c.ArchiveDays > 0 {
 		from = now.Add(-time.Duration(c.ArchiveDays) * 24 * time.Hour)
 	}
-	ps, err := o.store.EntryProgrammes(ctx, acct.LineupID, c.EntryID, from, now.Add(guideAhead))
+	ps, err := o.store.EntryListings(ctx, acct.LineupID, c.EntryID, from, now.Add(guideAhead), now)
 	if errors.Is(err, store.ErrNotFound) {
 		writeJSON(w, empty)
 		return

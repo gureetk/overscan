@@ -31,7 +31,7 @@ A person who should have a lineup of their own, a limit of their own or their ow
 - The channels that the account's lineup shows, in its order, with their numbers, groups and logos. Locked channels are left out once the account has a parental PIN, since a player cannot ask for it.
 - Radio stations, marked as such.
 - Past programmes of channels whose source keeps an archive, for players that play catch-up from a playlist.
-- A guide of those channels, from a day back, or as far back as a channel's archive, to a week ahead, with every time in UTC.
+- A guide of those channels, from a day back, or as far back as a channel's archive, to a week ahead, with every time in UTC. Where *Guides* → *Placeholder programmes* asks for them, a channel has a programme named after it in each block of time over the next two days in which it has none (D142).
 - With an Xtream login, the films and series too, as the boxes' *Movies* and *Series* show them, except a Stalker portal's, which Overscan reads a page at a time as a box browses them. A film's or a series' details are read from its source when a player opens it, as when a box does.
 
 An account that uses only some sources, as its page's *Sources* says, gets only what comes from them: the channels with a stream of theirs, their own or a backup's, playing from those streams alone, and the films and series of those sources. Recordings play from the `recordings` folder source, so such an account plays them only if that source is among its own.

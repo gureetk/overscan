@@ -42,6 +42,24 @@
   {{template "guide-form" .}}
 </section>
 {{- end}}
+<section class="card" aria-labelledby="placeholders-title">
+  <h2 id="placeholders-title">Placeholder programmes</h2>
+  <form method="post" action="/admin/guides/placeholders" hx-post="/admin/guides/placeholders" hx-trigger="change" hx-target="#guides-main" hx-select="#guides-main" hx-swap="outerHTML" class="switch-row with-select">
+    <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+    <div>
+      <label for="placeholders">Where a channel has no programme</label>
+      <p id="placeholders-text">{{.Data.PlaceholdersText}}</p>
+      <noscript><button class="small" type="submit">Save</button></noscript>
+    </div>
+    <select id="placeholders" name="placeholders" aria-describedby="placeholders-text">
+      <option value="0"{{if eq .Data.Placeholders 0}} selected{{end}}>Nothing</option>
+      <option value="30"{{if eq .Data.Placeholders 30}} selected{{end}}>Half-hour placeholders</option>
+      <option value="60"{{if eq .Data.Placeholders 60}} selected{{end}}>Hour-long placeholders</option>
+      <option value="120"{{if eq .Data.Placeholders 120}} selected{{end}}>Two-hour placeholders</option>
+      <option value="180"{{if eq .Data.Placeholders 180}} selected{{end}}>Three-hour placeholders</option>
+    </select>
+  </form>
+</section>
 {{- end}}
 </div>
 {{end}}
