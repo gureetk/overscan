@@ -147,11 +147,19 @@ func (s *Store) ProgrammeAt(ctx context.Context, lineupID, entryID int64, start 
 func (s *Store) ProgrammeStarting(ctx context.Context, lineupID, entryID int64, from, to time.Time) (Programme, error) {
 	var p Programme
 	var start, stop int64
+	// The entry's programmes come from one guide: its channel's own
+	// source's, or a guide of the household's own that fills it (D139).
+	join := ownProgrammesJoin
+	if _, _, guideChannel, err := s.entryGuide(ctx, lineupID, entryID); errors.Is(err, ErrNotFound) {
+		return Programme{}, ErrNotFound
+	} else if err != nil {
+		return Programme{}, err
+	} else if guideChannel != 0 {
+		join = addedProgrammesJoin
+	}
 	err := s.db.QueryRowContext(ctx, `
-		SELECT p.id, p.start + `+guideShiftSQL+`, p.stop + `+guideShiftSQL+`, p.title, p.subtitle, p.description,
-			p.category`+lineupEntryJoins+`
-		JOIN programmes p ON p.channel_id = `+guideChannelSQL+`
-		JOIN source_guides sg ON sg.source_id = p.source_id AND sg.generation = p.generation
+		SELECT `+programmeIDSQL+`, p.start + `+guideShiftSQL+`, p.stop + `+guideShiftSQL+`, p.title, p.subtitle,
+			p.description, p.category`+lineupEntryJoins+join+`
 		WHERE e.id = ? AND e.lineup_id = ? AND `+shownEntry+` AND p.start >= ? - `+guideShiftSQL+`
 			AND p.start < ? - `+guideShiftSQL+`
 		ORDER BY p.start, p.id LIMIT 1`,

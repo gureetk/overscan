@@ -430,6 +430,8 @@ details.popover.up > .menu { top: auto; bottom: calc(100% + 0.375rem); }
 .lead { margin: 0.375rem 0 1.5rem; max-width: 48rem; color: var(--text2); font-size: 0.9375rem; }
 .page-head .lead { margin-bottom: 0; }
 .crumbs { margin: 0 0 0.5rem; font-size: 0.875rem; }
+/* A line that sums up a page's list, above it. */
+.summary-line { margin: 0 0 1rem; max-width: 80ch; color: var(--text2); font-size: 0.9375rem; }
 .crumbs a { text-decoration: none; font-weight: 500; }
 
 /* Panels. */

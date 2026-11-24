@@ -24,6 +24,14 @@ The admin is at `http://<server>:8080/admin/`. Its pages are *Overview*, *Source
 - **Public addresses only:** for a provider on the internet, so that nothing it lists can make Overscan reach your home network (D121).
 - **What it brings:** every category, or only those you tick, for its live channels, films and series apart: the source's card → *Choose categories*. What it leaves out is not stored and has no guide. A new source can start with *Only those I tick, after its first read*, so that nothing reaches the lineup before you choose (D135).
 
+## Add a guide of your own
+
+*Guides* → *Add a guide*: the address of an XMLTV guide, gzip or not, or the path of a guide's file on the server. Overscan reads it at once and then every 12 hours. It fills only the channels whose own sources give them no programme: by the guide ID that a channel's source gives it, then by its name. Where the guide has the name in two countries, a country tag in the channel's name or its group, such as *UK:* or *[UK]*, chooses; where nothing does, the channel stays without a guide rather than take the wrong one. The guide's card says how many channels it fills, and the top of the page how many still have no guide (D139).
+
+- **Several guides:** where two could fill a channel, the first does; *Move up* and *Move down* under a guide's ⋯ put them in order.
+- **Public addresses only,** as for a source, for a guide on the internet.
+- **Turn off** takes a guide's programmes from its channels at once; *Turn on* gives them back.
+
 ## Arrange the channels
 
 *Live TV*: groups, names, numbers, hidden channels, locks and stream repair, which stay as you set them when sources change (D47).

@@ -1,0 +1,147 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+{{define "content"}}
+<div id="guides-main">
+{{- if .Data.Editing}}
+<p class="crumbs"><a href="/admin/guides">Guides</a></p>
+<div class="page-head">
+  <div>
+    <h1>Change {{.Data.Form.Settings.Name}}</h1>
+    <p class="lead">Where Overscan reads this guide. Its address stays encrypted, and the admin shows only where it points; leave it empty to keep it.</p>
+  </div>
+</div>
+{{template "alerts" .}}
+<section class="card form-card">{{template "guide-form" .}}</section>
+{{- else}}
+<div class="page-head">
+  <div>
+    <h1>Guides</h1>
+    <p class="lead">Guides of your own, for the channels whose sources give them none. Overscan reads each XMLTV guide on its schedule, and gives a channel without programmes from its own source those of the guide's channel with its guide ID, or else with its name. Where two of the guides' channels have the name, as the same channel in two countries can, a country tag in the channel's name or group chooses; where none does, the channel gets no guide rather than the wrong one. A guide's address can hold a login, so Overscan keeps it encrypted and shows only where it points.</p>
+  </div>
+  {{- if not .Data.Full}}
+  <a class="button primary" href="#add-guide">{{template "i-plus"}}Add a guide</a>
+  {{- end}}
+</div>
+{{template "alerts" .}}
+{{- if .Data.Guides}}
+<p class="summary-line">
+  {{- if .Data.Filled}}The guides fill {{count .Data.Filled}} {{plural .Data.Filled "channel"}}. {{end}}
+  {{- if .Data.WithoutGuide}}{{count .Data.WithoutGuide}} {{plural .Data.WithoutGuide "channel"}} of your sources still {{if eq .Data.WithoutGuide 1}}has{{else}}have{{end}} no guide.{{else}}Every channel of your sources has a guide.{{end}}</p>
+{{- end}}
+{{- range .Data.Guides}}
+{{template "guide-card" (dict "G" . "CSRF" $.Session.CSRFToken)}}
+{{- else}}
+<section class="card"><p class="empty">No guides of your own yet. Add one below: the address of an XMLTV guide, gzip or not, or the path of a guide's file on this server.{{if .Data.WithoutGuide}} {{count .Data.WithoutGuide}} {{plural .Data.WithoutGuide "channel"}} of your sources {{if eq .Data.WithoutGuide 1}}has{{else}}have{{end}} no guide now.{{end}}</p></section>
+{{- end}}
+{{- if not .Data.Full}}
+<section class="card form-card" id="add-guide" aria-labelledby="add-guide-title">
+  <h2 id="add-guide-title">Add a guide</h2>
+  <p class="hint">Overscan reads it as soon as it is added, and then every 12 hours.</p>
+  {{template "guide-form" .}}
+</section>
+{{- end}}
+{{- end}}
+</div>
+{{end}}
+
+{{define "guide-card"}}
+<section class="card source{{if not .G.Enabled}} is-off{{end}}" id="guide-{{.G.ID}}" aria-labelledby="guide-{{.G.ID}}-name">
+  <div class="source-head">
+    <h2 id="guide-{{.G.ID}}-name">{{.G.Name}}</h2>
+    <span class="badge">XMLTV guide</span>
+    {{- if not .G.Enabled}}
+    <span class="state-line"><i class="dot off" aria-hidden="true"></i>Off</span>
+    {{- else if .G.Reading}}
+    <span class="state-line"><i class="dot" aria-hidden="true"></i>Reading it now</span>
+    {{- else if .G.AddressLocked}}
+    <span class="state-line bad"><i class="dot bad" aria-hidden="true"></i>Enter its address again</span>
+    {{- else if .G.ReadError}}
+    <span class="state-line bad"><i class="dot bad" aria-hidden="true"></i>Its last read failed</span>
+    {{- else if .G.ReadAt.IsZero}}
+    <span class="state-line"><i class="dot" aria-hidden="true"></i>Not read yet</span>
+    {{- else}}
+    <span class="state-line"><i class="dot ok" aria-hidden="true"></i>Read {{.G.LastRead}}</span>
+    {{- end}}
+    <div class="source-actions">
+      {{- if .G.Enabled}}
+      {{template "guide-action" (dict "ID" .G.ID "Action" "read" "Label" "Read now" "Icon" true "CSRF" .CSRF)}}
+      {{- else}}
+      {{template "guide-action" (dict "ID" .G.ID "Action" "on" "Label" "Turn on" "Primary" true "CSRF" .CSRF)}}
+      {{- end}}
+      <a class="button small" href="/admin/guides/{{.G.ID}}">Change</a>
+      <details class="popover">
+        <summary class="button small icon" aria-label="More for {{.G.Name}}: move it, turn it off, remove it" title="Move, turn off, remove">{{template "i-more"}}</summary>
+        <div class="menu">
+          {{- if not .G.First}}
+          {{template "guide-action" (dict "ID" .G.ID "Action" "up" "Label" "Move up" "Menu" true "CSRF" .CSRF)}}
+          {{- end}}
+          {{- if not .G.Last}}
+          {{template "guide-action" (dict "ID" .G.ID "Action" "down" "Label" "Move down" "Menu" true "CSRF" .CSRF)}}
+          {{- end}}
+          {{- if .G.Enabled}}
+          {{template "guide-action" (dict "ID" .G.ID "Action" "off" "Label" "Turn off" "Menu" true "CSRF" .CSRF)}}
+          {{- end}}
+          {{template "guide-action" (dict "ID" .G.ID "Action" "delete" "Label" "Remove" "Menu" true "Danger" true "CSRF" .CSRF "Confirm" .G.DeleteQuestion)}}
+        </div>
+      </details>
+    </div>
+  </div>
+  {{- if .G.ReadError}}
+  <p class="alert error">The last read failed: {{.G.ReadError}}</p>
+  {{- end}}
+  <dl class="facts">
+    <div><dt>{{if .G.IsFile}}File{{else}}Address{{end}}</dt><dd>
+      {{- if .G.AddressLocked}}<span class="badge blocked">Enter it again</span><div class="note">It was saved with another key file.</div>
+      {{- else}}{{.G.HostText}}{{end}}</dd></div>
+    <div><dt>Fills</dt><dd>{{.G.FillsLine}}</dd></div>
+    <div><dt>Lists</dt><dd>{{.G.ListsLine}}</dd></div>
+    <div><dt>Last read</dt><dd>{{.G.LastRead}}</dd></div>
+    <div><dt>Read</dt><dd>Every 12 hours</dd></div>
+    {{- with .G.Order}}
+    <div><dt>Order</dt><dd>{{.}}</dd></div>
+    {{- end}}
+  </dl>
+</section>
+{{end}}
+
+{{define "guide-action"}}
+<form method="post" action="/admin/guides/{{.ID}}/{{.Action}}" hx-post="/admin/guides/{{.ID}}/{{.Action}}" hx-target="#guides-main" hx-select="#guides-main" hx-swap="outerHTML"{{with .Confirm}} hx-confirm="{{.}}"{{end}}>
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <button type="submit" class="{{if not .Menu}}small{{end}}{{if .Primary}} primary{{end}}{{if .Danger}} danger{{end}}">{{if .Icon}}{{template "i-refresh"}}{{end}}{{.Label}}</button>
+</form>
+{{- end}}
+
+{{define "guide-form"}}
+{{- $f := .Data.Form}}
+<form method="post" action="{{if $f.ID}}/admin/guides/{{$f.ID}}{{else}}/admin/guides{{end}}" hx-post="{{if $f.ID}}/admin/guides/{{$f.ID}}{{else}}/admin/guides{{end}}" hx-target="#guides-main" hx-select="#guides-main" hx-swap="outerHTML" class="source-form">
+  <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+  <div class="form-grid">
+    <div class="field">
+      <label for="guide-name">Name</label>
+      <input id="guide-name" name="name" value="{{$f.Settings.Name}}" maxlength="32" pattern="[a-z0-9][a-z0-9_\-]{0,31}" required spellcheck="false" autocapitalize="none" autocomplete="off" placeholder="Such as extra">
+      <p class="hint">Lower-case letters, digits, hyphens and underscores. The log names the guide by it.</p>
+    </div>
+    <div class="field">
+      <label for="guide-address">Address</label>
+      <input id="guide-address" name="address" value="{{if not $f.ID}}{{$f.Settings.Address}}{{end}}" maxlength="4096" spellcheck="false" autocapitalize="none" autocomplete="off"
+        {{- if $f.ID}} placeholder="Leave empty to keep the saved address"{{else}} required placeholder="http://guide.example/guide.xml.gz"{{end}}>
+      <p class="hint">
+        {{- if not $f.ID}}An http or https address of an XMLTV guide, gzip or not, or the absolute path of a guide's file on this server.
+        {{- else if $f.AddressLocked}}The saved address was encrypted with another key file, so it cannot be read. Enter it again.
+        {{- else}}Saved: {{$f.Host}}. Enter a new address only to change it.{{end}}</p>
+    </div>
+    <div class="field">
+      <label for="guide-agent">User agent <span class="muted">(optional)</span></label>
+      <input id="guide-agent" name="user_agent" value="{{$f.Settings.UserAgent}}" maxlength="200" spellcheck="false" autocomplete="off">
+      <p class="hint">For a guide's server that expects a particular player. Leave it empty for Overscan's own.</p>
+    </div>
+    <div class="field wide">
+      <label class="check"><input type="checkbox" name="public_only" value="1"{{if $f.Settings.PublicOnly}} checked{{end}}> Public addresses only</label>
+      <p class="hint">Overscan then refuses every address of this guide that is on your own networks: private, loopback and link-local ones, wherever its address leads. For a guide on the internet; leave it off for one on a server in your home.</p>
+    </div>
+  </div>
+  <div class="form-buttons">
+    <button type="submit" class="primary">{{if $f.ID}}Save{{else}}Add{{end}}</button>
+    {{- if $f.ID}}<a class="button" href="/admin/guides">Cancel</a>{{end}}
+  </div>
+</form>
+{{- end}}

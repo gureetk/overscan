@@ -319,16 +319,22 @@ const maxChannelsListed = 100_000
 
 // open fetches a guide.
 func (g *Reader) open(ctx context.Context, src source.Settings, address string) (io.ReadCloser, error) {
+	return g.fetch(ctx, address, src.UserAgent, src.PublicOnly)
+}
+
+// fetch fetches a guide at an http or https address, as userAgent, or as
+// Overscan if it is "", and if publicOnly is true, only from public
+// addresses (D121).
+func (g *Reader) fetch(ctx context.Context, address, userAgent string, publicOnly bool) (io.ReadCloser, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
 	if err != nil {
 		return nil, errors.New("the guide's address is not valid")
 	}
-	ua := src.UserAgent
-	if ua == "" {
-		ua = g.userAgent
+	if userAgent == "" {
+		userAgent = g.userAgent
 	}
-	req.Header.Set("User-Agent", ua)
-	resp, err := netguard.Client(g.client, src.PublicOnly).Do(req)
+	req.Header.Set("User-Agent", userAgent)
+	resp, err := netguard.Client(g.client, publicOnly).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch: %w", withoutAddress(err))
 	}
@@ -370,6 +376,12 @@ func (c *capReader) Read(p []byte) (int, error) {
 		err = withoutAddress(err)
 	}
 	return n, err
+}
+
+// adder takes the programmes that a read keeps: a source's guide's
+// writer, or a guide of the household's own's (D139).
+type adder interface {
+	Add(context.Context, store.GuideProgramme) error
 }
 
 // matcher matches a guide's channels to a source's, and turns the guide's
@@ -450,7 +462,7 @@ func (m *matcher) match() {
 
 // programme takes a programme of the guide. One without a stop waits for
 // the next programme on its channel, whose start is its stop.
-func (m *matcher) programme(ctx context.Context, p xmltv.Programme, w *store.GuideWriter) error {
+func (m *matcher) programme(ctx context.Context, p xmltv.Programme, w adder) error {
 	if !m.matched {
 		m.match()
 	}
@@ -483,7 +495,7 @@ func (m *matcher) programme(ctx context.Context, p xmltv.Programme, w *store.Gui
 
 // finish drops the programmes still waiting for a stop: the last of their
 // channels, whose end the guide does not say.
-func (m *matcher) finish(context.Context, *store.GuideWriter) error {
+func (m *matcher) finish(context.Context, adder) error {
 	m.skipped += len(m.pending)
 	m.pending = nil
 	return nil
@@ -492,7 +504,7 @@ func (m *matcher) finish(context.Context, *store.GuideWriter) error {
 // keep adds a programme to each of the source's channels it belongs to, if
 // devices can be shown it: it ends no longer ago than the channel keeps,
 // and starts within Ahead.
-func (m *matcher) keep(ctx context.Context, p xmltv.Programme, ours []store.GuideChannel, w *store.GuideWriter) error {
+func (m *matcher) keep(ctx context.Context, p xmltv.Programme, ours []store.GuideChannel, w adder) error {
 	if !p.Start.Before(m.now.Add(Ahead)) {
 		return nil
 	}
@@ -526,6 +538,16 @@ var qualityTags = map[string]bool{"hd": true, "fhd": true, "uhd": true, "sd": tr
 // digits and plus signs, so that "UK: BBC One HD" and "BBC One" match, and
 // "Channel 4 +1" and "Channel 4" do not.
 func NameKey(name string) string {
+	words := nameWords(name)
+	for len(words) > 1 && qualityTags[words[len(words)-1]] {
+		words = words[:len(words)-1]
+	}
+	return strings.Join(words, "")
+}
+
+// nameWords returns the words of a name as NameKey compares them, before
+// it leaves out the quality tags at its end.
+func nameWords(name string) []string {
 	s := strings.ToLower(strings.TrimSpace(name))
 	// A short tag before a colon or a bar, such as "uk:" or "de |".
 	if i := strings.IndexAny(s, ":|"); i > 0 && i <= 4 {
@@ -553,11 +575,7 @@ func NameKey(name string) string {
 			}
 		}
 	}
-	words := strings.FieldsFunc(b.String(), func(r rune) bool {
+	return strings.FieldsFunc(b.String(), func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '+'
 	})
-	for len(words) > 1 && qualityTags[words[len(words)-1]] {
-		words = words[:len(words)-1]
-	}
-	return strings.Join(words, "")
 }

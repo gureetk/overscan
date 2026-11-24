@@ -25,6 +25,7 @@ import (
 	"overscan.gureet.ca/internal/admin"
 	"overscan.gureet.ca/internal/catalog"
 	"overscan.gureet.ca/internal/config"
+	"overscan.gureet.ca/internal/guide"
 	"overscan.gureet.ca/internal/hub"
 	"overscan.gureet.ca/internal/library"
 	"overscan.gureet.ca/internal/logging"
@@ -251,6 +252,10 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger, recent *log
 	useEncoder(ctx, streams, ffmpegPath, ffprobePath, log)
 	refresher := catalog.NewRefresher(st, log, version)
 	refresher.AllowEmpty(cfg.RecordingsPath())
+	// Guides of the household's own fill the channels whose sources give
+	// them none, matched again whenever sources change (D139).
+	ownGuides := guide.NewOwn(st, log, version)
+	refresher.UseOwnGuides(ownGuides)
 	lib := library.New(st, log, version)
 	// Stalker portals are read, and their streams played, in one session
 	// for each source (D76).
@@ -275,6 +280,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger, recent *log
 	bgCtx, stopBackground := context.WithCancel(ctx)
 	var background sync.WaitGroup
 	background.Go(func() { refresher.Run(bgCtx) })
+	background.Go(func() { ownGuides.Run(bgCtx) })
 	background.Go(func() { streams.Run(bgCtx) })
 	background.Go(func() { lib.Run(bgCtx) })
 	// Programmes that boxes schedule are recorded through the hub, into the
@@ -292,8 +298,8 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger, recent *log
 
 	code := 0
 	support := admin.Support{Log: recent.Lines, Facts: serverFacts(cfg, ffmpegPath, ffmpegVersion, ffprobePath, ffprobeVersion), Listen: cfg.Listen}
-	svc := server.Services{Store: st, Hub: streams, AdminToken: adminToken, Sources: refresher, Support: support, Library: lib,
-		Checks: checks, Recorder: rec}
+	svc := server.Services{Store: st, Hub: streams, AdminToken: adminToken, Sources: refresher, Guides: ownGuides,
+		Support: support, Library: lib, Checks: checks, Recorder: rec}
 	if err := server.New(cfg, log, version, svc).Run(ctx); err != nil {
 		log.Error("server failed", "error", err)
 		code = 1

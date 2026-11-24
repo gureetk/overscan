@@ -16,6 +16,7 @@ Overscan is made for a home network and the household's own devices (D128). Away
 | A player of the outputs | Its account's playlist, guide, Xtream API and streams | Off by default; a token or a login; the server's own networks unless told otherwise; its account's limit and its sources' (D103 to D105) |
 | The administrator | Everything that Overscan does: sources, among them the files and folders on the server that its user can read, devices, accounts, settings | Trusted: signs in with the password set on the server |
 | A source | What it sends: lists, guides, streams and pictures, and the addresses that Overscan then fetches | Size caps and fuzzed parsers; its addresses and logins never leave the server; its text is shown as text; public addresses only, if set (D121) |
+| A guide of the household's own | What its address or file sends: channels, with their names and icons, and programmes | The same caps and fuzzed XMLTV parser as a source's guide, and at most 100,000 of its channels kept; its address never leaves the server; a file must be a regular file; public addresses only, if set (D121, D139) |
 | The internet beyond the home | Nothing, unless the administrator exposes the server | Made for the home network, and not for the internet (D128): a VPN into the home network instead; if the server is exposed anyway, a reverse proxy with TLS, named in `trusted_proxies` (D119), at the least |
 
 ## What is in place

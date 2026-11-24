@@ -31,9 +31,10 @@ info:
     **Other origins.** A request from a browser that would change something
     and comes from another origin is refused with 403, whatever its cookies.
 
-    **Secrets.** A source's address can hold the credentials of an account.
-    The API takes it, keeps it encrypted, and never sends it back; a source
-    shows only its `host` (D46).
+    **Secrets.** A source's address can hold the credentials of an account,
+    and so can a guide's. The API takes them, keeps them encrypted, and
+    never sends them back; a source and a guide show only their `host`
+    (D46, D139).
   license:
     name: AGPL-3.0-or-later
     identifier: AGPL-3.0-or-later
@@ -82,6 +83,11 @@ tags:
       `series`.
   - name: sources
     description: Where channels come from.
+  - name: guides
+    description: >-
+      Guides of the household's own (D139): XMLTV guides at an address, or
+      in a file on the server, that fill the channels whose own sources
+      give them no programme, matched by guide ID and then by name.
   - name: streams
     description: What is playing now, through the stream hub.
   - name: health
@@ -3114,6 +3120,183 @@ paths:
         "415":
           $ref: "#/components/responses/NotJSON"
 
+  /guides:
+    get:
+      tags: [guides]
+      operationId: listGuides
+      summary: List the guides of the household's own
+      description: >-
+        Each guide without its address, which can hold credentials and is
+        never shown again once saved; `host` says where it points. The guides
+        come in their order: where two could fill a channel, the first does.
+      responses:
+        "200":
+          description: The guides, in their order.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [guides, without_guide]
+                properties:
+                  guides:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/OwnGuide"
+                  without_guide:
+                    type: integer
+                    description: >-
+                      The channels of enabled sources that their sources
+                      still list, with no programme of their own and no
+                      guide of the household's own to fill them.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    post:
+      tags: [guides]
+      operationId: addGuide
+      summary: Add a guide
+      description: >-
+        Adds a guide after the others, and reads it at once. `address` is
+        needed; `position` is not taken: move a guide with
+        `PATCH /guides/{id}`. A server keeps at most 20 guides.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OwnGuideSettings"
+      responses:
+        "201":
+          $ref: "#/components/responses/OwnGuide"
+        "400":
+          $ref: "#/components/responses/OwnGuideMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "409":
+          $ref: "#/components/responses/OwnGuideConflict"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+
+  /guides/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [guides]
+      operationId: getGuide
+      summary: A guide of the household's own
+      responses:
+        "200":
+          $ref: "#/components/responses/OwnGuide"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [guides]
+      operationId: changeGuide
+      summary: Change a guide
+      description: >-
+        Changes what the body gives and keeps the rest, including the saved
+        address unless `address` is given. A new address, user agent or
+        choice of public addresses makes the guide read again at once.
+        `enabled` false makes it fill no channel from then on; `position`
+        moves it, from 1 for the first, the others moving along.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OwnGuideSettings"
+      responses:
+        "200":
+          $ref: "#/components/responses/OwnGuide"
+        "400":
+          $ref: "#/components/responses/OwnGuideMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/OwnGuideConflict"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+    delete:
+      tags: [guides]
+      operationId: deleteGuide
+      summary: Remove a guide
+      description: >-
+        Removes the guide with its channels and programmes. The channels
+        that it filled take another guide's where one has their guide IDs or
+        names.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "204":
+          description: Removed.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /guides/{id}/read:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [guides]
+      operationId: readGuide
+      summary: Read a guide now
+      description: >-
+        Reads the guide now, whatever its schedule, once a read of another
+        guide under way ends, and waits up to 20 seconds for it. A read that
+        takes longer goes on: the answer is then 202, with `reading` true,
+        and the guide's `read_at` and `read_error` say how it ended.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "200":
+          description: What the read found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OwnGuideRead"
+        "202":
+          description: The read goes on.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OwnGuideRead"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/OwnGuideConflict"
+        "502":
+          $ref: "#/components/responses/OwnGuideFailed"
+        "503":
+          description: >-
+            This server cannot read guides from the admin (`no_reader`), or
+            other reads of guides wait already (`busy`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /sources:
     get:
       tags: [sources]
@@ -4296,6 +4479,113 @@ components:
       type: string
       enum: [group, shown, hidden]
       description: "`group`: shown unless its group is hidden; `shown`: shown even in a hidden group; `hidden`: hidden."
+    OwnGuide:
+      type: object
+      description: >-
+        A guide of the household's own (D139), without its address, and what
+        its last read found.
+      required: [id, name, host, address, user_agent, public_only, enabled, position, reading, read_at, read_error,
+        listed, channels, programmes, fills, by_name, waiting]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        host:
+          type: string
+          description: Where its address points, or `file` and a file's name.
+        address:
+          type: string
+          enum: [saved, locked]
+          description: Whether its saved address can be read, or was saved with another key file and must be entered again.
+        user_agent:
+          type: string
+          description: Sent when it is fetched; empty for Overscan's own.
+        public_only:
+          type: boolean
+          description: Its requests go to public addresses only (D121).
+        enabled:
+          type: boolean
+        position:
+          type: integer
+          description: Its place among the guides, from 1. Where two could fill a channel, the first does.
+        reading:
+          type: boolean
+          description: Overscan is reading it now.
+        read_at:
+          type: [string, "null"]
+          format: date-time
+          description: When its last read ended, null if none has.
+        read_error:
+          type: string
+          description: Why its last read failed, empty if it worked. It never quotes the address.
+        listed:
+          type: integer
+          description: The channels that its last read listed.
+        channels:
+          type: integer
+          description: Of those, the ones whose programmes it keeps, since they fill a channel.
+        programmes:
+          type: integer
+        fills:
+          type: integer
+          description: The channels that it gives programmes to now.
+        by_name:
+          type: integer
+          description: Of those, the ones that their names matched, rather than their guide IDs.
+        waiting:
+          type: integer
+          description: Of those, the ones whose programmes its next read brings, since no channel used them at its last read.
+    OwnGuideSettings:
+      type: object
+      description: What the administrator sets of a guide. What a change leaves out stays as it is.
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9_-]{0,31}$"
+        address:
+          type: string
+          maxLength: 4096
+          description: >-
+            An http or https address of an XMLTV guide, gzip or not, or the
+            absolute path of a guide's file on the server, which must be a
+            regular file. It is kept encrypted and never sent back.
+        user_agent:
+          type: string
+          maxLength: 200
+        public_only:
+          type: boolean
+        enabled:
+          type: boolean
+        position:
+          type: integer
+          minimum: 1
+          description: Where to move the guide among the guides; not taken when a guide is added.
+    OwnGuideRead:
+      type: object
+      description: What a read of a guide found, or, with `reading` true, that it goes on.
+      required: [reading, listed, fills, by_name, channels, programmes, skipped]
+      properties:
+        reading:
+          type: boolean
+        listed:
+          type: integer
+          description: The channels that the guide lists.
+        fills:
+          type: integer
+          description: The channels that it gives programmes to.
+        by_name:
+          type: integer
+          description: Of those, the ones that their names matched.
+        channels:
+          type: integer
+          description: Of the guide's channels, the ones whose programmes it kept.
+        programmes:
+          type: integer
+        skipped:
+          type: integer
+          description: Programmes and channels that it could not read, or that were too many.
     Source:
       type: object
       required: [id, name, type, host, address, enabled, max_connections, refresh_seconds, user_agent, numbers,
@@ -5190,6 +5480,38 @@ components:
             properties:
               set:
                 type: boolean
+    OwnGuide:
+      description: The guide.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/OwnGuide"
+    OwnGuideMistake:
+      description: >-
+        A setting breaks a rule: `bad_name`, `bad_address`, `bad_user_agent`
+        or `bad_position`; or the body is not the JSON the path takes
+        (`bad_json`). The message never quotes the address.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    OwnGuideConflict:
+      description: >-
+        Another guide has the name (`name_taken`), the server keeps as many
+        guides as it can (`too_many`), or the guide's address was saved with
+        another key file (`address_locked`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    OwnGuideFailed:
+      description: >-
+        The guide could not be read (`guide_failed`): the message says why,
+        without the address.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     Source:
       description: The source.
       content:

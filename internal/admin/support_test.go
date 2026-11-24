@@ -72,6 +72,10 @@ func TestSupportBundle(t *testing.T) {
 	if err := ta.st.SetAccountTheme(context.Background(), householdAccount, th.ID); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := ta.st.AddGuide(context.Background(), store.GuideSettings{Name: "extra",
+		Address: "http://guides.example/epg.xml?token=s3cret", PublicOnly: true}, ta.clock); err != nil {
+		t.Fatal(err)
+	}
 	ta.UseSupport(Support{
 		Log: func() []string {
 			return []string{
@@ -127,6 +131,8 @@ func TestSupportBundle(t *testing.T) {
 			"  base: yes; started in 640 ms, picture 640x360, 1 sound track, at 3.4 s",
 			"  dts: no; started in 700 ms, picture 640x360, 2 sound tracks, at 4.1 s\n    the player said {pictureWidth:640} of the picture and [{pid:257,type:7}] of the sound\n    the player's events: \"2\" \"7\" \"4\"\n",
 			"  truehd: not answered; the box did not start it in 15000 ms", "  av1: not answered; the box could not open it"},
+		"guides.txt": {"extra (ID 1)", "Address                an address, saved", "Public addresses only  true", "Last read              never",
+			"Fills                  0 channels, 0 by name, 0 waiting for its next read", "Channels of enabled sources without a guide: 4"},
 		"playing.txt": {"Alpha", "Living room", "a removed device"},
 		"capture.txt": {"itv/set_fav (fav_ch,type): 1 times", "token=[redacted]"},
 		"log.txt":     {"mac=00:1A:79:xx:xx:xx", "lookup [host] on [loopback]:53"},
@@ -138,7 +144,7 @@ func TestSupportBundle(t *testing.T) {
 		}
 		mustContain(t, name, text, wants...)
 	}
-	for _, leak := range []string{"provider.example", "203.0.113.9", "00:1A:79:00:00", "streams.example"} {
+	for _, leak := range []string{"provider.example", "203.0.113.9", "00:1A:79:00:00", "streams.example", "guides.example", "s3cret"} {
 		if strings.Contains(all.String(), leak) {
 			t.Errorf("the bundle holds %q", leak)
 		}

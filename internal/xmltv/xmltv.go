@@ -2,8 +2,8 @@
 
 // Package xmltv reads XMLTV guides as a stream, a channel or a programme at
 // a time, so that a guide of any size takes little memory. It reads what
-// Overscan shows: channels with their names, and programmes with their
-// times, title, subtitle, description and first category. The format is
+// Overscan shows: channels with their names and first icon, and programmes
+// with their times, title, subtitle, description and first category. The format is
 // the XMLTV project's (xmltv.dtd); guides in the wild bend it, so the
 // reader is lenient where it can be and skips what it cannot read.
 package xmltv
@@ -16,16 +16,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"strings"
 	"time"
 	"unicode/utf8"
 )
 
-// Limits on what one element may hold. Longer text is cut.
+// Limits on what one element may hold. Longer text is cut, and a longer
+// address left out.
 const (
 	MaxIDLen    = 200  // bytes of a channel ID
 	MaxNameLen  = 200  // bytes of a name, title, subtitle or category
 	MaxDescLen  = 1000 // bytes of a description
+	MaxIconLen  = 2048 // bytes of an icon's address
 	maxNames    = 8    // display names kept for a channel
 	maxElements = 64   // nested elements skipped inside one programme
 )
@@ -34,6 +37,7 @@ const (
 type Channel struct {
 	ID    string
 	Names []string // its display names, in order
+	Icon  string   // the address of its first icon, an http or https one; "" if none
 }
 
 // Programme is one broadcast on a channel of the guide.
@@ -162,6 +166,12 @@ func attr(e xml.StartElement, name string) string {
 func readChannel(d *xml.Decoder, start xml.StartElement) (Channel, error) {
 	c := Channel{ID: Clean(attr(start, "id"), MaxIDLen)}
 	err := children(d, func(e xml.StartElement) error {
+		if e.Name.Local == "icon" {
+			if c.Icon == "" {
+				c.Icon = iconAddress(attr(e, "src"))
+			}
+			return d.Skip()
+		}
 		if e.Name.Local != "display-name" {
 			return d.Skip()
 		}
@@ -175,6 +185,22 @@ func readChannel(d *xml.Decoder, start xml.StartElement) (Channel, error) {
 		return nil
 	})
 	return c, err
+}
+
+// iconAddress returns an icon's src if it is an http or https address with
+// a host, of at most MaxIconLen bytes and without spaces or control
+// characters; "" otherwise.
+func iconAddress(src string) string {
+	src = strings.TrimSpace(src)
+	if src == "" || len(src) > MaxIconLen || strings.ContainsFunc(src, func(r rune) bool { return r <= ' ' || r == 0x7f }) ||
+		!utf8.ValidString(src) {
+		return ""
+	}
+	u, err := url.Parse(src)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return ""
+	}
+	return src
 }
 
 // readProgramme reads a programme, and reports whether it has what a guide

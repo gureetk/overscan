@@ -72,6 +72,7 @@ func (a *Admin) bundle(ctx context.Context) ([]byte, error) {
 		{"README.txt", a.bundleReadme},
 		{"overscan.txt", a.bundleServer},
 		{"sources.txt", a.bundleSources},
+		{"guides.txt", a.bundleGuides},
 		{"lineup.txt", a.bundleLineup},
 		{"devices.txt", a.bundleDevices},
 		{"playing.txt", a.bundlePlaying},
@@ -103,7 +104,7 @@ func (a *Admin) bundleReadme(_ context.Context, now time.Time) (string, error) {
 	return "Overscan support bundle, made " + now.Format(time.RFC3339) + `.
 
 It holds the server's version and settings, the state of its sources,
-lineup and devices, what boxes' playback checks found, what was playing,
+guides, lineup and devices, what boxes' playback checks found, what was playing,
 the capture log, and the last lines of the server's log. Source addresses, logins, IP addresses and host names are
 left out, and MAC addresses keep only their first half, which names the
 maker. Channel names, device labels and source names stay in.
@@ -251,6 +252,55 @@ func (a *Admin) bundleSources(ctx context.Context, now time.Time) (string, error
 		}
 		b.WriteString("\n")
 	}
+	return b.String(), nil
+}
+
+// bundleGuides says what the guides of the household's own are and what
+// their reads found (D139), without their addresses.
+func (a *Admin) bundleGuides(ctx context.Context, now time.Time) (string, error) {
+	gs, err := a.store.Guides(ctx)
+	if err != nil {
+		return "", err
+	}
+	without, err := a.store.ChannelsWithoutGuide(ctx)
+	if err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	if len(gs) == 0 {
+		b.WriteString("No guides of the household's own.\n")
+	}
+	for _, g := range gs {
+		row := guideRow{Guide: g, Now: now, Count: len(gs)}
+		kind := "an address"
+		if row.IsFile() {
+			kind = "a file"
+		}
+		fmt.Fprintf(&b, "%s (ID %d)\n", g.Name, g.ID)
+		tw := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
+		fmt.Fprintf(tw, "  Enabled\t%v\n", g.Enabled)
+		fmt.Fprintf(tw, "  Position\t%d of %d\n", g.Position, len(gs))
+		fmt.Fprintf(tw, "  Address\t%s, %s\n", kind, map[store.AddressState]string{
+			store.AddressSaved: "saved", store.AddressLocked: "saved with another key file",
+		}[g.Address])
+		fmt.Fprintf(tw, "  Own user agent\t%v\n", g.UserAgent != "")
+		fmt.Fprintf(tw, "  Public addresses only\t%v\n", g.PublicOnly)
+		if g.ReadAt.IsZero() {
+			fmt.Fprintf(tw, "  Last read\tnever\n")
+		} else {
+			fmt.Fprintf(tw, "  Last read\t%s (%s)\n", g.ReadAt.UTC().Format(time.RFC3339), row.LastRead())
+		}
+		if g.ReadError != "" {
+			fmt.Fprintf(tw, "  Last error\t%s\n", g.ReadError)
+		}
+		fmt.Fprintf(tw, "  Lists\t%s channels, of which %s kept, with %s programmes\n", count(g.Listed), count(g.Channels), count(g.Programmes))
+		fmt.Fprintf(tw, "  Fills\t%s channels, %s by name, %s waiting for its next read\n", count(g.Matched), count(g.ByName), count(g.Waiting))
+		if err := tw.Flush(); err != nil {
+			return "", err
+		}
+		b.WriteString("\n")
+	}
+	fmt.Fprintf(&b, "Channels of enabled sources without a guide: %s\n", count(without))
 	return b.String(), nil
 }
 

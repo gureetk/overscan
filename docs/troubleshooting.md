@@ -28,6 +28,8 @@ What to check when something goes wrong, by what you see. [guide.md](guide.md) s
 
 **The guide is empty, or its times are wrong.** A source's card says when its guide was last read, with how many channels and programmes, and the log says `guide read`, or `guide read failed`. A channel without a guide of its own can take another's with a rule, and a rule can move a guide's times for a channel that shows its programmes later than the guide says ([rules.md](rules.md)). Past programmes that start at the wrong time need the source's *Catch-up time zone*.
 
+**A guide of your own fills too few channels.** It fills only channels that their own sources give no programme, by guide ID and then by name (D139). Its card on *Guides* says how many it fills, by ID and by name, and the log's `guide read guide=… fills=… by_name=…` line says the same; `channels matched with the guides again` follows a change to the sources. A channel whose name the guide has in two countries, or twice in another quality, gets no guide unless a country tag in its name or group, such as *UK:*, or its exact name chooses one. A guide's channels are only those that it lists before its first programme, as XMLTV has them. Channels that a source adds later get the guide's programmes at its next read, within an hour.
+
 ## Boxes and Stalker apps
 
 **A box shows *Waiting for approval* with a code.** Approve it on *Devices*, or with `overscan devices approve <code>`. A new box that does not appear there may be behind a full list: at most 100 devices wait at a time, so approve it by its MAC address, or remove those that should not wait.

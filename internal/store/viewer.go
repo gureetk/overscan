@@ -3,10 +3,12 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -142,32 +144,41 @@ type EntryProgramme struct {
 // end after from and start before to, the earliest first.
 func (s *Store) SearchProgrammes(ctx context.Context, lineupID int64, query string, from, to time.Time, limit int) ([]EntryProgramme, error) {
 	pattern := "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(query) + "%"
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT e.id, p.id, p.start + `+guideShiftSQL+` AS shown_start, p.stop + `+guideShiftSQL+`, p.title, p.subtitle,
-			p.description, p.category`+lineupEntryJoins+`
-		JOIN programmes p ON p.channel_id = `+guideChannelSQL+`
-		JOIN source_guides sg ON sg.source_id = p.source_id AND sg.generation = p.generation
+	type found struct {
+		EntryProgramme
+		number int
+	}
+	var all []found
+	err := s.lineupProgrammes(ctx, `
+		SELECT e.id, `+programmeIDSQL+`, p.start + `+guideShiftSQL+` AS shown_start, p.stop + `+guideShiftSQL+`, p.title,
+			p.subtitle, p.description, p.category, e.number`+lineupEntryJoins+programmesMarker+`
 		WHERE e.lineup_id = ? AND `+shownEntry+` AND p.stop > ? - `+guideShiftSQL+` AND p.start < ? - `+guideShiftSQL+`
 			AND p.title LIKE ? ESCAPE '\'
 		ORDER BY shown_start, e.number
-		LIMIT ?`,
-		lineupID, from.Unix(), to.Unix(), pattern, limit)
+		LIMIT ?`, []any{lineupID, from.Unix(), to.Unix(), pattern, limit}, func(rows *sql.Rows) error {
+		var f found
+		var start, stop int64
+		if err := rows.Scan(&f.EntryID, &f.ID, &start, &stop, &f.Title, &f.SubTitle, &f.Description, &f.Category, &f.number); err != nil {
+			return err
+		}
+		f.Start, f.Stop = time.Unix(start, 0).UTC(), time.Unix(stop, 0).UTC()
+		all = append(all, f)
+		return nil
+	})
 	if err != nil {
 		return nil, fmt.Errorf("store: search the guide of lineup %d: %w", lineupID, err)
 	}
-	defer rows.Close()
-	out := []EntryProgramme{}
-	for rows.Next() {
-		var ep EntryProgramme
-		var start, stop int64
-		if err := rows.Scan(&ep.EntryID, &ep.ID, &start, &stop, &ep.Title, &ep.SubTitle, &ep.Description, &ep.Category); err != nil {
-			return nil, fmt.Errorf("store: search the guide of lineup %d: %w", lineupID, err)
+	// The guides of the household's own come after the sources' (D139):
+	// put the two in order together.
+	slices.SortStableFunc(all, func(a, b found) int {
+		if c := a.Start.Compare(b.Start); c != 0 {
+			return c
 		}
-		ep.Start, ep.Stop = time.Unix(start, 0).UTC(), time.Unix(stop, 0).UTC()
-		out = append(out, ep)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: search the guide of lineup %d: %w", lineupID, err)
+		return cmp.Compare(a.number, b.number)
+	})
+	out := make([]EntryProgramme, 0, min(len(all), limit))
+	for _, f := range all[:min(len(all), limit)] {
+		out = append(out, f.EntryProgramme)
 	}
 	return out, nil
 }
