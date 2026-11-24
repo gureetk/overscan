@@ -191,16 +191,21 @@ func (h *ownHarness) fetches() int {
 func TestOwnGuide(t *testing.T) {
 	h := newOwnHarness(t)
 	ctx := context.Background()
+	told := 0 // what OnChange tells, as the logos' checks hear it
+	h.o.OnChange(func() { told++ })
 	// Without a guide, nothing is fetched or matched.
 	h.o.step(ctx)
-	if h.fetches() != 0 {
-		t.Fatal("fetched without a guide")
+	if h.fetches() != 0 || told != 0 {
+		t.Fatalf("fetched without a guide, or told of a change: %d", told)
 	}
 	id := h.addGuide("extra", h.address())
 	h.o.Changed()
 	h.o.step(ctx)
 	if h.fetches() != 1 {
 		t.Fatalf("%d fetches, want 1", h.fetches())
+	}
+	if told != 1 {
+		t.Errorf("told of %d changes after a match and a read, want 1", told)
 	}
 	want := map[string]string{
 		"UK: Granite News HD": "UK Evening, UK Late",
@@ -225,8 +230,8 @@ func TestOwnGuide(t *testing.T) {
 	}
 	// Not due again until the interval.
 	h.o.step(ctx)
-	if h.fetches() != 1 {
-		t.Errorf("read again at once: %d fetches", h.fetches())
+	if h.fetches() != 1 || told != 1 {
+		t.Errorf("read again at once: %d fetches, told of %d changes", h.fetches(), told)
 	}
 
 	// A channel that the source adds is matched at once, and waits for the
@@ -242,8 +247,8 @@ func TestOwnGuide(t *testing.T) {
 	)
 	h.o.SourcesChanged()
 	h.o.step(ctx)
-	if g, _ := h.st.Guide(ctx, id); g.Matched != 4 || g.Waiting != 1 || h.fetches() != 1 {
-		t.Errorf("after the source added a channel: %+v, %d fetches", g, h.fetches())
+	if g, _ := h.st.Guide(ctx, id); g.Matched != 4 || g.Waiting != 1 || h.fetches() != 1 || told != 2 {
+		t.Errorf("after the source added a channel: %+v, %d fetches, told of %d changes", g, h.fetches(), told)
 	}
 	h.set(func(h *ownHarness) { h.now = now.Add(MatchedAgainAfter) })
 	h.o.step(ctx)
