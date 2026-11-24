@@ -32,6 +32,12 @@ type Guides interface {
 	Changed()
 	// Reading returns the guide being read, 0 if none is.
 	Reading() int64
+	// Suggest returns, for each channel, at most limit of what its guide
+	// can be chosen from whose names are close to its own (D140).
+	Suggest(ctx context.Context, channels []guide.SuggestFor, limit int) (map[int64][]guide.Option, error)
+	// Search returns what a channel's guide can be chosen from whose
+	// names or guide IDs hold text.
+	Search(ctx context.Context, text string, limit int) ([]guide.Option, error)
 }
 
 // UseGuides gives the admin what reads the guides. Without it, the admin
@@ -169,6 +175,7 @@ type apiOwnGuide struct {
 	Programmes int     `json:"programmes"`
 	Fills      int     `json:"fills"`
 	ByName     int     `json:"by_name"`
+	ByHand     int     `json:"by_hand"`
 	Waiting    int     `json:"waiting"`
 }
 
@@ -176,7 +183,7 @@ func (a *Admin) ownGuideBody(g store.Guide) apiOwnGuide {
 	out := apiOwnGuide{ID: g.ID, Name: g.Name, Host: g.Host, Address: addressNames[g.Address], UserAgent: g.UserAgent,
 		PublicOnly: g.PublicOnly, Enabled: g.Enabled, Position: g.Position, Reading: a.guideReading() == g.ID,
 		ReadError: g.ReadError, Listed: g.Listed, Channels: g.Channels, Programmes: g.Programmes,
-		Fills: g.Matched, ByName: g.ByName, Waiting: g.Waiting}
+		Fills: g.Matched, ByName: g.ByName, ByHand: g.ByHand, Waiting: g.Waiting}
 	if !g.ReadAt.IsZero() {
 		t := g.ReadAt.UTC().Format("2006-01-02T15:04:05Z")
 		out.ReadAt = &t
@@ -344,6 +351,7 @@ type apiGuideRead struct {
 	Listed     int  `json:"listed"`
 	Fills      int  `json:"fills"`
 	ByName     int  `json:"by_name"`
+	ByHand     int  `json:"by_hand"`
 	Channels   int  `json:"channels"`
 	Programmes int  `json:"programmes"`
 	Skipped    int  `json:"skipped"`
@@ -362,7 +370,7 @@ func (a *Admin) apiReadGuide(w http.ResponseWriter, r *http.Request, _ store.Adm
 	if reading {
 		status = http.StatusAccepted
 	}
-	writeJSON(w, status, apiGuideRead{Reading: reading, Listed: res.Listed, Fills: res.Fills, ByName: res.ByName,
+	writeJSON(w, status, apiGuideRead{Reading: reading, Listed: res.Listed, Fills: res.Fills, ByName: res.ByName, ByHand: res.ByHand,
 		Channels: res.Channels, Programmes: res.Programmes, Skipped: res.Skipped})
 }
 
@@ -450,14 +458,22 @@ func (r guideRow) FillsLine() string {
 		return "None of the channels without programmes of their own: it lists none of their guide IDs, nor their names alone"
 	}
 	text := fmt.Sprintf("%s %s", count(r.Matched), plural(r.Matched, "channel"))
-	byID := r.Matched - r.ByName
-	switch {
-	case r.ByName == 0:
-		text += ", by guide ID"
-	case byID == 0:
-		text += ", by name"
+	byID := r.Matched - r.ByName - r.ByHand
+	var ways []string
+	for _, w := range []struct {
+		n   int
+		how string
+	}{{byID, "by guide ID"}, {r.ByName, "by name"}, {r.ByHand, "chosen by hand"}} {
+		if w.n > 0 {
+			ways = append(ways, count(w.n)+" "+w.how)
+		}
+	}
+	switch len(ways) {
+	case 0:
+	case 1:
+		text += ", " + strings.SplitN(ways[0], " ", 2)[1]
 	default:
-		text += fmt.Sprintf(": %s by guide ID, %s by name", count(byID), count(r.ByName))
+		text += ": " + andList(ways)
 	}
 	if r.Waiting > 0 {
 		text += fmt.Sprintf(". Its next read brings the programmes of %s of them", count(r.Waiting))
@@ -482,7 +498,7 @@ func (r guideRow) ListsLine() string {
 
 // DeleteQuestion asks whether to remove the guide.
 func (r guideRow) DeleteQuestion() string {
-	return "Remove " + r.Name + "? The channels that it fills lose its programmes, and take another guide's where one has their guide IDs or names."
+	return "Remove " + r.Name + "? The channels that it fills lose its programmes, and take another guide's where one has their guide IDs or names. Those whose guide you chose from it find theirs as before."
 }
 
 // guidesData is what the guides page shows.

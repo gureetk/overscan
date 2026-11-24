@@ -28,6 +28,12 @@ The admin is at `http://<server>:8080/admin/`. Its pages are *Overview*, *Source
 
 *Guides* → *Add a guide*: the address of an XMLTV guide, gzip or not, or the path of a guide's file on the server. Overscan reads it at once and then every 12 hours. It fills only the channels whose own sources give them no programme: by the guide ID that a channel's source gives it, then by its name. Where the guide has the name in two countries, a country tag in the channel's name or its group, such as *UK:* or *[UK]*, chooses; where nothing does, the channel stays without a guide rather than take the wrong one. The guide's card says how many channels it fills, and the top of the page how many still have no guide (D139).
 
+## Choose a channel's guide by hand
+
+*Guides* → *Channels and their guides* lists the channels that have no guide, those that a guide of yours matched by name alone, and those whose guide you chose, each with what is on now. For a channel without a guide it suggests up to two close names, from your guides and from the channels whose own sources' guides fill them; *Use* takes one. *Choose…*, or *Choose its guide* in a channel's panel on *Live TV*, opens the channel's own page: where its programmes come from now, more suggestions, and a search of every guide's channels by name or guide ID. You can choose a guide's channel, another channel's guide, or no guide at all; *Find it as before* takes the choice back.
+
+A choice belongs to the channel at its source, so it holds in every lineup and stays through the source's reads. It wins over the source's own guide, the guides' matches and a rule's *use another channel's guide*; a rule that moves the guide's times still moves them. A guide's channel that filled nothing before has no programmes until Overscan reads its guide again, which it does at once. Suggestions are never used on their own: check what is on before you take one (D140).
+
 - **Several guides:** where two could fill a channel, the first does; *Move up* and *Move down* under a guide's ⋯ put them in order.
 - **Public addresses only,** as for a source, for a guide on the internet.
 - **Turn off** takes a guide's programmes from its channels at once; *Turn on* gives them back.

@@ -234,6 +234,39 @@ type entryRow struct {
 	// streams play when its own cannot start (D109), and RuleBackups those
 	// that merge rules give it (D113).
 	Backups, RuleBackups []store.EntryBackup
+
+	// Guide is, for the entry open in the panel, where its programmes come
+	// from (D139, D140), and Programmes what devices see on now and next.
+	Guide      *store.ChannelGuide
+	Programmes []store.Programme
+}
+
+// GuideText says where the entry's programmes come from, with what rules
+// do to them; "" if the panel does not know.
+func (r entryRow) GuideText() string {
+	g := r.Guide
+	if g == nil {
+		return ""
+	}
+	text := guideFromText(*g)
+	if r.E.RuleGuide != "" {
+		if g.Chosen {
+			text += " It wins over the rule that gives it the guide of " + r.E.RuleGuide + "."
+		} else {
+			text = "The guide of " + r.E.RuleGuide + ", which a rule gives it."
+		}
+	}
+	if r.E.RuleShift != 0 {
+		text += " A rule shows it " + shiftText(int(r.E.RuleShift/time.Minute)) + "."
+	}
+	return text
+}
+
+// GuideURL is the address of the page that chooses the entry's guide,
+// which leads back to this panel.
+func (r entryRow) GuideURL() string {
+	return "/admin/guides/channels/" + strconv.FormatInt(r.E.ChannelID, 10) + "?" +
+		url.Values{"back": {string(r.View.EditURL(r.E.ID))}}.Encode()
 }
 
 // FailedText says when the entry's stream last failed to start (D138).
@@ -458,6 +491,15 @@ func (a *Admin) openEntry(ctx context.Context, d *lineupData) error {
 		return err
 	}
 	if row.RuleBackups, err = a.store.EntryRuleBackups(ctx, lineup, e.ID); err != nil {
+		return err
+	}
+	g, err := a.store.ChannelGuideOf(ctx, e.ChannelID)
+	if err != nil {
+		return err
+	}
+	row.Guide = &g
+	if row.Programmes, err = firstTwo(a.store.EntryProgrammes(ctx, lineup, e.ID, d.Now, d.Now.Add(programmesAhead))); err != nil &&
+		!errors.Is(err, store.ErrNotFound) {
 		return err
 	}
 	d.Open = &row

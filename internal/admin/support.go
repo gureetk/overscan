@@ -294,13 +294,20 @@ func (a *Admin) bundleGuides(ctx context.Context, now time.Time) (string, error)
 			fmt.Fprintf(tw, "  Last error\t%s\n", g.ReadError)
 		}
 		fmt.Fprintf(tw, "  Lists\t%s channels, of which %s kept, with %s programmes\n", count(g.Listed), count(g.Channels), count(g.Programmes))
-		fmt.Fprintf(tw, "  Fills\t%s channels, %s by name, %s waiting for its next read\n", count(g.Matched), count(g.ByName), count(g.Waiting))
+		fmt.Fprintf(tw, "  Fills\t%s channels, %s by name, %s chosen by hand, %s waiting for its next read\n", count(g.Matched),
+			count(g.ByName), count(g.ByHand), count(g.Waiting))
 		if err := tw.Flush(); err != nil {
 			return "", err
 		}
 		b.WriteString("\n")
 	}
 	fmt.Fprintf(&b, "Channels of enabled sources without a guide: %s\n", count(without))
+	counts, err := a.store.ChannelGuideCounts(ctx)
+	if err != nil {
+		return "", err
+	}
+	fmt.Fprintf(&b, "Channels matched by name alone: %s\n", count(counts[store.ShowByName]))
+	fmt.Fprintf(&b, "Channels whose guide was chosen by hand (D140): %s\n", count(counts[store.ShowByHand]))
 	return b.String(), nil
 }
 

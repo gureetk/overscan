@@ -52,7 +52,7 @@ Section 10 of [protocol/xtream-api-notes.md](protocol/xtream-api-notes.md), on w
 
 The notes in [protocol/tmdb-notes.md](protocol/tmdb-notes.md) are **Documented** from The Movie Database's own developer documentation, the documentation of an open-source client (MIT), whose code was not read, and answers on TMDB's forum.
 
-Guides of the household's own (D139) are read as sources' guides are, from the XMLTV project's description of its format, [`xmltv.dtd`](https://github.com/XMLTV/xmltv/blob/master/xmltv.dtd), which also gives a channel's icon. How their channels are matched with the sources' channels is Overscan's own, by guide ID and by name; no other project's matcher, and no guide manager's code, is read. The country tags it reads are ISO 3166-1's two-letter codes, a public standard.
+Guides of the household's own (D139) are read as sources' guides are, from the XMLTV project's description of its format, [`xmltv.dtd`](https://github.com/XMLTV/xmltv/blob/master/xmltv.dtd), which also gives a channel's icon. How their channels are matched with the sources' channels is Overscan's own, by guide ID and by name; no other project's matcher, and no guide manager's code, is read. The country tags it reads are ISO 3166-1's two-letter codes, a public standard. The suggestions for a channel's guide chosen by hand (D140) are Overscan's own too: words weighed by how few names have them, and Levenshtein's edit distance, a textbook algorithm, for words spelt a little differently.
 
 The matrix in [compatibility.md](compatibility.md) says how to connect each app from its public documentation, and what each did from tests with the app, which are **Observed**. No app's code is read.
 

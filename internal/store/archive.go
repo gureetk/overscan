@@ -148,9 +148,11 @@ func (s *Store) ProgrammeStarting(ctx context.Context, lineupID, entryID int64, 
 	var p Programme
 	var start, stop int64
 	// The entry's programmes come from one guide: its channel's own
-	// source's, or a guide of the household's own that fills it (D139).
+	// source's, or a guide of the household's own that fills it (D139). A
+	// channel with no guide, chosen by hand (D140), has none, which the
+	// joins leave out.
 	join := ownProgrammesJoin
-	if _, _, guideChannel, err := s.entryGuide(ctx, lineupID, entryID); errors.Is(err, ErrNotFound) {
+	if _, _, guideChannel, _, err := s.entryGuide(ctx, lineupID, entryID); errors.Is(err, ErrNotFound) {
 		return Programme{}, ErrNotFound
 	} else if err != nil {
 		return Programme{}, err

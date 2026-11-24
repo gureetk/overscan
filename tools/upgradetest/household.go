@@ -34,14 +34,16 @@ type features struct {
 	// and by the best picture, and channels hidden until they play.
 	playlists bool
 	// guides is v1.2.0's: guides of the household's own (from its first
-	// pre-release on).
-	guides bool
+	// pre-release on), and handGuides channels' guides chosen by hand
+	// (from v1.2.0-alpha.2 on).
+	guides, handGuides bool
 }
 
 func featuresOf(version string) features {
 	v := strings.TrimPrefix(strings.TrimSpace(version), "v")
 	major, minor := 99, 0 // "dev" and other builds of this repository have everything
-	if parts := strings.SplitN(strings.SplitN(v, "-", 2)[0], ".", 3); len(parts) == 3 {
+	release, pre, _ := strings.Cut(v, "-")
+	if parts := strings.SplitN(release, ".", 3); len(parts) == 3 {
 		if m, err := strconv.Atoi(parts[0]); err == nil {
 			major = m
 		}
@@ -51,7 +53,10 @@ func featuresOf(version string) features {
 	from := func(wantMajor, wantMinor int) bool {
 		return major > wantMajor || major == wantMajor && minor >= wantMinor
 	}
-	return features{households: at(4), hub: at(5), playlists: from(1, 1), guides: from(1, 2)}
+	// An alpha before alpha.2 of 1.2.0 lacks guides chosen by hand.
+	alpha, _ := strconv.Atoi(strings.TrimPrefix(pre, "alpha."))
+	early12 := major == 1 && minor == 2 && strings.HasPrefix(pre, "alpha.") && alpha < 2
+	return features{households: at(4), hub: at(5), playlists: from(1, 1), guides: from(1, 2), handGuides: from(1, 2) && !early12}
 }
 
 // household holds what the setup made, by name, so that the probes can
@@ -195,6 +200,12 @@ func (h *household) setUp(a *admin, base string, since time.Time) error {
 			name string
 			run  func() error
 		}{"a guide of the household's own", func() error { return h.setUpGuides(a) }})
+	}
+	if h.f.handGuides {
+		steps = append(steps, struct {
+			name string
+			run  func() error
+		}{"channels' guides chosen by hand", func() error { return h.setUpHandGuides(a) }})
 	}
 	for _, s := range steps {
 		if err := s.run(); err != nil {
@@ -716,6 +727,80 @@ func (h *household) setUpGuides(a *admin) error {
 	}
 }
 
+// setUpHandGuides chooses channels' guides by hand (D140): Juniper Shop
+// takes the guide of its own's Granite News, Granite Kids +1 that of
+// Granite Kids, and Meadow Sport none; and waits for the guide's read that
+// the first brings.
+func (h *household) setUpHandGuides(a *admin) error {
+	var channels struct {
+		Channels []struct {
+			ChannelID   int64  `json:"channel_id"`
+			ChannelName string `json:"channel_name"`
+		} `json:"channels"`
+	}
+	if err := a.call("GET", "lineup/channels?limit=1000", nil, &channels); err != nil {
+		return err
+	}
+	ids := map[string]int64{}
+	for _, c := range channels.Channels {
+		ids[c.ChannelName] = c.ChannelID
+	}
+	var found struct {
+		Options []struct {
+			GuideChannelID int64  `json:"guide_channel_id"`
+			Guide          string `json:"guide"`
+		} `json:"options"`
+	}
+	if err := a.call("GET", "guide-channels?find="+url.QueryEscape("Granite News"), nil, &found); err != nil {
+		return err
+	}
+	var granite int64
+	for _, o := range found.Options {
+		if o.Guide == "extra" {
+			granite = o.GuideChannelID
+		}
+	}
+	for _, name := range []string{"Juniper Shop", "Granite Kids +1", "Granite Kids", "Meadow Sport"} {
+		if ids[name] == 0 {
+			return fmt.Errorf("the lineup has no channel %s", name)
+		}
+	}
+	if granite == 0 {
+		return errors.New("the guide extra lists no Granite News")
+	}
+	for _, c := range []struct {
+		name string
+		body map[string]any
+	}{
+		{"Juniper Shop", map[string]any{"guide_channel_id": granite}},
+		{"Granite Kids +1", map[string]any{"channel_id": ids["Granite Kids"]}},
+		{"Meadow Sport", map[string]any{"none": true}},
+	} {
+		if err := a.call("PUT", fmt.Sprintf("channel-guides/%d", ids[c.name]), c.body, nil); err != nil {
+			return err
+		}
+	}
+	deadline := time.Now().Add(60 * time.Second)
+	for {
+		var g struct {
+			Reading bool `json:"reading"`
+			Fills   int  `json:"fills"`
+			ByHand  int  `json:"by_hand"`
+			Waiting int  `json:"waiting"`
+		}
+		if err := a.call("GET", fmt.Sprintf("guides/%d", h.guide), nil, &g); err != nil {
+			return err
+		}
+		if !g.Reading && g.Waiting == 0 && g.ByHand == 1 && g.Fills == len(extraFills)+1 {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("the guide extra did not read Granite News for Juniper Shop within 60 seconds: %+v", g)
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+}
+
 // A probe is one request whose answer the upgrade must keep.
 type probe struct {
 	name string
@@ -765,6 +850,13 @@ func (h *household) probes(a *admin, base string) []probe {
 
 	if h.f.guides {
 		for _, p := range []string{"guides", fmt.Sprintf("guides/%d", h.guide)} {
+			adminGet(p)
+		}
+	}
+	if h.f.handGuides {
+		// The lists say where each channel's programmes come from, without
+		// what is on, which changes by itself.
+		for _, p := range []string{"channel-guides?limit=500", "channel-guides?show=by_hand"} {
 			adminGet(p)
 		}
 	}

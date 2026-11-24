@@ -362,29 +362,36 @@ func (s *Store) Programmes(ctx context.Context, channelID int64, from, to time.T
 const longestProgramme = 48 * time.Hour
 
 // The channel whose programmes a lineup entry shows, and the seconds that
-// their times move by: its own channel's, unmoved, unless a rule says
-// otherwise (D108). Queries compare the programmes' own times with a window
-// moved back by the shift, so that they keep the index on start.
+// their times move by. A channel's guide chosen by hand, hc, comes first
+// (D140): another channel's, or its own channel's, filled by the guide's
+// channel chosen, or none. Else a rule's (D108), else its own channel's.
+// The times move as rules say. Queries compare the programmes' own times
+// with a window moved back by the shift, so that they keep the index on
+// start.
 const (
-	guideChannelSQL = "COALESCE(e.rule_guide_id, c.id)"
+	guideChoiceJoin = `
+		LEFT JOIN channel_guide_choices hc ON hc.channel_id = c.id`
+	guideChannelSQL = "COALESCE(hc.use_channel, CASE WHEN hc.channel_id IS NULL THEN e.rule_guide_id END, c.id)"
 	guideShiftSQL   = "COALESCE(e.rule_guide_shift, 0)"
+	// noGuideSQL says that the entry's channel has no guide, chosen by hand.
+	noGuideSQL = "(hc.channel_id IS NOT NULL AND hc.use_channel IS NULL AND hc.guide_channel_id IS NULL)"
 )
 
 // Where an entry's programmes come from (D139): its guide channel's own
 // source's guide, or, for a guide channel that a guide of the household's
-// own fills, that guide's. guideMatchJoin joins that match gm, if any;
-// ownProgrammesJoin joins the programmes p of the source's guide that
-// devices see, for an entry whose guide channel has no match; and
-// addedProgrammesJoin those of the added guide that devices see, for one
-// that has.
+// own fills, by a match or by hand, that guide's. guideMatchJoin joins
+// the choice by hand hc and that match gm, if any; ownProgrammesJoin joins
+// the programmes p of the source's guide that devices see, for an entry
+// whose guide channel has no match; and addedProgrammesJoin those of the
+// added guide that devices see, for one that has.
 const (
-	guideMatchJoin = `
+	guideMatchJoin = guideChoiceJoin + `
 		LEFT JOIN channel_guide_matches gm ON gm.channel_id = ` + guideChannelSQL
 	ownProgrammesJoin = guideMatchJoin + `
-		JOIN programmes p ON p.channel_id = ` + guideChannelSQL + ` AND gm.channel_id IS NULL
+		JOIN programmes p ON p.channel_id = ` + guideChannelSQL + ` AND gm.channel_id IS NULL AND NOT ` + noGuideSQL + `
 		JOIN source_guides sg ON sg.source_id = p.source_id AND sg.generation = p.generation`
-	addedProgrammesJoin = `
-		JOIN channel_guide_matches gm ON gm.channel_id = ` + guideChannelSQL + `
+	addedProgrammesJoin = guideChoiceJoin + `
+		JOIN channel_guide_matches gm ON gm.channel_id = ` + guideChannelSQL + ` AND NOT ` + noGuideSQL + `
 		JOIN guide_channels gc ON gc.id = gm.guide_channel_id
 		JOIN guides gg ON gg.id = gc.guide_id
 		JOIN guide_programmes p ON p.channel_id = gc.id AND p.generation = gg.generation`
@@ -406,29 +413,30 @@ func (s *Store) anyGuideMatches(ctx context.Context) (bool, error) {
 }
 
 // entryGuide returns the channel whose programmes a lineup entry shows,
-// the seconds that their times move by, and the guide channel of a guide
-// of the household's own that fills that channel, 0 if none does. It
-// returns ErrNotFound for an entry that devices of the lineup do not see.
-func (s *Store) entryGuide(ctx context.Context, lineupID, entryID int64) (channelID, shift, guideChannel int64, err error) {
+// the seconds that their times move by, the guide channel of a guide of
+// the household's own that fills that channel, 0 if none does, and
+// whether the entry's channel has no guide, chosen by hand. It returns
+// ErrNotFound for an entry that devices of the lineup do not see.
+func (s *Store) entryGuide(ctx context.Context, lineupID, entryID int64) (channelID, shift, guideChannel int64, none bool, err error) {
 	var matched sql.NullInt64
-	err = s.db.QueryRowContext(ctx, `SELECT `+guideChannelSQL+`, `+guideShiftSQL+`, gm.guide_channel_id`+lineupEntryJoins+
-		guideMatchJoin+`
-		WHERE e.id = ? AND e.lineup_id = ? AND `+shownEntry, entryID, lineupID).Scan(&channelID, &shift, &matched)
+	err = s.db.QueryRowContext(ctx, `SELECT `+guideChannelSQL+`, `+guideShiftSQL+`, gm.guide_channel_id, `+noGuideSQL+
+		lineupEntryJoins+guideMatchJoin+`
+		WHERE e.id = ? AND e.lineup_id = ? AND `+shownEntry, entryID, lineupID).Scan(&channelID, &shift, &matched, &none)
 	if errors.Is(err, sql.ErrNoRows) {
-		return 0, 0, 0, ErrNotFound
+		return 0, 0, 0, false, ErrNotFound
 	}
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("store: lineup entry %d: %w", entryID, err)
+		return 0, 0, 0, false, fmt.Errorf("store: lineup entry %d: %w", entryID, err)
 	}
-	return channelID, shift, matched.Int64, nil
+	return channelID, shift, matched.Int64, none, nil
 }
 
 // EntryProgrammes returns the programmes of a lineup entry's channel that end
 // after from and start before to, by start time. It returns ErrNotFound for
 // an entry that devices of the lineup do not see.
 func (s *Store) EntryProgrammes(ctx context.Context, lineupID, entryID int64, from, to time.Time) ([]Programme, error) {
-	channelID, shift, guideChannel, err := s.entryGuide(ctx, lineupID, entryID)
-	if err != nil {
+	channelID, shift, guideChannel, none, err := s.entryGuide(ctx, lineupID, entryID)
+	if err != nil || none {
 		return nil, err
 	}
 	moved := time.Duration(shift) * time.Second
@@ -450,7 +458,8 @@ const programmesMarker = "/*programmes*/"
 
 // programmeQueries returns a query of programmes as it runs: once for
 // those of the channels' own sources' guides, and once for those of the
-// guides of the household's own, unless they fill no channel (D139).
+// guides of the household's own, unless they fill no channel (D139), by
+// a match or by hand (D140).
 func (s *Store) programmeQueries(ctx context.Context, query string) ([]string, error) {
 	added, err := s.anyGuideMatches(ctx)
 	if err != nil {
