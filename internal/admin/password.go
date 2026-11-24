@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -90,7 +91,15 @@ func idKey(ctx context.Context, password string, salt []byte, p Params, n uint32
 		return nil, ctx.Err()
 	}
 	defer func() { <-hashing }()
-	return argon2.IDKey([]byte(password), salt, p.Time, p.Memory, p.Threads, n), nil
+	key := argon2.IDKey([]byte(password), salt, p.Time, p.Memory, p.Threads, n)
+	// The hash's memory, 64 MiB with the default parameters, is garbage
+	// now. Collect it and give it back to the system before the next hash
+	// may start: otherwise the collector, which last ran while that memory
+	// was in use, lets the heap grow to about twice as much before it runs
+	// again, and the server keeps the pages for minutes (the plan's
+	// section 15). A collection takes milliseconds; a hash, hundreds.
+	debug.FreeOSMemory()
+	return key, nil
 }
 
 // parseHash reads a hash in the form HashPassword writes.
