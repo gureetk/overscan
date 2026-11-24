@@ -26,6 +26,7 @@ type fakeChannel struct {
 	guide            string // tvg-id; empty for none
 	number           int    // tvg-chno; 0 for none
 	radio            bool
+	noLogo           bool // without tvg-logo
 }
 
 // mainChannels is the playlist of the source "main", which the
@@ -64,6 +65,27 @@ var threeChannels = []fakeChannel{
 	{key: "cb", name: "Cobalt Bulletin", group: "Bulletins", guide: "cobalt-bulletin.example"},
 	{key: "mb", name: "Meadow Bulletin", group: "Bulletins"},
 	{key: "wt", name: "Willow Travel", group: "Travel"},
+}
+
+// fourChannels and fiveChannels are the playlists of a new provider's
+// sources, which only the walk through M9's Done when adds
+// (guides_donewhen_test.go), and to which it moves main's channels: four
+// lists news and sport under main's guide IDs, with names of its own, and
+// five kids' channels and films under main's names, without guide IDs.
+var fourChannels = []fakeChannel{
+	{key: "hn4", name: "UK: Harbour News", group: "UK News", guide: "harbour-news.example"},
+	{key: "gn4", name: "Granite News", group: "UK News", guide: "granite-news.example"},
+	{key: "cn4", name: "Copper News HD", group: "UK News", guide: "copper-news.example"},
+	{key: "tn4", name: "Tidal News", group: "UK News", guide: "tidal-news.example"},
+	{key: "ms4", name: "Meadow Sport", group: "UK Sport", guide: "meadow-sport.example"},
+	{key: "ls4", name: "Lantern Sport", group: "UK Sport"},
+}
+
+var fiveChannels = []fakeChannel{
+	{key: "gk5", name: "Granite Kids", group: "Children"},
+	{key: "wk5", name: "Willow Kids", group: "Children"},
+	{key: "lf5", name: "Lantern Films", group: "Cinema"},
+	{key: "of5", name: "Orchard Films", group: "Cinema"},
 }
 
 // extraFills are the channels that the guide of the household's own,
@@ -139,7 +161,8 @@ func startProvider() (*provider, error) {
 	p.logo = buf.Bytes()
 
 	mux := http.NewServeMux()
-	for name, channels := range map[string][]fakeChannel{"main": mainChannels, "two": twoChannels, "three": threeChannels} {
+	for name, channels := range map[string][]fakeChannel{"main": mainChannels, "two": twoChannels, "three": threeChannels,
+		"four": fourChannels, "five": fiveChannels} {
 		mux.HandleFunc("GET /"+name+".m3u", func(w http.ResponseWriter, r *http.Request) {
 			p.mu.Lock()
 			all := append(slices.Clone(channels), p.added[name]...)
@@ -149,7 +172,13 @@ func startProvider() (*provider, error) {
 	}
 	mux.HandleFunc("GET /guide.xml", p.guide)
 	mux.HandleFunc("GET /extra.xml", p.extraGuide)
+	mux.HandleFunc("GET /more.xml", p.moreGuide)
+	// Logos whose names start with broken- are not there.
 	mux.HandleFunc("GET /logo/{key}", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.PathValue("key"), "broken-") {
+			http.NotFound(w, r)
+			return
+		}
 		w.Header().Set("Content-Type", "image/png")
 		_, _ = w.Write(p.logo)
 	})
@@ -166,7 +195,10 @@ func (p *provider) playlist(w http.ResponseWriter, channels []fakeChannel) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "#EXTM3U url-tvg=\"%s/guide.xml\"\n", p.url)
 	for _, c := range channels {
-		attrs := fmt.Sprintf(`tvg-id="%s" tvg-name="%s" tvg-logo="%s/logo/%s.png" group-title="%s"`, c.guide, c.name, p.url, c.key, c.group)
+		attrs := fmt.Sprintf(`tvg-id="%s" tvg-name="%s" group-title="%s"`, c.guide, c.name, c.group)
+		if !c.noLogo {
+			attrs += fmt.Sprintf(` tvg-logo="%s/logo/%s.png"`, p.url, c.key)
+		}
 		if c.number != 0 {
 			attrs += fmt.Sprintf(` tvg-chno="%d"`, c.number)
 		}
@@ -226,6 +258,44 @@ func (p *provider) extraGuide(w http.ResponseWriter, r *http.Request) {
 		for h := -12; h < 48; h += 2 {
 			start := p.base.Add(time.Duration(h) * time.Hour)
 			fmt.Fprintf(&b, "<programme start=\"%s\" stop=\"%s\" channel=\"%s\"><title lang=\"en\">%s, from the extra guide</title></programme>\n",
+				start.Format(layout), start.Add(2*time.Hour).Format(layout), c.id, c.name)
+		}
+	}
+	b.WriteString("</tv>\n")
+	_, _ = w.Write([]byte(b.String()))
+}
+
+// moreGuide serves a second guide of the household's own, for the walk
+// through M9's Done when: a channel under a guide ID that its source's
+// guide lacks, one by its name whose icon is not there, and traps that must
+// fill nothing, or not before others do. Its programmes are two hours
+// long.
+func (p *provider) moreGuide(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/xml")
+	var b strings.Builder
+	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n<tv generator-info-name=\"upgradetest more\">\n")
+	channels := []struct{ id, name, icon string }{
+		{"quay-weather.example", "QW Channel", "more-qw"},      // three's Quay Weather, by its guide ID
+		{"pn.more.example", "Pier Notices", "broken-more-pn"},  // three's Pier Notices, by name; its icon is not there
+		{"uk-wt.more.example", "UK: Willow Travel", "more-wt"}, // two countries tie for three's Willow Travel:
+		{"us-wt.more.example", "US: Willow Travel", "more-wt"}, // neither fills it
+		{"mbx.more.example", "Meadow Bulletin Extra", ""},      // not the same name as three's Meadow Bulletin
+		{"gk.more.example", "Granite Kids", ""},                // not Granite Kids +1, and its source fills Granite Kids
+		{"hn.more.example", "Harbour News", ""},                // its source fills Harbour News
+		{"ls.more.example", "Lantern Sport", ""},               // the guide extra, first in order, fills it
+	}
+	for _, c := range channels {
+		fmt.Fprintf(&b, "<channel id=\"%s\"><display-name>%s</display-name>", c.id, c.name)
+		if c.icon != "" {
+			fmt.Fprintf(&b, "<icon src=\"%s/logo/%s.png\"/>", p.url, c.icon)
+		}
+		b.WriteString("</channel>\n")
+	}
+	const layout = "20060102150405 -0700"
+	for _, c := range channels {
+		for h := -12; h < 48; h += 2 {
+			start := p.base.Add(time.Duration(h) * time.Hour)
+			fmt.Fprintf(&b, "<programme start=\"%s\" stop=\"%s\" channel=\"%s\"><title lang=\"en\">%s, from the more guide</title></programme>\n",
 				start.Format(layout), start.Add(2*time.Hour).Format(layout), c.id, c.name)
 		}
 	}

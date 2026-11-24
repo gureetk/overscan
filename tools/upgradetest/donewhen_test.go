@@ -37,60 +37,14 @@ import (
 // work, with the household's own groups, first numbers and the rest
 // (household.setUpPlaylists).
 func TestPlaylistsDoneWhen(t *testing.T) {
-	if testing.Short() {
-		t.Skip("builds Overscan and runs it")
-	}
-	ctx := context.Background()
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "overscan")
-	build := exec.Command("go", "build", "-o", bin, "overscan.gureet.ca/cmd/overscan")
-	build.Stdout, build.Stderr = os.Stderr, os.Stderr
-	if err := build.Run(); err != nil {
-		t.Fatalf("build Overscan: %v", err)
-	}
-	p, err := startProvider()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer p.Close()
-	// Two copies of Harbour News stream real pictures: 720p, and 1080i.
-	p.usePictures(map[string][]byte{"hn": pictures(t, sps720p), "hnhd": pictures(t, sps1080i)})
-	port, err := freePort()
-	if err != nil {
-		t.Fatal(err)
-	}
-	base := fmt.Sprintf("http://127.0.0.1:%d", port)
-	cfg, data, logPath := filepath.Join(dir, "overscan.yaml"), filepath.Join(dir, "data"), filepath.Join(dir, "overscan.log")
-	if err := writeConfig(cfg, fmt.Sprintf("127.0.0.1:%d", port), data, p); err != nil {
-		t.Fatal(err)
-	}
-	srv, err := start(ctx, bin, cfg, base, logPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer srv.stop()
-	defer func() {
-		if t.Failed() {
-			log, _ := os.ReadFile(logPath)
-			t.Logf("the server's log:\n%s", log)
-		}
-	}()
-	if _, err := command(bin, cfg, adminPassword+"\n", "admin", "password"); err != nil {
-		t.Fatal(err)
-	}
-	a, err := signIn(base, "admin", adminPassword)
-	if err != nil {
-		t.Fatal(err)
-	}
+	w := startWalk(t)
+	p, base, data, a, srv := w.p, w.base, w.data, w.a, w.srv
 	call := func(method, path string, body, out any) {
 		t.Helper()
-		if err := a.call(method, path, body, out); err != nil {
-			t.Fatal(err)
-		}
+		w.call(t, method, path, body, out)
 	}
-	if err := waitForSources(a, srv.started); err != nil {
-		t.Fatal(err)
-	}
+	// Two copies of Harbour News stream real pictures: 720p, and 1080i.
+	p.usePictures(map[string][]byte{"hn": pictures(t, sps720p), "hnhd": pictures(t, sps1080i)})
 	sources := map[string]int64{}
 	var list struct{ Sources []idName }
 	call("GET", "sources", nil, &list)
@@ -385,6 +339,77 @@ func TestPlaylistsDoneWhen(t *testing.T) {
 	}
 }
 
+// A walk is this repository's server, built and started with the
+// fictional provider's source main, and signed in as the administrator:
+// where the walks through milestones' Done when start.
+type walk struct {
+	p          *provider
+	base, data string
+	bin, cfg   string
+	a          *admin
+	srv        *instance
+}
+
+// startWalk builds and starts a walk's server, which stops, with the
+// provider, when the test ends; its log is shown if the test failed.
+func startWalk(t *testing.T) *walk {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("builds Overscan and runs it")
+	}
+	ctx := context.Background()
+	dir := t.TempDir()
+	w := &walk{bin: filepath.Join(dir, "overscan"), cfg: filepath.Join(dir, "overscan.yaml"), data: filepath.Join(dir, "data")}
+	build := exec.Command("go", "build", "-o", w.bin, "overscan.gureet.ca/cmd/overscan")
+	build.Stdout, build.Stderr = os.Stderr, os.Stderr
+	if err := build.Run(); err != nil {
+		t.Fatalf("build Overscan: %v", err)
+	}
+	p, err := startProvider()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(p.Close)
+	w.p = p
+	port, err := freePort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.base = fmt.Sprintf("http://127.0.0.1:%d", port)
+	logPath := filepath.Join(dir, "overscan.log")
+	if err := writeConfig(w.cfg, fmt.Sprintf("127.0.0.1:%d", port), w.data, p); err != nil {
+		t.Fatal(err)
+	}
+	if w.srv, err = start(ctx, w.bin, w.cfg, w.base, logPath); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		w.srv.stop()
+		if t.Failed() {
+			log, _ := os.ReadFile(logPath)
+			t.Logf("the server's log:\n%s", log)
+		}
+	})
+	if _, err := command(w.bin, w.cfg, adminPassword+"\n", "admin", "password"); err != nil {
+		t.Fatal(err)
+	}
+	if w.a, err = signIn(w.base, "admin", adminPassword); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitForSources(w.a, w.srv.started); err != nil {
+		t.Fatal(err)
+	}
+	return w
+}
+
+// call calls the admin API, and fails the test if that fails.
+func (w *walk) call(t *testing.T, method, path string, body, out any) {
+	t.Helper()
+	if err := w.a.call(method, path, body, out); err != nil {
+		t.Fatalf("%s %s: %v", method, path, err)
+	}
+}
+
 // Parameter sets that ffmpeg wrote for fictional test pictures at 25 a
 // second, as internal/streaminfo's tests use them.
 const (
@@ -411,8 +436,11 @@ func pictures(t *testing.T, sps string) []byte {
 // entry is a lineup's channel as the admin API gives it.
 type entry struct {
 	ID          int64   `json:"id"`
+	ChannelID   int64   `json:"channel_id"`
+	Source      string  `json:"source"`
 	Name        string  `json:"name"`
 	ChannelName string  `json:"channel_name"`
+	Logo        *string `json:"logo"`
 	Number      *int    `json:"number"`
 	Group       *string `json:"group"`
 	Hidden      bool    `json:"hidden"`
