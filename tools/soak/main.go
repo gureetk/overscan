@@ -914,14 +914,15 @@ func writeCSV(path string, samples []sample) error {
 		return err
 	}
 	w := csv.NewWriter(f)
-	_ = w.Write([]string{"seconds", "rss_mb", "cpu_percent"})
+	_ = w.Write([]string{"seconds", "rss_mb", "cpu_percent", "peak_mb"})
 	start := samples[0].at
 	for i, s := range samples {
 		cpu := ""
 		if i > 0 {
 			cpu = strconv.FormatFloat(cpuPercent(samples[i-1], s), 'f', 2, 64)
 		}
-		_ = w.Write([]string{strconv.FormatFloat(s.at.Sub(start).Seconds(), 'f', 0, 64), strconv.FormatFloat(mb(s.rssKB), 'f', 1, 64), cpu})
+		_ = w.Write([]string{strconv.FormatFloat(s.at.Sub(start).Seconds(), 'f', 0, 64), strconv.FormatFloat(mb(s.rssKB), 'f', 1, 64), cpu,
+			strconv.FormatFloat(mb(s.hwmKB), 'f', 1, 64)})
 	}
 	w.Flush()
 	if err := w.Error(); err != nil {
