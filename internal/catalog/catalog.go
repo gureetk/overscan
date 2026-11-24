@@ -63,6 +63,10 @@ type Refresher struct {
 	now       func() time.Time
 	guide     *guide.Reader // reads each source's guide after its channels (D51)
 	stalker   *stalker.Pool // the sessions of Stalker portals (D76)
+	// own hears when a source's channels or guide change, so that the
+	// channels are matched with the guides of the household's own again
+	// (D139).
+	own interface{ SourcesChanged() }
 
 	reload  chan struct{}
 	changed func([]store.Source)
@@ -114,6 +118,16 @@ func (r *Refresher) OnChange(fn func([]store.Source)) { r.changed = fn }
 func (r *Refresher) UseStalker(pool *stalker.Pool) {
 	r.stalker = pool
 	r.guide.UseStalker(pool)
+}
+
+// UseOwnGuides makes the refresher tell own whenever a source's channels or
+// guide change (D139). Call it before Run.
+func (r *Refresher) UseOwnGuides(own interface{ SourcesChanged() }) { r.own = own }
+
+func (r *Refresher) sourcesChanged() {
+	if r.own != nil {
+		r.own.SourcesChanged()
+	}
 }
 
 // Reload makes Run read the sources again, after they changed.
@@ -298,7 +312,9 @@ func (r *Refresher) readGuide(ctx context.Context, src source.Settings, id int64
 	r.mu.Unlock()
 	l.Lock()
 	defer l.Unlock()
-	_, _, _ = r.guide.ReadIfDue(ctx, src, id)
+	if read, _, err := r.guide.ReadIfDue(ctx, src, id); read && err == nil {
+		r.sourcesChanged()
+	}
 }
 
 // Tested is what a test of a source found.
@@ -400,6 +416,7 @@ func (r *Refresher) Refresh(ctx context.Context, src source.Settings, id int64) 
 	if err := r.store.SetRefreshResult(ctx, id, r.now(), ""); err != nil {
 		r.log.Error("cannot record a refresh", "source", src.Name, "error", err)
 	}
+	r.sourcesChanged()
 	switch {
 	case res.server != nil:
 		r.log.Info("source checked", "source", src.Name, "server_version", res.server.Version,

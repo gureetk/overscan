@@ -181,6 +181,34 @@ func TestRefresh(t *testing.T) {
 	}
 }
 
+// ownGuides counts what the refresher tells the guides of the household's
+// own (D139).
+type ownGuides struct{ changed atomic.Int32 }
+
+func (o *ownGuides) SourcesChanged() { o.changed.Add(1) }
+
+// A refresh that works, and only one that does, tells the guides of the
+// household's own, so that the channels are matched with them again.
+func TestRefreshTellsOwnGuides(t *testing.T) {
+	h := newHarness(t)
+	own := &ownGuides{}
+	h.r.UseOwnGuides(own)
+	ctx := context.Background()
+	if _, err := h.r.Refresh(ctx, h.source(), h.srcID); err != nil {
+		t.Fatal(err)
+	}
+	if n := own.changed.Load(); n != 1 {
+		t.Errorf("told %d times, want 1", n)
+	}
+	h.status.Store(http.StatusInternalServerError)
+	if _, err := h.r.Refresh(ctx, h.source(), h.srcID); err == nil {
+		t.Fatal("no error")
+	}
+	if n := own.changed.Load(); n != 1 {
+		t.Errorf("after a failed refresh: told %d times, want 1", n)
+	}
+}
+
 func TestFailedRefreshKeepsCatalog(t *testing.T) {
 	for name, set := range map[string]func(h *harness){
 		"error status":   func(h *harness) { h.status.Store(http.StatusInternalServerError) },

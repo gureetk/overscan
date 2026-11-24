@@ -22,7 +22,8 @@ const guide = `<?xml version="1.0" encoding="UTF-8"?>
     <icon src="http://img.example/news.png"/>
   </channel>
   <channel id="sports.example"><display-name>  Example
-     Sports  </display-name></channel>
+     Sports  </display-name><icon src="javascript:alert(1)"/><icon src="https://img.example/sports.png"/></channel>
+  <channel id="film.example"><icon src="/relative.png"/><icon src="http://img.example/a b.png"/><display-name>Example Films</display-name></channel>
   <channel><display-name>No ID</display-name></channel>
   <programme start="20261204180000 +0100" stop="20261204190000 +0100" channel="news.example">
     <title lang="en">Evening&nbsp;News</title>
@@ -77,10 +78,15 @@ func at(s string) time.Time {
 
 func TestParse(t *testing.T) {
 	c, skipped := parse(t, guide)
-	if len(c.channels) != 2 || c.channels[0].ID != "news.example" ||
+	if len(c.channels) != 3 || c.channels[0].ID != "news.example" ||
 		strings.Join(c.channels[0].Names, "|") != "Example News|News & More" ||
 		strings.Join(c.channels[1].Names, "|") != "Example Sports" {
 		t.Errorf("channels %+v", c.channels)
+	}
+	// A channel's first icon at an http or https address.
+	if len(c.channels) == 3 && (c.channels[0].Icon != "http://img.example/news.png" ||
+		c.channels[1].Icon != "https://img.example/sports.png" || c.channels[2].Icon != "") {
+		t.Errorf("icons %q, %q, %q", c.channels[0].Icon, c.channels[1].Icon, c.channels[2].Icon)
 	}
 	want := []Programme{
 		{Channel: "news.example", Start: at("2026-12-04T17:00:00Z"), Stop: at("2026-12-04T18:00:00Z"),

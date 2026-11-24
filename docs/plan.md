@@ -142,6 +142,8 @@ MAG emulators are a different case. StbEmu loads the portal's own web page and e
 | `lineup_entry_streams` | lineup entry id, channel id, priority (one row per entry until merged channels arrive in M6) |
 | `rules` | lineup id, position, match, action, enabled (M6) |
 | `programmes` | channel id, start, end (UTC), title, description, category, archive flag |
+| `guides` | guides of the household's own: name, address (encrypted) and host, user agent, public addresses only, enabled, order, and their last read (D139) |
+| `guide_channels`, `guide_programmes` | the channels that each guide lists, with their names and icon, and the programmes of those of them that fill a channel, a generation at a time; and `channel_guide_matches`, which guide's channel fills each channel without programmes of its own (D139) |
 | `library_categories`, `titles`, `episodes` | films and series, read on demand (D63): a title's kind, category, name, year, rating, poster, the source's key, what its source's list says, its details once opened, and missing since; a series' episodes by season and number |
 | `library_reads` | source id, kind (films or series), when the last read worked, when it last ended, why it failed, how many titles it listed |
 | `media_files` | item id, path or URL, container, codecs, duration, size, probed at |
@@ -545,7 +547,7 @@ A household that runs several sources can make Overscan its only playlist manage
 
 ### M9: Guides and pictures (M)
 Each phase ends with a pre-release of v1.2.0. In this order:
-- Guides of their own: an XMLTV address or file, read on a schedule and streamed as a source's guide is (D51), keeping only the programmes of the channels that use it. A channel without programmes from its own source is matched by guide ID, then by name, a country tag choosing between names that tie; no looser likeness matches on its own.
+- Guides of their own: an XMLTV address or file, read on a schedule and streamed as a source's guide is (D51), keeping only the programmes of the channels that use it. A channel without programmes from its own source is matched by guide ID, then by name, a country tag choosing between names that tie; no looser likeness matches on its own. **In place:** the admin's *Guides* page and the API's `guides` paths add, change, read, put in order, turn on and off and remove guides, at an address or in a file on the server; each is read at once, then every 12 hours, keeping the programmes of only its channels that fill a channel; a channel that its own source gives no programme takes those of a guide's channel with its guide ID, else with its name, where a country tag in its name or group chooses between names that tie, and a tie that it cannot settle matches nothing; the matches follow the sources as they change; the programmes reach every reader of the guide, and a channel's archive stays its own source's (D139).
 - A channel's guide chosen by hand, from a list to search, with close names offered as suggestions to accept, a list of the channels still without a guide, and what is on now and next, to check a match. A choice by hand belongs to the source's channel, holds in every lineup and wins over rules, as hand edits do (D107).
 - Logos: one set by hand or by a rule; else the source's, if it loads; else the guide's, if it loads; else the channel's name. A guide can be set to give its logos first.
 - Placeholder programmes for channels without a guide, off at first.
@@ -553,7 +555,7 @@ Each phase ends with a pre-release of v1.2.0. In this order:
 - Moving to other sources: a source's channels matched to those of other sources, by guide ID and then by name, for the administrator to confirm, after which the lineups' channels play from the new sources with their names, numbers, groups, backups, favourites, locks, repair and guides. For a household that changes provider, or that stops reading another manager's output.
 - The milestone's hardening, with a soak that reads a large guide.
 *Done when:* an added guide fills the channels whose sources give none, by ID and by name, with no wrong match among fictional guides; a guide chosen by hand survives refreshes; logos follow the order above; placeholders show only where set; titles whose pictures are missing, broken or placeholders show TMDB's; a lineup moved from one source to two others keeps its numbers, groups and favourites; memory stays within the budgets of section 15 with a large guide; and an upgrade changes nothing.
-*Status:* planned (D132).
+*Status:* under way. Its pre-releases: guides of their own (v1.2.0-alpha.1).
 
 ### M10: Transcoding (L)
 Planned in detail once M9 ends. In outline:
@@ -742,6 +744,7 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 - A lineup can start empty and hold only what its groups take, from categories of any source; lineups made before keep taking every category (D136).
 - A group can have a first number that numbers its channels and those that join it; groups sort by name, names of groups and shelves have find and replace, and merges can put sources first (D137).
 - Channels that fail to start as people watch are listed and can be hidden until they play again; each stream's details are read as it passes, shown in the admin and used by merges to prefer the best picture; the *Overview* can stop a stream (D138).
+- Guides of the household's own, at an address or in a file, fill the channels that their sources give no programme, matched by guide ID and then by name, a country tag choosing between names that tie; a tie left matches nothing (D139).
 - The reference client reads Overscan through the Xtream output, without a source type of Overscan's own (open question 2).
 - HDHomeRun emulation waits in the backlog (open question 6).
 

@@ -38,6 +38,7 @@ type Admin struct {
 	static  fs.FS
 	hashes  map[string]string // static file name: a hash of its content
 	sources Sources           // reads sources; nil if this server cannot
+	guides  Guides            // reads the guides of the household's own (D139); nil if this server cannot
 	streams Streams           // lists what is playing; nil if none
 	support Support           // what the support bundle needs from outside the admin
 	// tmdbBase is TMDB's address, which a test changes (D88).
@@ -118,6 +119,11 @@ func (a *Admin) Handler() http.Handler {
 	mux.Handle("POST /admin/sources/{id}/categories", a.pageWithin(maxCategoriesFormBytes, a.categoriesForm))
 	mux.Handle("POST /admin/sources/{id}/categories/read", a.page(a.categoriesRead))
 	mux.Handle("POST /admin/sources/{id}/{action}", a.page(a.sourceAction))
+	mux.Handle("GET /admin/guides", a.page(a.guidesPage))
+	mux.Handle("POST /admin/guides", a.page(a.addGuideForm))
+	mux.Handle("GET /admin/guides/{id}", a.page(a.guidePage))
+	mux.Handle("POST /admin/guides/{id}", a.page(a.saveGuideForm))
+	mux.Handle("POST /admin/guides/{id}/{action}", a.page(a.guideAction))
 	mux.Handle("GET /admin/lineup", a.page(a.lineupRoute(a.lineupPage)))
 	mux.Handle("GET /admin/lineup/channels/{id}/edit", a.page(a.lineupRoute(a.entryPanel)))
 	mux.Handle("POST /admin/lineup/channels/{id}", a.page(a.lineupRoute(a.saveEntry)))
@@ -207,7 +213,7 @@ type view struct {
 
 // pageNames are the pages in admin/templates, each of which defines
 // "content" for the layout.
-var pageNames = []string{"sign-in", "home", "password", "message", "devices", "accounts", "account", "lineup", "rules", "library", "sources", "categories", "group-categories", "capture", "health", "settings"}
+var pageNames = []string{"sign-in", "home", "password", "message", "devices", "accounts", "account", "lineup", "rules", "library", "sources", "guides", "categories", "group-categories", "capture", "health", "settings"}
 
 // pageParts are the parts in admin/templates that pages share, by page.
 var pageParts = map[string][]string{"lineup": {"lineup-nav", "replace-form"}, "rules": {"lineup-nav"}, "library": {"replace-form"},

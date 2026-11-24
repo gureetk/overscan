@@ -213,7 +213,7 @@ What is on every channel of the box's lineup, or on the channels that `ids` name
 }
 ```
 
-`from` and `to` are Unix seconds, in the query and in the answer. `from` is now if the query leaves it out, and `to` three hours after `from`; the window may last at most six hours. A programme is in it if it ends after `from` and starts before `to`. `ids`, if given, is a list of channel `id`s separated by commas, at most 100, such as the rows a screen shows: `GET guide?ids=17,18,19`. Channels are keyed by their `id`, and those without a programme in the window, or not in the lineup, are left out. The page shows times in the box's own time zone, and takes now from the answer's `from` when it leaves `from` out, so a box whose clock is wrong still shows what is on.
+`from` and `to` are Unix seconds, in the query and in the answer. A programme's `id` tells it apart from the others of the answer; it changes when the guide is read again, and is below zero for a programme of a guide of the household's own ([D139](../decisions.md)). `from` is now if the query leaves it out, and `to` three hours after `from`; the window may last at most six hours. A programme is in it if it ends after `from` and starts before `to`. `ids`, if given, is a list of channel `id`s separated by commas, at most 100, such as the rows a screen shows: `GET guide?ids=17,18,19`. Channels are keyed by their `id`, and those without a programme in the window, or not in the lineup, are left out. The page shows times in the box's own time zone, and takes now from the answer's `from` when it leaves `from` out, so a box whose clock is wrong still shows what is on.
 
 ### `GET /api/device/v1/channels/{id}/guide`
 

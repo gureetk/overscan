@@ -26,6 +26,7 @@
   <div class="rail-links">
     <a href="/admin/"{{if eq .Section "home"}} aria-current="page"{{end}} title="Overview">{{template "i-overview"}}<span>Overview</span></a>
     <a href="/admin/sources"{{if eq .Section "sources"}} aria-current="page"{{end}} title="Sources">{{template "i-sources"}}<span>Sources</span></a>
+    <a href="/admin/guides"{{if eq .Section "guides"}} aria-current="page"{{end}} title="Guides">{{template "i-guide"}}<span>Guides</span></a>
     <a href="/admin/lineup"{{if eq .Section "lineup"}} aria-current="page"{{end}} title="Live TV">{{template "i-live"}}<span>Live TV</span></a>
     <a href="/admin/movies"{{if eq .Section "movies"}} aria-current="page"{{end}} title="Movies">{{template "i-film"}}<span>Movies</span></a>
     <a href="/admin/series"{{if eq .Section "series"}} aria-current="page"{{end}} title="Series">{{template "i-series"}}<span>Series</span></a>
@@ -59,9 +60,10 @@
   <a href="/admin/lineup"{{if eq .Section "lineup"}} aria-current="page"{{end}}><span class="tab-icon">{{template "i-live"}}</span>Live TV</a>
   {{template "tab-devices" .}}
   <a href="/admin/sources"{{if eq .Section "sources"}} aria-current="page"{{end}}><span class="tab-icon">{{template "i-sources"}}</span>Sources</a>
-  <details{{if or (eq .Section "settings") (eq .Section "capture") (eq .Section "movies") (eq .Section "series") (eq .Section "accounts")}} class="current"{{end}}>
+  <details{{if or (eq .Section "settings") (eq .Section "capture") (eq .Section "movies") (eq .Section "series") (eq .Section "accounts") (eq .Section "guides")}} class="current"{{end}}>
     <summary><span class="tab-icon">{{template "i-more"}}</span>More</summary>
     <div class="menu">
+      <a href="/admin/guides">{{template "i-guide"}}Guides</a>
       <a href="/admin/movies">{{template "i-film"}}Movies</a>
       <a href="/admin/series">{{template "i-series"}}Series</a>
       <a href="/admin/accounts">{{template "i-user"}}Accounts</a>
@@ -105,6 +107,7 @@
 {{define "i-sources"}}<svg class="i" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 4.5h16v6H4zM4 13.5h16v6H4zM7.5 7.5h.01M7.5 16.5h.01"/></svg>{{end}}
 {{define "i-lineup"}}<svg class="i" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 6.5h11M9 12h11M9 17.5h11M4.5 6.5h.01M4.5 12h.01M4.5 17.5h.01"/></svg>{{end}}
 {{define "i-devices"}}<svg class="i" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 5.5h18v11H3zM8.5 20h7M12 16.5V20"/></svg>{{end}}
+{{define "i-guide"}}<svg class="i" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.5 4.5h17v15h-17zM3.5 9.5h17M3.5 14.5h17M10 4.5v5M15 9.5v5M8 14.5v5"/></svg>{{end}}
 {{define "i-capture"}}<svg class="i" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 12h4l2.5-6 5 12 2.5-6h4"/></svg>{{end}}
 {{define "i-settings"}}<svg class="i" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h9M17 7h3M15 5v4M4 17h3M11 17h9M9 15v4"/></svg>{{end}}
 {{define "i-sign-out"}}<svg class="i" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 4H5v16h5M14 8l4 4-4 4M18 12H9"/></svg>{{end}}

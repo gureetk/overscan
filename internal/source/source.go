@@ -246,6 +246,22 @@ func (s Settings) Check() error {
 	return nil
 }
 
+// ValidName reports whether s can name a source, or a guide of the
+// household's own (D139): 1 to 32 lower-case letters, digits, hyphens or
+// underscores, starting with a letter or digit.
+func ValidName(s string) bool { return namePattern.MatchString(s) }
+
+// ValidAddress reports whether s can be the address of a playlist, or of
+// a guide of the household's own (D139): an http or https address with a
+// host, or the clean absolute path of a file.
+func ValidAddress(s string) bool { return validURL(s) }
+
+// ValidUserAgent reports whether s can be a user agent to send: at most
+// 200 bytes of text, without control characters; "" is Overscan's own.
+func ValidUserAgent(s string) bool {
+	return len(s) <= maxUserAgent && utf8.ValidString(s) && !hasControl(s)
+}
+
 // ValidZone reports whether s names a time zone that Overscan knows, such
 // as UTC or Europe/London.
 func ValidZone(s string) bool {

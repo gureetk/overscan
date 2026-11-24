@@ -78,6 +78,9 @@ type Services struct {
 	// Sources reads sources for the admin; without it, the admin cannot
 	// test or read them.
 	Sources admin.Sources
+	// Guides reads the guides of the household's own (D139) for the
+	// admin; without it, the admin can change them but cannot read them.
+	Guides admin.Guides
 	// Support is what the admin's support bundle needs from outside it.
 	Support admin.Support
 	// Library reads films and series for the device API and the Stalker
@@ -156,6 +159,9 @@ func New(cfg config.Config, log *slog.Logger, version string, svc Services) *Ser
 	s.admin = a
 	if svc.Sources != nil {
 		a.UseSources(svc.Sources)
+	}
+	if svc.Guides != nil {
+		a.UseGuides(svc.Guides)
 	}
 	if svc.Hub != nil {
 		a.UseStreams(svc.Hub)

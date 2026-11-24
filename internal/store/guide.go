@@ -370,60 +370,181 @@ const (
 	guideShiftSQL   = "COALESCE(e.rule_guide_shift, 0)"
 )
 
+// Where an entry's programmes come from (D139): its guide channel's own
+// source's guide, or, for a guide channel that a guide of the household's
+// own fills, that guide's. guideMatchJoin joins that match gm, if any;
+// ownProgrammesJoin joins the programmes p of the source's guide that
+// devices see, for an entry whose guide channel has no match; and
+// addedProgrammesJoin those of the added guide that devices see, for one
+// that has.
+const (
+	guideMatchJoin = `
+		LEFT JOIN channel_guide_matches gm ON gm.channel_id = ` + guideChannelSQL
+	ownProgrammesJoin = guideMatchJoin + `
+		JOIN programmes p ON p.channel_id = ` + guideChannelSQL + ` AND gm.channel_id IS NULL
+		JOIN source_guides sg ON sg.source_id = p.source_id AND sg.generation = p.generation`
+	addedProgrammesJoin = `
+		JOIN channel_guide_matches gm ON gm.channel_id = ` + guideChannelSQL + `
+		JOIN guide_channels gc ON gc.id = gm.guide_channel_id
+		JOIN guides gg ON gg.id = gc.guide_id
+		JOIN guide_programmes p ON p.channel_id = gc.id AND p.generation = gg.generation`
+)
+
+// The ID of a programme of a guide of the household's own is its row's ID
+// below zero, so that it never is that of a source's programme.
+const programmeIDSQL = "(CASE WHEN gm.channel_id IS NULL THEN p.id ELSE -p.id END)"
+
+// anyGuideMatches reports whether a guide of the household's own fills any
+// channel, so that queries for its programmes can be left out when none
+// does.
+func (s *Store) anyGuideMatches(ctx context.Context) (bool, error) {
+	var any bool
+	if err := s.db.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM channel_guide_matches)").Scan(&any); err != nil {
+		return false, fmt.Errorf("store: guide matches: %w", err)
+	}
+	return any, nil
+}
+
+// entryGuide returns the channel whose programmes a lineup entry shows,
+// the seconds that their times move by, and the guide channel of a guide
+// of the household's own that fills that channel, 0 if none does. It
+// returns ErrNotFound for an entry that devices of the lineup do not see.
+func (s *Store) entryGuide(ctx context.Context, lineupID, entryID int64) (channelID, shift, guideChannel int64, err error) {
+	var matched sql.NullInt64
+	err = s.db.QueryRowContext(ctx, `SELECT `+guideChannelSQL+`, `+guideShiftSQL+`, gm.guide_channel_id`+lineupEntryJoins+
+		guideMatchJoin+`
+		WHERE e.id = ? AND e.lineup_id = ? AND `+shownEntry, entryID, lineupID).Scan(&channelID, &shift, &matched)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, 0, 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("store: lineup entry %d: %w", entryID, err)
+	}
+	return channelID, shift, matched.Int64, nil
+}
+
 // EntryProgrammes returns the programmes of a lineup entry's channel that end
 // after from and start before to, by start time. It returns ErrNotFound for
 // an entry that devices of the lineup do not see.
 func (s *Store) EntryProgrammes(ctx context.Context, lineupID, entryID int64, from, to time.Time) ([]Programme, error) {
-	var channelID, shift int64
-	err := s.db.QueryRowContext(ctx, `SELECT `+guideChannelSQL+`, `+guideShiftSQL+lineupEntryJoins+`
-		WHERE e.id = ? AND e.lineup_id = ? AND `+shownEntry, entryID, lineupID).Scan(&channelID, &shift)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
+	channelID, shift, guideChannel, err := s.entryGuide(ctx, lineupID, entryID)
 	if err != nil {
-		return nil, fmt.Errorf("store: lineup entry %d: %w", entryID, err)
+		return nil, err
 	}
 	moved := time.Duration(shift) * time.Second
-	ps, err := s.Programmes(ctx, channelID, from.Add(-moved), to.Add(-moved))
+	var ps []Programme
+	if guideChannel != 0 {
+		ps, err = s.guideProgrammes(ctx, guideChannel, from.Add(-moved), to.Add(-moved))
+	} else {
+		ps, err = s.Programmes(ctx, channelID, from.Add(-moved), to.Add(-moved))
+	}
 	for i := range ps {
 		ps[i].Start, ps[i].Stop = ps[i].Start.Add(moved), ps[i].Stop.Add(moved)
 	}
 	return ps, err
 }
 
-// EachLineupProgramme calls fn with each programme of every channel that a
-// lineup shows that ends after from and starts before to, by entry and
-// then by start time, without holding them all in memory. It stops at fn's
-// first error, which it returns.
-func (s *Store) EachLineupProgramme(ctx context.Context, lineupID int64, from, to time.Time, fn func(entryID int64, p Programme) error) error {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT e.id, p.id, p.start + `+guideShiftSQL+`, p.stop + `+guideShiftSQL+`, p.title, p.subtitle, p.description,
-			p.category`+lineupEntryJoins+`
-		JOIN programmes p ON p.channel_id = `+guideChannelSQL+`
-		JOIN source_guides sg ON sg.source_id = p.source_id AND sg.generation = p.generation
-		WHERE e.lineup_id = ? AND `+shownEntry+` AND p.start >= ? - `+guideShiftSQL+` AND p.start < ? - `+guideShiftSQL+`
-			AND p.stop > ? - `+guideShiftSQL+`
-		ORDER BY e.id, p.start`,
-		lineupID, from.Add(-longestProgramme).Unix(), to.Unix(), from.Unix())
+// programmesMarker stands in a query for the join of where its programmes
+// p come from, which programmeQueries fills in.
+const programmesMarker = "/*programmes*/"
+
+// programmeQueries returns a query of programmes as it runs: once for
+// those of the channels' own sources' guides, and once for those of the
+// guides of the household's own, unless they fill no channel (D139).
+func (s *Store) programmeQueries(ctx context.Context, query string) ([]string, error) {
+	added, err := s.anyGuideMatches(ctx)
 	if err != nil {
-		return fmt.Errorf("store: programmes of lineup %d: %w", lineupID, err)
+		return nil, err
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var entryID, start, stop int64
-		var p Programme
-		if err := rows.Scan(&entryID, &p.ID, &start, &stop, &p.Title, &p.SubTitle, &p.Description, &p.Category); err != nil {
-			return fmt.Errorf("store: programmes of lineup %d: %w", lineupID, err)
-		}
-		p.Start, p.Stop = time.Unix(start, 0).UTC(), time.Unix(stop, 0).UTC()
-		if err := fn(entryID, p); err != nil {
+	out := []string{strings.Replace(query, programmesMarker, ownProgrammesJoin, 1)}
+	if added {
+		out = append(out, strings.Replace(query, programmesMarker, addedProgrammesJoin, 1))
+	}
+	return out, nil
+}
+
+// lineupProgrammes runs a query of a lineup's programmes as
+// programmeQueries says, and calls row with each of its rows, stopping at
+// its first error. Each run's rows come as the query orders them; the
+// second run's after the first's.
+func (s *Store) lineupProgrammes(ctx context.Context, query string, args []any, row func(*sql.Rows) error) error {
+	queries, err := s.programmeQueries(ctx, query)
+	if err != nil {
+		return err
+	}
+	for _, q := range queries {
+		if err := eachRow(ctx, s.db, q, args, row); err != nil {
 			return err
 		}
 	}
-	if err := rows.Err(); err != nil {
+	return nil
+}
+
+// eachRow runs a query and calls fn with each of its rows, stopping at
+// fn's first error.
+func eachRow(ctx context.Context, db *sql.DB, query string, args []any, fn func(*sql.Rows) error) error {
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		if err := fn(rows); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
+// lineupProgrammeQuery selects the programmes of a lineup's shown entries
+// that end after a time and start before another, by entry and then by
+// start time, with their times moved as rules say (D108). Its
+// programmesMarker takes the join of where they come from, and its
+// onlyMarker more conditions.
+const lineupProgrammeQuery = `
+		SELECT e.id, ` + programmeIDSQL + `, p.start + ` + guideShiftSQL + `, p.stop + ` + guideShiftSQL + `, p.title,
+			p.subtitle, p.description, p.category` + lineupEntryJoins + programmesMarker + `
+		WHERE e.lineup_id = ? AND ` + shownEntry + ` AND p.start >= ? - ` + guideShiftSQL + ` AND p.start < ? - ` + guideShiftSQL + `
+			AND p.stop > ? - ` + guideShiftSQL + onlyMarker + `
+		ORDER BY e.id, p.start`
+
+// onlyMarker stands in lineupProgrammeQuery for more conditions.
+const onlyMarker = "/*only*/"
+
+// EachLineupProgramme calls fn with each programme of every channel that a
+// lineup shows that ends after from and starts before to, each channel's
+// programmes together and by start time, without holding them all in
+// memory. It stops at fn's first error, which it returns.
+func (s *Store) EachLineupProgramme(ctx context.Context, lineupID int64, from, to time.Time, fn func(entryID int64, p Programme) error) error {
+	var fnErr error
+	query := strings.Replace(lineupProgrammeQuery, onlyMarker, "", 1)
+	err := s.lineupProgrammes(ctx, query, []any{lineupID, from.Add(-longestProgramme).Unix(), to.Unix(), from.Unix()},
+		func(rows *sql.Rows) error {
+			entryID, p, err := scanEntryProgramme(rows)
+			if err != nil {
+				return err
+			}
+			fnErr = fn(entryID, p)
+			return fnErr
+		})
+	if fnErr != nil {
+		return fnErr
+	}
+	if err != nil {
 		return fmt.Errorf("store: programmes of lineup %d: %w", lineupID, err)
 	}
 	return nil
+}
+
+// scanEntryProgramme reads a row of lineupProgrammeQuery.
+func scanEntryProgramme(rows *sql.Rows) (int64, Programme, error) {
+	var entryID, start, stop int64
+	var p Programme
+	if err := rows.Scan(&entryID, &p.ID, &start, &stop, &p.Title, &p.SubTitle, &p.Description, &p.Category); err != nil {
+		return 0, Programme{}, err
+	}
+	p.Start, p.Stop = time.Unix(start, 0).UTC(), time.Unix(stop, 0).UTC()
+	return entryID, p, nil
 }
 
 // LineupProgrammes returns, by lineup entry, the programmes of every channel
@@ -438,30 +559,16 @@ func (s *Store) LineupProgrammes(ctx context.Context, lineupID int64, from, to t
 			args = append(args, id)
 		}
 	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT e.id, p.id, p.start + `+guideShiftSQL+`, p.stop + `+guideShiftSQL+`, p.title, p.subtitle, p.description,
-			p.category`+lineupEntryJoins+`
-		JOIN programmes p ON p.channel_id = `+guideChannelSQL+`
-		JOIN source_guides sg ON sg.source_id = p.source_id AND sg.generation = p.generation
-		WHERE e.lineup_id = ? AND `+shownEntry+` AND p.start >= ? - `+guideShiftSQL+` AND p.start < ? - `+guideShiftSQL+`
-			AND p.stop > ? - `+guideShiftSQL+only+`
-		ORDER BY e.id, p.start`,
-		args...)
-	if err != nil {
-		return nil, fmt.Errorf("store: programmes of lineup %d: %w", lineupID, err)
-	}
-	defer rows.Close()
 	out := map[int64][]Programme{}
-	for rows.Next() {
-		var entryID, start, stop int64
-		var p Programme
-		if err := rows.Scan(&entryID, &p.ID, &start, &stop, &p.Title, &p.SubTitle, &p.Description, &p.Category); err != nil {
-			return nil, fmt.Errorf("store: programmes of lineup %d: %w", lineupID, err)
+	err := s.lineupProgrammes(ctx, strings.Replace(lineupProgrammeQuery, onlyMarker, only, 1), args, func(rows *sql.Rows) error {
+		entryID, p, err := scanEntryProgramme(rows)
+		if err != nil {
+			return err
 		}
-		p.Start, p.Stop = time.Unix(start, 0).UTC(), time.Unix(stop, 0).UTC()
 		out[entryID] = append(out[entryID], p)
-	}
-	if err := rows.Err(); err != nil {
+		return nil
+	})
+	if err != nil {
 		return nil, fmt.Errorf("store: programmes of lineup %d: %w", lineupID, err)
 	}
 	return out, nil
