@@ -48,6 +48,7 @@ type OwnResult struct {
 	Listed     int // the channels that the guide lists
 	Fills      int // the channels that it gives programmes to
 	ByName     int // of those, the ones that their names matched
+	ByHand     int // and the ones whose guide was chosen by hand (D140)
 	Channels   int // of the guide's channels, those it kept programmes for
 	Programmes int
 	Skipped    int // programmes and channels it could not read, or that were too many
@@ -70,6 +71,12 @@ type Own struct {
 	sources bool  // a source's channels or guide changed since the last match
 	guides  bool  // the guides changed since the last match
 	reading int64 // the guide being read, 0 if none
+
+	// The channels that a channel's guide can be chosen from, for
+	// suggestions and search (D140), built when first asked for after
+	// they change.
+	choicesMu sync.Mutex
+	choices   *optionIndex
 }
 
 type readRequest struct {
@@ -103,6 +110,7 @@ func (o *Own) Changed() {
 	o.mu.Lock()
 	o.guides = true
 	o.mu.Unlock()
+	o.forgetOptions()
 	o.poke()
 }
 
@@ -112,6 +120,7 @@ func (o *Own) SourcesChanged() {
 	o.mu.Lock()
 	o.sources = true
 	o.mu.Unlock()
+	o.forgetOptions()
 	o.poke()
 }
 
@@ -223,6 +232,7 @@ func (o *Own) step(ctx context.Context) {
 		read = true
 	}
 	if read {
+		o.forgetOptions()
 		// A read builds large lists that are garbage once stored: give that
 		// memory back now, as a source's read does.
 		debug.FreeOSMemory()
@@ -278,25 +288,23 @@ func (o *Own) unreadable(ctx context.Context, g store.Guide, err error) {
 func (o *Own) matchAgain(ctx context.Context, any bool) error {
 	var matches []store.GuideMatch
 	if any {
-		candidates, err := o.store.MatchCandidates(ctx)
-		if err != nil {
+		var err error
+		if matches, _, err = o.allMatches(ctx); err != nil {
 			return err
 		}
-		listed, err := o.store.ListedChannels(ctx)
-		if err != nil {
-			return err
-		}
-		matches = match(candidates, listed)
 	}
 	changed, err := o.store.SetGuideMatches(ctx, matches)
 	if err == nil && changed {
-		byName := 0
+		byName, byHand := 0, 0
 		for _, m := range matches {
 			if m.ByName {
 				byName++
 			}
+			if m.ByHand {
+				byHand++
+			}
 		}
-		o.log.Info("channels matched with the guides again", "channels", len(matches), "by_name", byName)
+		o.log.Info("channels matched with the guides again", "channels", len(matches), "by_name", byName, "by_hand", byHand)
 	}
 	return err
 }
@@ -353,7 +361,7 @@ func (o *Own) read(ctx context.Context, g store.Guide, settings store.GuideSetti
 	if err := w.Commit(ctx, o.now(), from, found); err != nil {
 		return res, err
 	}
-	o.log.Info("guide read", "guide", g.Name, "fills", res.Fills, "by_name", res.ByName, "channels", res.Channels,
+	o.log.Info("guide read", "guide", g.Name, "fills", res.Fills, "by_name", res.ByName, "by_hand", res.ByHand, "channels", res.Channels,
 		"programmes", res.Programmes, "skipped", res.Skipped, "guide_channels", res.Listed,
 		"took", o.now().Sub(start).Round(time.Millisecond))
 	return res, nil
@@ -388,16 +396,11 @@ func (o *Own) fill(ctx context.Context, settings store.GuideSettings, w *store.G
 		}
 		found.Listed = len(listed)
 		listed, seen = nil, nil
-		candidates, err := o.store.MatchCandidates(ctx)
-		if err != nil {
+		var archive map[int64]int
+		if found.Matches, archive, err = o.allMatches(ctx); err != nil {
 			return err
 		}
-		all, err := o.store.ListedChannels(ctx)
-		if err != nil {
-			return err
-		}
-		found.Matches = match(candidates, all)
-		res.Fills, res.ByName, found.Kept, m = targets(ids, candidates, found.Matches, now)
+		res.Fills, res.ByName, res.ByHand, found.Kept, m = targets(ids, archive, found.Matches, now)
 		return nil
 	}
 	skipped, err := xmltv.Parse(&capReader{r: r, left: o.reader.maxBytes}, xmltv.Handler{
@@ -438,19 +441,43 @@ func (o *Own) fill(ctx context.Context, settings store.GuideSettings, w *store.G
 	return res, found, err
 }
 
+// allMatches works out every channel's match with the enabled guides'
+// channels: the guides' own, and those that choices by hand make (D140).
+// It returns them, with the days of archive of the channels they fill.
+func (o *Own) allMatches(ctx context.Context) ([]store.GuideMatch, map[int64]int, error) {
+	candidates, err := o.store.MatchCandidates(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	listed, err := o.store.ListedChannels(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	hand, err := o.store.HandMatches(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	matches := match(candidates, listed)
+	archive := make(map[int64]int, len(candidates)+len(hand))
+	for _, c := range candidates {
+		archive[c.ID] = c.ArchiveDays
+	}
+	for _, h := range hand {
+		matches = append(matches, h.GuideMatch)
+		archive[h.ChannelID] = h.ArchiveDays
+	}
+	return matches, archive, nil
+}
+
 // targets returns, of the matches, how many fill a channel from this
-// guide, whose listed channels ids gives by the guide's IDs for them, and
-// how many of those by name; the IDs of its channels that fill one; and a
-// matcher that keeps their programmes, as long as the channels that they
-// fill keep their past (D51, D81).
-func targets(ids map[string]int64, candidates []store.MatchCandidate, matches []store.GuideMatch, now time.Time) (fills, byName int, kept []int64, m *matcher) {
+// guide, whose listed channels ids gives by the guide's IDs for them, how
+// many of those by name and how many by hand; the IDs of its channels that
+// fill one; and a matcher that keeps their programmes, as long as the
+// channels that they fill keep their past, as archive gives it (D51, D81).
+func targets(ids map[string]int64, archive map[int64]int, matches []store.GuideMatch, now time.Time) (fills, byName, byHand int, kept []int64, m *matcher) {
 	xmltvID := make(map[int64]string, len(ids))
 	for x, id := range ids {
 		xmltvID[id] = x
-	}
-	archive := make(map[int64]int, len(candidates))
-	for _, c := range candidates {
-		archive[c.ID] = c.ArchiveDays
 	}
 	days := map[int64]int{}
 	for _, mt := range matches {
@@ -461,6 +488,9 @@ func targets(ids map[string]int64, candidates []store.MatchCandidate, matches []
 		if mt.ByName {
 			byName++
 		}
+		if mt.ByHand {
+			byHand++
+		}
 		if _, ok := days[mt.GuideChannelID]; !ok {
 			kept = append(kept, mt.GuideChannelID)
 		}
@@ -470,7 +500,7 @@ func targets(ids map[string]int64, candidates []store.MatchCandidate, matches []
 	for id, d := range days {
 		m.targets[xmltvID[id]] = []store.GuideChannel{{ID: id, ArchiveDays: d}}
 	}
-	return fills, byName, kept, m
+	return fills, byName, byHand, kept, m
 }
 
 // open opens a guide: a file on the server, which must be a regular file,

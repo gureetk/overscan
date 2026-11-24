@@ -87,7 +87,8 @@ tags:
     description: >-
       Guides of the household's own (D139): XMLTV guides at an address, or
       in a file on the server, that fill the channels whose own sources
-      give them no programme, matched by guide ID and then by name.
+      give them no programme, matched by guide ID and then by name; and a
+      channel's guide chosen by hand (D140).
   - name: streams
     description: What is playing now, through the stream hub.
   - name: health
@@ -3297,6 +3298,212 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /channel-guides:
+    get:
+      tags: [guides]
+      operationId: listChannelGuides
+      summary: Channels and where their programmes come from
+      description: >-
+        The channels of enabled sources that their sources still list, in
+        their sources' order, with where their programmes come from before
+        any lineup's rules: a choice by hand, their own source's guide, or a
+        guide of the household's own that matches them (D139, D140).
+      parameters:
+        - name: show
+          in: query
+          description: >-
+            Which channels: `all` (the default); `without`, those that nothing
+            gives programmes and whose guide nobody chose; `by_name`, those
+            that a guide of the household's own matches by name alone; or
+            `by_hand`, those whose guide was chosen by hand.
+          schema:
+            type: string
+            enum: [all, without, by_name, by_hand]
+        - name: find
+          in: query
+          description: Only the channels whose names hold this, whatever its case.
+          schema:
+            type: string
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+        - name: limit
+          in: query
+          description: At most this many; 100 if not given, 500 at most.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+        - name: suggest
+          in: query
+          description: With `true`, each channel has up to three suggestions.
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: The channels.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [channels, total, counts]
+                properties:
+                  channels:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ChannelGuide"
+                  total:
+                    type: integer
+                    description: How many channels the list has, from the first.
+                  counts:
+                    type: object
+                    description: How many channels each list but `all` has.
+                    required: [without, by_name, by_hand]
+                    properties:
+                      without:
+                        type: integer
+                      by_name:
+                        type: integer
+                      by_hand:
+                        type: integer
+        "400":
+          description: "`show` is not one of the lists (`bad_show`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+
+  /channel-guides/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The channel's ID at its source, as `channel_id` in `lineup/channels`.
+        schema:
+          type: integer
+    get:
+      tags: [guides]
+      operationId: getChannelGuide
+      summary: Where a channel's programmes come from
+      description: >-
+        Where its programmes come from, before any lineup's rules, what is on
+        now and next there, and up to five suggestions: guides' channels and
+        channels whose names are close to its own, each with what is on, where
+        Overscan holds its programmes.
+      responses:
+        "200":
+          $ref: "#/components/responses/ChannelGuide"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [guides]
+      operationId: chooseChannelGuide
+      summary: Choose a channel's guide by hand
+      description: >-
+        The channel shows the programmes of a guide's channel, or the guide of
+        another channel as devices see it there, or none, in every lineup,
+        whatever the guides' matches and the lineups' rules say; a rule that
+        moves its guide's times still moves them. The choice belongs to the
+        channel at its source and stays through its source's reads (D140). A
+        guide's channel that filled no channel at its guide's last read has
+        its programmes once the guide is read again, which happens at once.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuideChoice"
+      responses:
+        "200":
+          $ref: "#/components/responses/ChannelGuide"
+        "400":
+          description: >-
+            The body gives not exactly one of the choices (`bad_choice`), or
+            names a channel or a guide's channel that does not exist, or the
+            channel itself (`no_such_guide`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+    delete:
+      tags: [guides]
+      operationId: unchooseChannelGuide
+      summary: Find a channel's guide as before
+      description: >-
+        Takes back a choice by hand: the channel shows its own source's
+        guide, or a guide of the household's own that matches it, or what a
+        lineup's rule gives it, as before. Without a choice, nothing changes.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "204":
+          description: Taken back.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /guide-channels:
+    get:
+      tags: [guides]
+      operationId: findGuideChannels
+      summary: Find what a channel's guide can be chosen from
+      description: >-
+        The channels of the enabled guides of the household's own, and the
+        channels whose own sources' guides give them programmes, whose names
+        or guide IDs hold `find`, whatever its case: those named exactly so
+        first, then those whose names start with it, then the others. At most
+        50, the first 20 with what is on now and next where Overscan holds
+        their programmes.
+      parameters:
+        - name: find
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        "200":
+          description: What was found.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [options]
+                properties:
+                  options:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/GuideOption"
+        "400":
+          description: "`find` is missing (`bad_find`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+
   /sources:
     get:
       tags: [sources]
@@ -4485,7 +4692,7 @@ components:
         A guide of the household's own (D139), without its address, and what
         its last read found.
       required: [id, name, host, address, user_agent, public_only, enabled, position, reading, read_at, read_error,
-        listed, channels, programmes, fills, by_name, waiting]
+        listed, channels, programmes, fills, by_name, by_hand, waiting]
       properties:
         id:
           type: integer
@@ -4533,9 +4740,162 @@ components:
         by_name:
           type: integer
           description: Of those, the ones that their names matched, rather than their guide IDs.
+        by_hand:
+          type: integer
+          description: Of those, the ones whose guide was chosen by hand (D140).
         waiting:
           type: integer
           description: Of those, the ones whose programmes its next read brings, since no channel used them at its last read.
+    ProgrammeNow:
+      type: object
+      required: [start, stop, title]
+      properties:
+        start:
+          type: string
+          format: date-time
+        stop:
+          type: string
+          format: date-time
+        title:
+          type: string
+    GuideOption:
+      type: object
+      description: >-
+        Something a channel's guide can be chosen from: a channel of a guide
+        of the household's own (`guide_channel_id`), or a channel whose own
+        source's guide gives it programmes (`channel_id`).
+      required: [name, names, xmltv_id, programmes]
+      properties:
+        guide_channel_id:
+          type: integer
+        channel_id:
+          type: integer
+        name:
+          type: string
+        names:
+          type: array
+          items:
+            type: string
+        xmltv_id:
+          type: string
+        guide_id:
+          type: integer
+        guide:
+          type: string
+          description: The guide's name, for a guide's channel.
+        source_id:
+          type: integer
+        source:
+          type: string
+          description: The source's name, for a source's channel.
+        programmes:
+          type: array
+          description: >-
+            What is on now and next, where Overscan holds its programmes: a
+            guide's channel that filled no channel at its guide's last read
+            has none yet.
+          items:
+            $ref: "#/components/schemas/ProgrammeNow"
+    ChannelGuide:
+      type: object
+      description: Where a channel's programmes come from, before any lineup's rules (D139, D140).
+      required: [channel_id, name, xmltv_id, category, source_id, source, missing, from, guide, chosen]
+      properties:
+        channel_id:
+          type: integer
+        name:
+          type: string
+          description: As its source gives it.
+        xmltv_id:
+          type: string
+        category:
+          type: string
+        source_id:
+          type: integer
+        source:
+          type: string
+        missing:
+          type: boolean
+          description: Its source no longer lists it.
+        from:
+          type: string
+          enum: [own, guide, channel, none, ""]
+          description: >-
+            `own`, its source's guide; `guide`, a guide's channel, matched or
+            chosen by hand; `channel`, another channel's guide, chosen by
+            hand; `none`, no guide, chosen by hand; empty, nothing gives it
+            programmes.
+        guide:
+          type: [object, "null"]
+          description: The guide's channel that fills it, if one does.
+          required: [guide_channel_id, guide_id, guide, name, names, xmltv_id, on, by_name, by_hand]
+          properties:
+            guide_channel_id:
+              type: integer
+            guide_id:
+              type: integer
+            guide:
+              type: string
+            name:
+              type: string
+            names:
+              type: array
+              items:
+                type: string
+            xmltv_id:
+              type: string
+            "on":
+              type: boolean
+              description: The guide is on; while it is off, the channel shows nothing.
+            by_name:
+              type: boolean
+            by_hand:
+              type: boolean
+        chosen:
+          type: [object, "null"]
+          description: Its choice by hand, if it has one.
+          required: [none, chosen_at]
+          properties:
+            none:
+              type: boolean
+            channel_id:
+              type: integer
+              description: The other channel whose guide it shows.
+            name:
+              type: string
+            source:
+              type: string
+            guide_channel_id:
+              type: integer
+            chosen_at:
+              type: string
+              format: date-time
+        programmes:
+          type: array
+          description: What is on now and next; in the answers about one channel.
+          items:
+            $ref: "#/components/schemas/ProgrammeNow"
+        suggestions:
+          type: array
+          items:
+            $ref: "#/components/schemas/GuideOption"
+    GuideChoice:
+      type: object
+      description: Exactly one of these.
+      additionalProperties: false
+      properties:
+        guide_channel_id:
+          type: integer
+          minimum: 1
+          description: A channel of a guide of the household's own.
+        channel_id:
+          type: integer
+          minimum: 1
+          description: Another channel, whose guide it shows as devices see it there.
+        none:
+          type: boolean
+          enum: [true]
+          description: No guide at all.
     OwnGuideSettings:
       type: object
       description: What the administrator sets of a guide. What a change leaves out stays as it is.
@@ -4565,7 +4925,7 @@ components:
     OwnGuideRead:
       type: object
       description: What a read of a guide found, or, with `reading` true, that it goes on.
-      required: [reading, listed, fills, by_name, channels, programmes, skipped]
+      required: [reading, listed, fills, by_name, by_hand, channels, programmes, skipped]
       properties:
         reading:
           type: boolean
@@ -4578,6 +4938,9 @@ components:
         by_name:
           type: integer
           description: Of those, the ones that their names matched.
+        by_hand:
+          type: integer
+          description: Of those, the ones whose guide was chosen by hand.
         channels:
           type: integer
           description: Of the guide's channels, the ones whose programmes it kept.
@@ -5486,6 +5849,12 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/OwnGuide"
+    ChannelGuide:
+      description: Where the channel's programmes come from.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ChannelGuide"
     OwnGuideMistake:
       description: >-
         A setting breaks a rule: `bad_name`, `bad_address`, `bad_user_agent`

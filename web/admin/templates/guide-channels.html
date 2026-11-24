@@ -1,0 +1,215 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+{{/* A channel's guide chosen by hand (D140): the list of channels and
+     where their programmes come from, and one channel's page, to choose
+     its guide. */}}
+{{define "content"}}
+{{- if .Data.IsList}}{{template "channels-list" .}}{{else}}{{template "guide-choice" .}}{{end}}
+{{- end}}
+
+{{/* What is on now and next: .P the programmes, .Now the time. */}}
+{{define "now-next"}}
+{{- if .P}}
+<ul class="now-next">
+  {{- range $i, $p := .P}}
+  <li><span class="when">{{if and (eq $i 0) (not ($p.Start.After $.Now))}}Now{{else}}{{$p.Start.UTC.Format "15:04"}} UTC{{end}}</span> {{$p.Title}}</li>
+  {{- end}}
+</ul>
+{{- end}}
+{{- end}}
+
+{{define "channels-list"}}
+{{- $d := .Data}}
+<div id="guide-channels-main">
+<p class="crumbs"><a href="/admin/guides">Guides</a></p>
+<div class="page-head">
+  <div>
+    <h1>Channels and their guides</h1>
+    <p class="lead">Where each channel's programmes come from. Choose a channel's guide by hand where nothing fills it, or where a name matched the wrong one. A choice by hand belongs to the channel at its source: it holds in every lineup, stays through its source's reads, and wins over rules and over the guides' own matches.</p>
+  </div>
+</div>
+{{template "alerts" .}}
+<nav class="lineup-tabs guide-tabs" aria-label="Which channels">
+  <a href="{{$d.URL "without" 0}}"{{if eq $d.Show "without"}} aria-current="page"{{end}} title="Channels without a guide">No guide <span class="count quiet">{{count (index $d.Counts "without")}}</span></a>
+  <a href="{{$d.URL "by_name" 0}}"{{if eq $d.Show "by_name"}} aria-current="page"{{end}} title="Channels that a guide of yours matched by name alone">By name <span class="count quiet">{{count (index $d.Counts "by_name")}}</span></a>
+  <a href="{{$d.URL "by_hand" 0}}"{{if eq $d.Show "by_hand"}} aria-current="page"{{end}} title="Channels whose guide you chose by hand">By hand <span class="count quiet">{{count (index $d.Counts "by_hand")}}</span></a>
+</nav>
+<form method="get" action="/admin/guides/channels" class="row-form find-form">
+  <input type="hidden" name="show" value="{{$d.Show}}">
+  <input type="search" name="find" value="{{$d.Find}}" maxlength="200" placeholder="Find channels by name" aria-label="Find channels by name">
+  <button type="submit" class="small">Find</button>
+  {{- if $d.Find}}<a class="button small quiet" href="{{$d.AllURL}}">Show every one</a>{{end}}
+</form>
+{{- if $d.Rows}}
+<section class="card guide-list" aria-label="Channels">
+  <div class="table-wrap">
+  <table class="list guide-channels">
+    <thead><tr><th>Channel</th><th>Its guide</th><th>On now</th><th><span class="sr">Choose</span></th></tr></thead>
+    <tbody>
+    {{- range $row := $d.Rows}}
+      <tr>
+        <td><span class="strong">{{.G.Name}}</span><div class="note">{{.G.Source}}{{with .G.Category}} · {{.}}{{end}}{{with .G.XMLTVID}} · {{.}}{{end}}</div></td>
+        <td>
+          {{- if eq $d.Show "without"}}
+          {{- if .Suggestions}}
+          <div class="suggestions">
+            {{- range .Suggestions}}
+            <form method="post" action="/admin/guides/channels/{{$row.G.ChannelID}}" hx-post="/admin/guides/channels/{{$row.G.ChannelID}}" hx-target="#guide-channels-main" hx-select="#guide-channels-main" hx-swap="outerHTML">
+              <input type="hidden" name="csrf" value="{{$d.CSRF}}">
+              <input type="hidden" name="list" value="{{$d.Query}}">
+              <input type="hidden" name="choice" value="{{.Value}}">
+              <button type="submit" class="small" title="Show the programmes of {{.Name}}, from {{.Where}}">Use {{.Name}}</button>
+              <span class="note">{{.Where}}{{with .XMLTVID}} · {{.}}{{end}}</span>
+            </form>
+            {{- end}}
+          </div>
+          {{- else}}<span class="muted">{{if $d.CanSearch}}No close names{{else}}None{{end}}</span>{{end}}
+          {{- else}}{{.FromText}}{{end}}
+        </td>
+        <td>{{if .Programmes}}{{template "now-next" (dict "P" .Programmes "Now" $d.Now)}}{{else}}<span class="muted">{{if eq $d.Show "without"}}No guide{{else}}Nothing now{{end}}</span>{{end}}</td>
+        <td class="right">
+          <div class="row-actions">
+          {{- if eq $d.Show "by_hand"}}
+          <form method="post" action="/admin/guides/channels/{{.G.ChannelID}}" hx-post="/admin/guides/channels/{{.G.ChannelID}}" hx-target="#guide-channels-main" hx-select="#guide-channels-main" hx-swap="outerHTML">
+            <input type="hidden" name="csrf" value="{{$d.CSRF}}">
+            <input type="hidden" name="list" value="{{$d.Query}}">
+            <input type="hidden" name="choice" value="auto">
+            <button type="submit" class="small" title="Find its guide as before: its source's, or a guide of yours that matches it">Undo</button>
+          </form>
+          {{- end}}
+          <a class="button small" href="/admin/guides/channels/{{.G.ChannelID}}?back={{$d.Here}}">Choose…</a>
+          </div>
+        </td>
+      </tr>
+    {{- end}}
+    </tbody>
+  </table>
+  </div>
+  {{- if or $d.Next (ge $d.Previous 0)}}
+  <nav class="pages" aria-label="Pages">
+    <span>{{count $d.First}}–{{count $d.Last}} of {{count $d.Total}}</span>
+    {{- if ge $d.Previous 0}}<a href="{{$d.URL $d.Show $d.Previous}}">Previous</a>{{end}}
+    {{- if $d.Next}}<a href="{{$d.URL $d.Show $d.Next}}">Next</a>{{end}}
+  </nav>
+  {{- end}}
+</section>
+{{- if eq $d.Show "without"}}
+<p class="hint">These channels have no programmes: their source's guide has none for them, and no guide of yours matches them by guide ID or by name. The suggestions are names that are alike, which a guide never takes by itself; check one before you use it, by what its page says is on. A guide's channel that fills nothing yet has no programmes until Overscan reads its guide again, at once once you choose it.</p>
+{{- else if eq $d.Show "by_name"}}
+<p class="hint">A guide of yours matched these channels by their names alone. Check that what is on is the channel's; choose another guide, or none, where it is not.</p>
+{{- else}}
+<p class="hint">Undo finds a channel's guide as before: its source's, or a guide of yours that matches it.</p>
+{{- end}}
+{{- else}}
+<section class="card"><p class="empty">
+  {{- if $d.Find}}No channel of this list has a name with “{{$d.Find}}”.
+  {{- else if eq $d.Show "without"}}Every channel of your sources has a guide.
+  {{- else if eq $d.Show "by_name"}}No guide of yours matches a channel by its name alone.
+  {{- else}}You have not chosen a channel's guide by hand. Choose one here, or from a channel's panel on Live TV.{{end}}</p></section>
+{{- end}}
+</div>
+{{- end}}
+
+{{/* One option to choose from: .O the option, .D the page's data. */}}
+{{define "guide-option"}}
+{{- $o := .O}}{{$d := .D}}
+<li{{if $o.Current}} class="current"{{end}}>
+  <div class="option-text">
+    <strong>{{$o.Name}}</strong>
+    <span class="note">{{if $o.ChannelID}}{{$o.Source}}'s channel{{else}}{{$o.Guide}}{{end}}{{with $o.XMLTVID}} · {{.}}{{end}}</span>
+    {{- if $o.Programmes}}{{template "now-next" (dict "P" $o.Programmes "Now" $d.Now)}}
+    {{- else if $o.Waits}}<span class="note">Overscan reads its programmes once you choose it.</span>{{end}}
+  </div>
+  {{- if $o.Current}}
+  <span class="badge accent">In use</span>
+  {{- else}}
+  <form method="post" action="/admin/guides/channels/{{$d.G.ChannelID}}" hx-post="/admin/guides/channels/{{$d.G.ChannelID}}" hx-target="#guide-choice-main" hx-select="#guide-choice-main" hx-swap="outerHTML">
+    <input type="hidden" name="csrf" value="{{$d.CSRF}}">
+    <input type="hidden" name="back" value="{{$d.Back}}">
+    <input type="hidden" name="find" value="{{$d.Find}}">
+    <input type="hidden" name="choice" value="{{$o.Value}}">
+    <button type="submit" class="small">Use this</button>
+  </form>
+  {{- end}}
+</li>
+{{- end}}
+
+{{/* What a search found, which htmx replaces as the administrator types. */}}
+{{define "guide-found"}}
+{{- $d := .Data}}
+<div id="guide-found">
+{{- if $d.Found}}
+<ul class="option-list">
+  {{- range $d.Found}}{{template "guide-option" (dict "O" . "D" $d)}}{{end}}
+</ul>
+{{- if ge (len $d.Found) 50}}<p class="hint">The first 50 found. Type more of the name to find fewer.</p>{{end}}
+{{- else if $d.Searched}}
+<p class="empty">Nothing found with “{{$d.Find}}”, in your guides' channels or in the channels whose sources' guides fill them.</p>
+{{- end}}
+</div>
+{{- end}}
+
+{{define "guide-choice"}}
+{{- $d := .Data}}{{$g := $d.G}}
+<div id="guide-choice-main">
+<p class="crumbs"><a href="/admin/guides">Guides</a> › <a href="/admin/guides/channels">Channels and their guides</a>{{if and $d.Back (ne $d.BackText "Channels and their guides")}} · <a href="{{$d.Back}}">Back to {{$d.BackText}}</a>{{else if $d.Back}} · <a href="{{$d.Back}}">Back to the list</a>{{end}}</p>
+<div class="page-head">
+  <div>
+    <h1>The guide of {{$g.Name}}</h1>
+    <p class="lead">From {{$g.Source}}{{with $g.Category}}, in its category {{.}}{{end}}{{with $g.XMLTVID}}, with the guide ID {{.}}{{end}}.{{if $g.Missing}} Its source no longer lists it.{{end}} What you choose here holds in every lineup and wins over rules; a rule that moves its guide's times still moves them.</p>
+  </div>
+</div>
+{{template "alerts" .}}
+<section class="card" aria-labelledby="now-title">
+  <h2 id="now-title">Its programmes now</h2>
+  <p>{{$d.FromText}}</p>
+  {{- if $d.Programmes}}{{template "now-next" (dict "P" $d.Programmes "Now" $d.Now)}}
+  {{- else if eq $g.From "guide"}}<p class="note">{{if $g.GuideOn}}Overscan has none of its programmes yet: it reads them from {{$g.Guide}} at once, and they show here once it has.{{end}}</p>
+  {{- else if or (eq $g.From "own") (eq $g.From "channel")}}<p class="note">Nothing on now.</p>{{end}}
+  <div class="form-buttons">
+    {{- if $g.Chosen}}
+    <form method="post" action="/admin/guides/channels/{{$g.ChannelID}}" hx-post="/admin/guides/channels/{{$g.ChannelID}}" hx-target="#guide-choice-main" hx-select="#guide-choice-main" hx-swap="outerHTML">
+      <input type="hidden" name="csrf" value="{{$d.CSRF}}">
+      <input type="hidden" name="back" value="{{$d.Back}}">
+      <input type="hidden" name="choice" value="auto">
+      <button type="submit">Find it as before</button>
+    </form>
+    {{- end}}
+    {{- if ne $g.From "none"}}
+    <form method="post" action="/admin/guides/channels/{{$g.ChannelID}}" hx-post="/admin/guides/channels/{{$g.ChannelID}}" hx-target="#guide-choice-main" hx-select="#guide-choice-main" hx-swap="outerHTML">
+      <input type="hidden" name="csrf" value="{{$d.CSRF}}">
+      <input type="hidden" name="back" value="{{$d.Back}}">
+      <input type="hidden" name="choice" value="none">
+      <button type="submit">No guide</button>
+    </form>
+    {{- end}}
+  </div>
+  {{- if $g.Chosen}}<p class="hint">Find it as before: its source's guide, or a guide of yours that matches it by guide ID or name.</p>{{end}}
+</section>
+{{- if $d.CanSearch}}
+<section class="card" aria-labelledby="suggest-title">
+  <h2 id="suggest-title">Close names</h2>
+  {{- if $d.Suggestions}}
+  <ul class="option-list">
+    {{- range $d.Suggestions}}{{template "guide-option" (dict "O" . "D" $d)}}{{end}}
+  </ul>
+  <p class="hint">Names that are alike, from your guides and from the channels whose sources' guides fill them. None is used until you choose it.</p>
+  {{- else}}
+  <p class="empty">No guide's channel has a name close to {{$g.Name}}. Find one by another name below.</p>
+  {{- end}}
+</section>
+<section class="card" aria-labelledby="find-title">
+  <h2 id="find-title">Find a guide's channel</h2>
+  <form method="get" action="/admin/guides/channels/{{$g.ChannelID}}" class="row-form find-form" hx-get="/admin/guides/channels/{{$g.ChannelID}}" hx-target="#guide-found" hx-swap="outerHTML">
+    {{- if $d.Back}}<input type="hidden" name="back" value="{{$d.Back}}">{{end}}
+    <input type="search" name="find" value="{{$d.Find}}" maxlength="200" placeholder="A name, or a part of one, or a guide ID" aria-label="Find a guide's channel by its name or guide ID"
+      hx-get="/admin/guides/channels/{{$g.ChannelID}}" hx-include="closest form" hx-target="#guide-found" hx-swap="outerHTML" hx-trigger="input changed delay:400ms, search">
+    <button type="submit" class="small">Find</button>
+  </form>
+  {{template "guide-found" .}}
+  <p class="hint">Your guides' channels, and the channels whose own sources' guides fill them, whose guide this channel would then show.</p>
+</section>
+{{- else}}
+<section class="card"><p class="empty">This server does not read guides of its own, so it cannot suggest or find a guide's channel; it can only show no guide.</p></section>
+{{- end}}
+</div>
+{{- end}}

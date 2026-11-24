@@ -121,6 +121,9 @@ func (a *Admin) Handler() http.Handler {
 	mux.Handle("POST /admin/sources/{id}/{action}", a.page(a.sourceAction))
 	mux.Handle("GET /admin/guides", a.page(a.guidesPage))
 	mux.Handle("POST /admin/guides", a.page(a.addGuideForm))
+	mux.Handle("GET /admin/guides/channels", a.page(a.guideChannelsPage))
+	mux.Handle("GET /admin/guides/channels/{id}", a.page(a.guideChoicePage))
+	mux.Handle("POST /admin/guides/channels/{id}", a.page(a.chooseGuideForm))
 	mux.Handle("GET /admin/guides/{id}", a.page(a.guidePage))
 	mux.Handle("POST /admin/guides/{id}", a.page(a.saveGuideForm))
 	mux.Handle("POST /admin/guides/{id}/{action}", a.page(a.guideAction))
@@ -213,7 +216,7 @@ type view struct {
 
 // pageNames are the pages in admin/templates, each of which defines
 // "content" for the layout.
-var pageNames = []string{"sign-in", "home", "password", "message", "devices", "accounts", "account", "lineup", "rules", "library", "sources", "guides", "categories", "group-categories", "capture", "health", "settings"}
+var pageNames = []string{"sign-in", "home", "password", "message", "devices", "accounts", "account", "lineup", "rules", "library", "sources", "guides", "guide-channels", "categories", "group-categories", "capture", "health", "settings"}
 
 // pageParts are the parts in admin/templates that pages share, by page.
 var pageParts = map[string][]string{"lineup": {"lineup-nav", "replace-form"}, "rules": {"lineup-nav"}, "library": {"replace-form"},

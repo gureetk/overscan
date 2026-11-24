@@ -467,6 +467,20 @@
     <p class="hint">Overscan notes what happens as people watch, and never opens a channel to test it.</p>
     {{- end}}
   </section>
+  {{- with .GuideText}}
+  <section class="its-guide" aria-labelledby="guide-title">
+    <h3 id="guide-title">Its guide</h3>
+    <p class="note">{{.}}</p>
+    {{- if $.Programmes}}
+    <ul class="now-next">
+      {{- range $i, $p := $.Programmes}}
+      <li><span class="when">{{if and (eq $i 0) (not ($p.Start.After $.Now))}}Now{{else}}{{$p.Start.UTC.Format "15:04"}} UTC{{end}}</span> {{$p.Title}}</li>
+      {{- end}}
+    </ul>
+    {{- end}}
+    <a class="button small" href="{{$.GuideURL}}">Choose its guide</a>
+  </section>
+  {{- end}}
   <section class="backups" aria-labelledby="backups-title">
     <h3 id="backups-title">Backups</h3>
     {{- if .Backups}}

@@ -26,6 +26,37 @@ type fakeGuides struct {
 	readErr error
 	slow    bool // a read outlasts the admin's wait
 	reading int64
+	// options are what channels' guides can be chosen from: Search finds
+	// those whose names hold the text, and Suggest those that suggest
+	// gives by channel.
+	options []guide.Option
+	suggest map[int64][]guide.Option
+}
+
+func (f *fakeGuides) Suggest(_ context.Context, channels []guide.SuggestFor, limit int) (map[int64][]guide.Option, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := map[int64][]guide.Option{}
+	for _, c := range channels {
+		os := f.suggest[c.ChannelID]
+		if limit > 0 && len(os) > limit {
+			os = os[:limit]
+		}
+		out[c.ChannelID] = os
+	}
+	return out, nil
+}
+
+func (f *fakeGuides) Search(_ context.Context, text string, _ int) ([]guide.Option, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []guide.Option
+	for _, o := range f.options {
+		if strings.Contains(strings.ToLower(o.Name()), strings.ToLower(text)) {
+			out = append(out, o)
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeGuides) ReadNow(ctx context.Context, id int64) (guide.OwnResult, error) {

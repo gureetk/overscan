@@ -99,10 +99,11 @@ type Guide struct {
 	Channels   int
 	Programmes int
 	// Matched counts the channels that the guide gives programmes to now,
-	// and ByName those of them that their names matched rather than their
-	// guide IDs. Waiting counts those of them whose programmes the guide's
-	// next read brings, since no channel used them at its last read.
-	Matched, ByName, Waiting int
+	// ByName those of them that their names matched rather than their
+	// guide IDs, and ByHand those whose guide was chosen by hand (D140).
+	// Waiting counts those of them whose programmes the guide's next read
+	// brings, since no channel used them at its last read.
+	Matched, ByName, ByHand, Waiting int
 }
 
 func addedGuideContext(id int64) string { return "guide/" + strconv.FormatInt(id, 10) }
@@ -115,6 +116,8 @@ const guideSelect = `
 		(SELECT count(*) FROM channel_guide_matches m JOIN guide_channels gc ON gc.id = m.guide_channel_id
 			WHERE gc.guide_id = g.id AND m.by_name = 1),
 		(SELECT count(*) FROM channel_guide_matches m JOIN guide_channels gc ON gc.id = m.guide_channel_id
+			WHERE gc.guide_id = g.id AND m.by_hand = 1),
+		(SELECT count(*) FROM channel_guide_matches m JOIN guide_channels gc ON gc.id = m.guide_channel_id
 			WHERE gc.guide_id = g.id AND gc.kept = 0)
 	FROM guides g`
 
@@ -124,7 +127,7 @@ func (s *Store) scanGuide(row rowScanner) (Guide, error) {
 	var read sql.NullString
 	var sealed []byte
 	if err := row.Scan(&g.ID, &g.Name, &g.Host, &g.UserAgent, &g.PublicOnly, &g.Enabled, &g.Position, &added, &sealed,
-		&read, &g.ReadFrom, &g.ReadError, &g.Listed, &g.Channels, &g.Programmes, &g.Matched, &g.ByName, &g.Waiting); err != nil {
+		&read, &g.ReadFrom, &g.ReadError, &g.Listed, &g.Channels, &g.Programmes, &g.Matched, &g.ByName, &g.ByHand, &g.Waiting); err != nil {
 		return Guide{}, err
 	}
 	var err error
@@ -456,7 +459,8 @@ type MatchCandidate struct {
 
 // MatchCandidates returns the channels that a guide of the household's own
 // can fill: those that their sources still list, without a programme in
-// the guide that devices see of their own source.
+// the guide that devices see of their own source, and whose guide nobody
+// chose by hand (D140).
 func (s *Store) MatchCandidates(ctx context.Context) ([]MatchCandidate, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.id, c.xmltv_id, c.name, COALESCE(k.name, ''), c.archive_days
@@ -464,6 +468,7 @@ func (s *Store) MatchCandidates(ctx context.Context) ([]MatchCandidate, error) {
 		WHERE c.missing_since IS NULL AND NOT EXISTS (
 			SELECT 1 FROM programmes p JOIN source_guides sg ON sg.source_id = p.source_id AND sg.generation = p.generation
 			WHERE p.channel_id = c.id)
+			AND NOT EXISTS (SELECT 1 FROM channel_guide_choices hc WHERE hc.channel_id = c.id)
 		ORDER BY c.source_id, c.position`)
 	if err != nil {
 		return nil, fmt.Errorf("store: channels without a guide: %w", err)
@@ -488,12 +493,13 @@ type GuideMatch struct {
 	ChannelID      int64
 	GuideChannelID int64
 	ByName         bool // its name matched, rather than its guide ID
+	ByHand         bool // it was chosen by hand (D140)
 }
 
 // GuideMatches returns every channel's match with a guide of the
 // household's own.
 func (s *Store) GuideMatches(ctx context.Context) ([]GuideMatch, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT channel_id, guide_channel_id, by_name FROM channel_guide_matches ORDER BY channel_id")
+	rows, err := s.db.QueryContext(ctx, "SELECT channel_id, guide_channel_id, by_name, by_hand FROM channel_guide_matches ORDER BY channel_id")
 	if err != nil {
 		return nil, fmt.Errorf("store: guide matches: %w", err)
 	}
@@ -501,7 +507,7 @@ func (s *Store) GuideMatches(ctx context.Context) ([]GuideMatch, error) {
 	var out []GuideMatch
 	for rows.Next() {
 		var m GuideMatch
-		if err := rows.Scan(&m.ChannelID, &m.GuideChannelID, &m.ByName); err != nil {
+		if err := rows.Scan(&m.ChannelID, &m.GuideChannelID, &m.ByName, &m.ByHand); err != nil {
 			return nil, fmt.Errorf("store: guide matches: %w", err)
 		}
 		out = append(out, m)
@@ -530,18 +536,18 @@ func (s *Store) SetGuideMatches(ctx context.Context, matches []GuideMatch) (bool
 
 func setGuideMatches(ctx context.Context, tx *sql.Tx, matches []GuideMatch) (bool, error) {
 	type match struct {
-		guideChannel int64
-		byName       bool
+		guideChannel   int64
+		byName, byHand bool
 	}
 	now := map[int64]match{}
-	rows, err := tx.QueryContext(ctx, "SELECT channel_id, guide_channel_id, by_name FROM channel_guide_matches")
+	rows, err := tx.QueryContext(ctx, "SELECT channel_id, guide_channel_id, by_name, by_hand FROM channel_guide_matches")
 	if err != nil {
 		return false, err
 	}
 	for rows.Next() {
 		var id int64
 		var m match
-		if err := rows.Scan(&id, &m.guideChannel, &m.byName); err != nil {
+		if err := rows.Scan(&id, &m.guideChannel, &m.byName, &m.byHand); err != nil {
 			rows.Close()
 			return false, err
 		}
@@ -555,13 +561,14 @@ func setGuideMatches(ctx context.Context, tx *sql.Tx, matches []GuideMatch) (boo
 	want := make(map[int64]bool, len(matches))
 	for _, m := range matches {
 		want[m.ChannelID] = true
-		if was, ok := now[m.ChannelID]; ok && was == (match{m.GuideChannelID, m.ByName}) {
+		if was, ok := now[m.ChannelID]; ok && was == (match{m.GuideChannelID, m.ByName, m.ByHand}) {
 			continue
 		}
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO channel_guide_matches (channel_id, guide_channel_id, by_name) VALUES (?, ?, ?)
-			ON CONFLICT (channel_id) DO UPDATE SET guide_channel_id = excluded.guide_channel_id, by_name = excluded.by_name`,
-			m.ChannelID, m.GuideChannelID, m.ByName); err != nil {
+			INSERT INTO channel_guide_matches (channel_id, guide_channel_id, by_name, by_hand) VALUES (?, ?, ?, ?)
+			ON CONFLICT (channel_id) DO UPDATE SET guide_channel_id = excluded.guide_channel_id, by_name = excluded.by_name,
+				by_hand = excluded.by_hand`,
+			m.ChannelID, m.GuideChannelID, m.ByName, m.ByHand); err != nil {
 			return false, err
 		}
 		changed = true
@@ -604,13 +611,15 @@ func (s *Store) GuidesWaiting(ctx context.Context) ([]int64, error) {
 
 // ChannelsWithoutGuide counts the channels of enabled sources that their
 // sources still list that have no programme from their own source's
-// guide, nor a match with a guide of the household's own.
+// guide, nor a match with a guide of the household's own, nor a guide
+// chosen by hand, even none (D140).
 func (s *Store) ChannelsWithoutGuide(ctx context.Context) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, `
 		SELECT count(*) FROM channels c JOIN sources s ON s.id = c.source_id
 		WHERE c.missing_since IS NULL AND s.enabled = 1
 			AND NOT EXISTS (SELECT 1 FROM channel_guide_matches m WHERE m.channel_id = c.id)
+			AND NOT EXISTS (SELECT 1 FROM channel_guide_choices hc WHERE hc.channel_id = c.id)
 			AND NOT EXISTS (
 				SELECT 1 FROM programmes p JOIN source_guides sg ON sg.source_id = p.source_id AND sg.generation = p.generation
 				WHERE p.channel_id = c.id)`).Scan(&n)

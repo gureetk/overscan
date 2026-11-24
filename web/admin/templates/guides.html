@@ -25,7 +25,10 @@
 {{- if .Data.Guides}}
 <p class="summary-line">
   {{- if .Data.Filled}}The guides fill {{count .Data.Filled}} {{plural .Data.Filled "channel"}}. {{end}}
-  {{- if .Data.WithoutGuide}}{{count .Data.WithoutGuide}} {{plural .Data.WithoutGuide "channel"}} of your sources still {{if eq .Data.WithoutGuide 1}}has{{else}}have{{end}} no guide.{{else}}Every channel of your sources has a guide.{{end}}</p>
+  {{- if .Data.WithoutGuide}}{{count .Data.WithoutGuide}} {{plural .Data.WithoutGuide "channel"}} of your sources still {{if eq .Data.WithoutGuide 1}}has{{else}}have{{end}} no guide.{{else}}Every channel of your sources has a guide.{{end}}
+  <a href="/admin/guides/channels">Channels and their guides</a></p>
+{{- else}}
+<p class="summary-line"><a href="/admin/guides/channels">Channels and their guides</a>: choose a channel's guide by hand, such as another channel's.</p>
 {{- end}}
 {{- range .Data.Guides}}
 {{template "guide-card" (dict "G" . "CSRF" $.Session.CSRFToken)}}

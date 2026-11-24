@@ -67,8 +67,9 @@ var threeChannels = []fakeChannel{
 }
 
 // extraFills are the channels that the guide of the household's own,
-// extra.xml, fills: their sources' guide has none of them. It lists
-// Granite News too, which keeps its source's programmes.
+// extra.xml, fills by name: their sources' guide has none of them. It
+// lists Granite News too, which keeps its source's programmes, and whose
+// guide Juniper Shop takes by hand from v1.2.0-alpha.2 on.
 var extraFills = []string{"Lantern Sport", "Cobalt Films", "Orchard Extra"}
 
 // libraryFiles are the folder source's films and episodes, relative to its

@@ -725,6 +725,48 @@ table.list { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
   table.list.health .cell-label { display: inline; }
 }
 .cell-label { display: none; }
+
+/* Channels and their guides (D140). */
+.lineup-tabs.guide-tabs { display: inline-flex; max-width: 100%; }
+.lineup-tabs.guide-tabs a { white-space: nowrap; }
+@media (max-width: 47.5rem) {
+  .lineup-tabs.guide-tabs { display: flex; }
+  .lineup-tabs.guide-tabs a { flex: 1 1 auto; gap: 0.25rem; padding: 0 0.5rem; font-size: 0.8125rem; }
+}
+.find-form { margin: 1rem 0; }
+.guide-list > .table-wrap { margin-top: -1.25rem; }
+.find-form input[type="search"] { flex: 1 1 16rem; max-width: 28rem; }
+.guide-list .pages { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: 0.875rem 1.25rem; border-top: 1px solid var(--line); color: var(--text3); font-size: 0.84375rem; }
+.guide-channels td { overflow-wrap: anywhere; }
+.guide-channels .suggestions { display: flex; flex-direction: column; gap: 0.375rem; }
+.guide-channels .suggestions form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; margin: 0; }
+.row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.375rem; }
+.row-actions form { margin: 0; }
+.now-next { margin: 0.25rem 0 0; padding: 0; list-style: none; font-size: 0.84375rem; }
+.now-next li { display: flex; gap: 0.5rem; margin: 0.125rem 0; }
+.now-next .when { flex: none; min-width: 4.5rem; color: var(--text3); font-variant-numeric: tabular-nums; }
+.option-list { margin: 0; padding: 0; list-style: none; }
+.option-list > li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: 0.75rem 0; border-bottom: 1px solid var(--line); }
+.option-list > li:last-child { border-bottom: 0; }
+.option-list > li.current { background: var(--chip); margin: 0 -1.25rem; padding: 0.75rem 1.25rem; }
+.option-list .option-text { flex: 1 1 16rem; min-width: 0; overflow-wrap: anywhere; }
+.option-list .option-text .note { display: block; }
+.option-list form { margin: 0; }
+.channel-panel .its-guide { padding: 1rem 1.25rem 1.25rem; border-top: 1px solid var(--line); }
+.channel-panel .its-guide h3 { margin: 0 0 0.5rem; font-size: 0.8125rem; font-weight: 600; }
+.channel-panel .its-guide .now-next { margin-bottom: 0.75rem; }
+@media (max-width: 47.5rem) {
+  /* On a phone, each channel is a block: the channel, then its guide and
+     what is on, with its buttons last. */
+  table.list.guide-channels thead { display: none; }
+  table.list.guide-channels tr { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.875rem; padding: 0.875rem 1.25rem; border-bottom: 1px solid var(--line); }
+  table.list.guide-channels tr:last-child { border-bottom: 0; }
+  table.list.guide-channels td, table.list.guide-channels td:first-child, table.list.guide-channels td:last-child { display: block; padding: 0; border: 0; }
+  table.list.guide-channels td { flex: 1 1 100%; }
+  table.list.guide-channels td:not(:first-child) { color: var(--text2); font-size: 0.8125rem; }
+  table.list.guide-channels td:nth-child(3) { flex: 1 1 0; min-width: 0; }
+  table.list.guide-channels td:last-child { margin-left: auto; flex: 0 0 auto; }
+}
 .recordings .actions form { margin: 0; }
 .pin-forms input { flex: 0 1 14rem; }
 
