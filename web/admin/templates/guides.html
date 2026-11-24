@@ -99,6 +99,7 @@
     <div><dt>Lists</dt><dd>{{.G.ListsLine}}</dd></div>
     <div><dt>Last read</dt><dd>{{.G.LastRead}}</dd></div>
     <div><dt>Read</dt><dd>Every 12 hours</dd></div>
+    <div><dt>Its logos</dt><dd>{{.G.LogosText}}</dd></div>
     {{- with .G.Order}}
     <div><dt>Order</dt><dd>{{.}}</dd></div>
     {{- end}}
@@ -136,6 +137,16 @@
       <label for="guide-agent">User agent <span class="muted">(optional)</span></label>
       <input id="guide-agent" name="user_agent" value="{{$f.Settings.UserAgent}}" maxlength="200" spellcheck="false" autocomplete="off">
       <p class="hint">For a guide's server that expects a particular player. Leave it empty for Overscan's own.</p>
+    </div>
+    <div class="field">
+      <label for="guide-logos">Its logos</label>
+      <select id="guide-logos" name="logos">
+        {{- $l := $f.Settings.Logos}}
+        <option value="fill"{{if or (eq $l "fill") (eq $l "")}} selected{{end}}>Where a channel's own is missing or does not load</option>
+        <option value="first"{{if eq $l "first"}} selected{{end}}>Before a channel's own</option>
+        <option value="none"{{if eq $l "none"}} selected{{end}}>Not used</option>
+      </select>
+      <p class="hint">The icons that the guide gives its channels, as logos of the channels that it fills.</p>
     </div>
     <div class="field wide">
       <label class="check"><input type="checkbox" name="public_only" value="1"{{if $f.Settings.PublicOnly}} checked{{end}}> Public addresses only</label>

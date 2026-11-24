@@ -89,6 +89,17 @@
     {{- else}}
     <div><dt>Channels</dt><dd>{{.S.ChannelCount}}</dd></div>
     <div><dt>Guide</dt><dd>{{.S.GuideLine}}</dd></div>
+    <div class="wide"><dt>Its guide's logos</dt><dd>
+      <form method="post" action="/admin/sources/{{.S.ID}}/guide-logos" hx-post="/admin/sources/{{.S.ID}}/guide-logos" hx-target="#sources-main" hx-select="#sources-main" hx-swap="outerHTML" class="inline-form">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <select name="guide_logos" aria-label="How the logos of {{.S.Name}}'s guide are used" data-autosubmit>
+          <option value="none"{{if eq .S.GuideLogos "none"}} selected{{end}}>Not used</option>
+          <option value="fill"{{if eq .S.GuideLogos "fill"}} selected{{end}}>Where a channel's own is missing or does not load</option>
+          <option value="first"{{if eq .S.GuideLogos "first"}} selected{{end}}>Before a channel's own</option>
+        </select>
+        <button type="submit" class="small js-hide">Save</button>
+      </form>
+    </dd></div>
     <div><dt>Last read</dt><dd>{{.S.LastRead}}</dd></div>
     <div><dt>Read</dt><dd>Every {{.S.Every}}</dd></div>
     {{- end}}

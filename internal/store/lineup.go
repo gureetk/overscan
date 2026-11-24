@@ -363,11 +363,12 @@ type LineupEntry struct {
 	Untaken bool
 	// Health is what Overscan has seen of its channel's stream (D138).
 	Health      ChannelHealth
-	Logo        string
-	Locked      bool  // the administrator locked it (D55)
-	GroupLocked bool  // its group is locked
-	Repair      bool  // its stream goes through ffmpeg: its own switch says so, or else the default does (D57, D58)
-	RepairOwn   *bool // its own switch; nil if it follows the default
+	Logo        string  // what devices see a copy of (D141), "" if none
+	LogoByHand  *string // set by hand: an address, or "" for none; nil if not
+	Locked      bool    // the administrator locked it (D55)
+	GroupLocked bool    // its group is locked
+	Repair      bool    // its stream goes through ffmpeg: its own switch says so, or else the default does (D57, D58)
+	RepairOwn   *bool   // its own switch; nil if it follows the default
 	// Adult is set when its source marks it for adults (D86), and
 	// AdultLocked or AdultHidden when the setting locks or hides such
 	// channels.
@@ -470,11 +471,11 @@ const entrySelect = `
 			e.name IS NOT NULL, COALESCE(g.id, 0), COALESCE(g.name, ''), e.group_id IS NOT NULL, COALESCE(k.name, ''),
 			CASE e.hidden WHEN 0 THEN 1 WHEN 1 THEN 2 ELSE 0 END,
 			e.number IS NULL OR COALESCE(e.hidden, e.rule_hidden, g.hidden, 0) = 1 OR c.missing_since IS NOT NULL OR COALESCE(hh.held, 0) = 1,
-			c.missing_since IS NOT NULL, ` + entryLogo + `, e.locked, COALESCE(g.locked, 0),
+			c.missing_since IS NOT NULL, ` + entryLogo + `, e.logo, e.locked, COALESCE(g.locked, 0),
 			COALESCE(c.repair, ` + repairDefaultSQL + `), c.repair, c.adult,
 			c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultLock + `', c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultHide + `', c.radio,
 			e.rule_name IS NOT NULL, e.rule_group_id IS NOT NULL, e.rule_hidden IS 0, e.rule_hidden IS 1,
-			e.rule_logo IS NOT NULL, e.rule_pinned, COALESCE((SELECT name FROM channels WHERE id = e.rule_guide_id), ''),
+			e.rule_logo IS NOT NULL AND e.logo IS NULL, e.rule_pinned, COALESCE((SELECT name FROM channels WHERE id = e.rule_guide_id), ''),
 			COALESCE(e.rule_guide_shift, 0), (SELECT count(*) FROM lineup_entry_backups WHERE entry_id = e.id),
 			(SELECT count(*) FROM lineup_entry_rule_backups WHERE entry_id = e.id),
 			COALESCE((SELECT COALESCE(m.name, m.rule_name, mc.name)
@@ -494,9 +495,10 @@ func scanEntry(row rowScanner) (LineupEntry, error) {
 	var e LineupEntry
 	var hs healthScan
 	var own sql.NullBool
+	var logo sql.NullString
 	var shift int64
 	dest := []any{&e.ID, &e.ChannelID, &e.SourceID, &e.Source, &e.Number, &e.Pinned, &e.Name, &e.ChannelName,
-		&e.Renamed, &e.GroupID, &e.Group, &e.Moved, &e.Category, &e.Visibility, &e.Hidden, &e.Missing, &e.Logo,
+		&e.Renamed, &e.GroupID, &e.Group, &e.Moved, &e.Category, &e.Visibility, &e.Hidden, &e.Missing, &e.Logo, &logo,
 		&e.Locked, &e.GroupLocked, &e.Repair, &own, &e.Adult, &e.AdultLocked, &e.AdultHidden, &e.Radio,
 		&e.RuleRenamed, &e.RuleMoved, &e.RuleShown, &e.RuleHidden, &e.RuleLogo, &e.RuleNumbered, &e.RuleGuide, &shift,
 		&e.Backups, &e.RuleBackups, &e.MergedInto, &e.LeftOut, &e.Untaken}
@@ -504,6 +506,9 @@ func scanEntry(row rowScanner) (LineupEntry, error) {
 	e.Health = hs.health()
 	if own.Valid {
 		e.RepairOwn = &own.Bool
+	}
+	if logo.Valid {
+		e.LogoByHand = &logo.String
 	}
 	e.RuleShift = time.Duration(shift) * time.Second
 	return e, err
@@ -521,6 +526,17 @@ func mustAffect(res sql.Result) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// SetEntryLogo sets an entry's logo by hand (D141): an address, "" for no
+// logo at all, or nil to give it back its rule's, or its own or its
+// guide's.
+func (s *Store) SetEntryLogo(ctx context.Context, lineupID, entryID int64, logo *string) error {
+	res, err := s.db.ExecContext(ctx, "UPDATE lineup_entries SET logo = ? WHERE id = ? AND lineup_id = ?", logo, entryID, lineupID)
+	if err != nil {
+		return err
+	}
+	return mustAffect(res)
 }
 
 // RenameEntry names an entry's channel in the lineup; an empty name gives it

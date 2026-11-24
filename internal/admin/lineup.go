@@ -8,11 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
+	"overscan.gureet.ca/internal/artwork"
 	"overscan.gureet.ca/internal/rules"
 	"overscan.gureet.ca/internal/store"
 )
@@ -178,6 +180,23 @@ type entryChange struct {
 	// repaired or not, or, nil, as the default (D58).
 	Repair    *bool
 	RepairSet bool
+	// Logo is its logo set by hand (D141), when LogoSet: an address, ""
+	// for no logo at all, or, nil, as its rules, its source and its guide
+	// give it.
+	Logo    *string
+	LogoSet bool
+}
+
+// maxLogo bounds a logo's address, as a rule's.
+const maxLogo = 2048
+
+// checkLogo checks a logo's address set by hand.
+func checkLogo(logo string) error {
+	u, err := url.Parse(logo)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || len(logo) > maxLogo {
+		return badEdit(http.StatusBadRequest, "bad_logo", "A logo's address starts with http:// or https://.")
+	}
+	return nil
 }
 
 // changeEntries applies a change to entries, checking it all before changing
@@ -190,8 +209,15 @@ func (a *Admin) changeEntries(ctx context.Context, ids []int64, ch entryChange) 
 	if len(ids) == 0 {
 		return badEdit(http.StatusBadRequest, "no_channels", "Choose at least one channel.")
 	}
-	if len(ids) > 1 && (ch.Name != nil || ch.Number != nil) {
-		return badEdit(http.StatusBadRequest, "one_at_a_time", "Names and numbers are set one channel at a time.")
+	if len(ids) > 1 && (ch.Name != nil || ch.Number != nil || ch.LogoSet) {
+		return badEdit(http.StatusBadRequest, "one_at_a_time", "Names, numbers and logos are set one channel at a time.")
+	}
+	if ch.LogoSet && ch.Logo != nil && *ch.Logo != "" {
+		logo := strings.TrimSpace(*ch.Logo)
+		if err := checkLogo(logo); err != nil {
+			return err
+		}
+		ch.Logo = &logo
 	}
 	if ch.Name != nil && *ch.Name != "" {
 		name, err := checkName(*ch.Name, "channel", maxChannelName)
@@ -210,6 +236,11 @@ func (a *Admin) changeEntries(ctx context.Context, ids []int64, ch entryChange) 
 	}
 	if ch.Name != nil {
 		if err := a.store.RenameEntry(ctx, lineup, ids[0], *ch.Name); err != nil {
+			return lineupStoreError(err, "channel")
+		}
+	}
+	if ch.LogoSet {
+		if err := a.store.SetEntryLogo(ctx, lineup, ids[0], ch.Logo); err != nil {
 			return lineupStoreError(err, "channel")
 		}
 	}
@@ -338,6 +369,11 @@ type apiEntry struct {
 	MergedInto  *string `json:"merged_into"`
 	// Health is what Overscan has seen of its channel's stream (D138).
 	Health apiHealth `json:"health"`
+	// Logo is where Overscan serves its logo, null if it has none, and
+	// LogoByHand the logo set by hand: an address, "" for none, or null
+	// for the one that its rules, source and guide give it (D141).
+	Logo       *string `json:"logo"`
+	LogoByHand *string `json:"logo_by_hand"`
 }
 
 func entryBody(e store.LineupEntry) apiEntry {
@@ -345,7 +381,10 @@ func entryBody(e store.LineupEntry) apiEntry {
 		Name: e.Name, ChannelName: e.ChannelName, Renamed: e.Renamed, Moved: e.Moved,
 		Visibility: visibilityNames[e.Visibility], Hidden: e.Hidden, Missing: e.Missing, LeftOut: e.LeftOut, Locked: e.Locked,
 		GroupLocked: e.GroupLocked, Repair: e.Repair, RepairOwn: e.RepairOwn, Adult: e.Adult, Radio: e.Radio,
-		RuleBackups: e.RuleBackups, Health: healthBody(e.Health)}
+		RuleBackups: e.RuleBackups, Health: healthBody(e.Health), LogoByHand: e.LogoByHand}
+	if path := artwork.LogoPath(e.ID, e.Logo); path != "" {
+		out.Logo = &path
+	}
 	if e.Number > 0 {
 		out.Number = &e.Number
 	}
@@ -647,6 +686,12 @@ func readEntryChange(w http.ResponseWriter, r *http.Request, withIDs bool) ([]in
 				return bad("repair is true, false, or null for the default.")
 			}
 			ch.Repair, ch.RepairSet = repair, true
+		case k == "logo" && !withIDs:
+			var logo *string
+			if json.Unmarshal(v, &logo) != nil {
+				return bad(`logo is a logo's address, "" for no logo, or null for the one that its rules, source and guide give it.`)
+			}
+			ch.Logo, ch.LogoSet = logo, true
 		case k == "number" && !withIDs:
 			n := 0
 			if !isNull(v) && (json.Unmarshal(v, &n) != nil || n <= 0) {

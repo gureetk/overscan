@@ -639,11 +639,12 @@ const archiveDaysSQL = `(CASE WHEN s.type IN ('` + source.TypeXtream + `', '` + 
 const lockedEntry = `(e.locked = 1 OR COALESCE(g.locked, 0) = 1 OR c.adult = 1 AND ` + adultMarksSQL + ` = '` + AdultLock + `')`
 
 // entryName is an entry's name: the administrator's, else a rule's (D107),
-// else its channel's; entryLogo its logo's address: a rule's, else its
-// channel's, "" if none.
+// else its channel's; entryLogo its logo's address: the administrator's,
+// "" for none, else a rule's, else its channel's own or its guide's, as
+// D141 says, "" if none.
 const (
 	entryName = `COALESCE(e.name, e.rule_name, c.name)`
-	entryLogo = `COALESCE(e.rule_logo, c.logo)`
+	entryLogo = `COALESCE(e.logo, e.rule_logo, ` + autoLogoSQL + `, '')`
 )
 
 // shownEntry is true of an entry that devices see: numbered, not hidden on

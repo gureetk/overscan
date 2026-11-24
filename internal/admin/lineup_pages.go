@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"overscan.gureet.ca/internal/artwork"
 	"overscan.gureet.ca/internal/store"
 )
 
@@ -239,6 +240,62 @@ type entryRow struct {
 	// from (D139, D140), and Programmes what devices see on now and next.
 	Guide      *store.ChannelGuide
 	Programmes []store.Programme
+	// Logo is, for the entry open in the panel, where its logo comes from
+	// (D141).
+	Logo *store.EntryLogoInfo
+}
+
+// LogoPath is where Overscan serves the entry's logo, "" if it has none.
+func (r entryRow) LogoPath() string { return artwork.LogoPath(r.E.ID, r.E.Logo) }
+
+// LogoChoice is how the entry's logo is set, as the edit form names it:
+// "auto", "none" or "address".
+func (r entryRow) LogoChoice() string {
+	switch {
+	case r.E.LogoByHand == nil:
+		return "auto"
+	case *r.E.LogoByHand == "":
+		return "none"
+	}
+	return "address"
+}
+
+// LogoAddress is the address of the logo set by hand, "" if none is.
+func (r entryRow) LogoAddress() string {
+	if r.E.LogoByHand == nil {
+		return ""
+	}
+	return *r.E.LogoByHand
+}
+
+// LogoText says where the entry's logo comes from.
+func (r entryRow) LogoText() string {
+	l := r.Logo
+	if l == nil {
+		return ""
+	}
+	fails := ""
+	if l.OwnFails {
+		fails = ", since its source's does not load"
+	}
+	switch l.From {
+	case store.LogoFromHand:
+		return "Set by hand, from its address."
+	case store.LogoFromNone:
+		return "None, set by hand: devices show its name."
+	case store.LogoFromRule:
+		return "From a rule."
+	case store.LogoFromSource:
+		return "From its source."
+	case store.LogoFromGuide:
+		return "From the guide " + l.Guide + fails + "."
+	case store.LogoFromSourceGuide:
+		return "From its source's guide" + fails + "."
+	}
+	if l.OwnFails {
+		return "None: its source's does not load, and no guide has one. Devices show its name."
+	}
+	return "None: its source gives none, and no guide has one. Devices show its name."
 }
 
 // GuideText says where the entry's programmes come from, with what rules
@@ -498,6 +555,11 @@ func (a *Admin) openEntry(ctx context.Context, d *lineupData) error {
 		return err
 	}
 	row.Guide = &g
+	logo, err := a.store.EntryLogoInfo(ctx, lineup, e.ID)
+	if err != nil {
+		return err
+	}
+	row.Logo = &logo
 	if row.Programmes, err = firstTwo(a.store.EntryProgrammes(ctx, lineup, e.ID, d.Now, d.Now.Add(programmesAhead))); err != nil &&
 		!errors.Is(err, store.ErrNotFound) {
 		return err
@@ -649,6 +711,28 @@ func (a *Admin) saveEntry(w http.ResponseWriter, r *http.Request, s store.AdminS
 	case !pin && e.Pinned:
 		reset := 0
 		ch.Number = &reset
+	}
+	switch r.PostFormValue("logo_choice") {
+	case "": // a form without the logo leaves it as it is
+	case "auto":
+		ch.LogoSet = e.LogoByHand != nil
+	case "none":
+		if e.LogoByHand == nil || *e.LogoByHand != "" {
+			none := ""
+			ch.Logo, ch.LogoSet = &none, true
+		}
+	case "address":
+		logo := strings.TrimSpace(r.PostFormValue("logo"))
+		if logo == "" {
+			a.lineupDone(w, r, s, badEdit(http.StatusBadRequest, "bad_logo", "Enter the logo's address, or choose another logo."), "", id)
+			return
+		}
+		if e.LogoByHand == nil || *e.LogoByHand != logo {
+			ch.Logo, ch.LogoSet = &logo, true
+		}
+	default:
+		a.lineupDone(w, r, s, badEdit(http.StatusBadRequest, "bad_logo", "Choose its logo."), "", id)
+		return
 	}
 
 	if ch == (entryChange{}) {

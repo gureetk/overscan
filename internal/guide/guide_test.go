@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -530,5 +531,40 @@ func TestStalkerGuide(t *testing.T) {
 	other.Device.MAC = "00:1A:79:00:00:52"
 	if Address(other, "") == Address(settings, "") {
 		t.Error("two boxes share a guide address")
+	}
+}
+
+// TestGuideIcons checks that a read of a source's guide keeps the icons of
+// the guide's channels for the source's channels that they match, by
+// guide ID or by name, which the source's channels take as logos once its
+// guide's logos are used (D141).
+func TestGuideIcons(t *testing.T) {
+	h := newHarness(t, source.TypeXtream)
+	ctx := context.Background()
+	h.set(func(h *harness) {
+		h.body = strings.Replace(strings.Replace(h.body,
+			`<channel id="news.example"><display-name>Example News</display-name>`,
+			`<channel id="news.example"><display-name>Example News</display-name><icon src="http://icons.example/news.png"/>`, 1),
+			`<channel id="sport-guide"><display-name>Example Sports</display-name>`,
+			`<channel id="sport-guide"><display-name>Example Sports</display-name><icon src="ftp://icons.example/sport.png"/><icon src="https://icons.example/sport.png"/>`, 1)
+	})
+	if _, _, err := h.g.ReadIfDue(ctx, h.settings(source.TypeXtream), h.id); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.st.SetSourceGuideLogos(ctx, h.id, store.GuideLogosFill); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := h.st.LineupChannels(ctx, store.DefaultLineupID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, c := range cs {
+		got[c.Name] = c.Logo
+	}
+	want := map[string]string{"Example News": "http://icons.example/news.png", "UK: Example Sports HD": "https://icons.example/sport.png",
+		"Film Four": "", "Example Sports +1": "", "Unmatched": ""}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("logos %v, want %v", got, want)
 	}
 }

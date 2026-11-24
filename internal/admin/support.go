@@ -202,6 +202,7 @@ func (a *Admin) bundleSources(ctx context.Context, now time.Time) (string, error
 		fmt.Fprintf(tw, "  Read every\t%s\n", row.Every())
 		fmt.Fprintf(tw, "  Numbers\t%s\n", src.Numbers)
 		fmt.Fprintf(tw, "  New categories hidden\t%v\n", src.NewCategoriesHidden)
+		fmt.Fprintf(tw, "  Its guide's logos\t%s\n", logosText[src.GuideLogos])
 		fmt.Fprintf(tw, "  Channels\t%s\n", count(src.Channels))
 		if src.RefreshedAt.IsZero() {
 			fmt.Fprintf(tw, "  Last read\tnever\n")
@@ -285,6 +286,7 @@ func (a *Admin) bundleGuides(ctx context.Context, now time.Time) (string, error)
 		}[g.Address])
 		fmt.Fprintf(tw, "  Own user agent\t%v\n", g.UserAgent != "")
 		fmt.Fprintf(tw, "  Public addresses only\t%v\n", g.PublicOnly)
+		fmt.Fprintf(tw, "  Its logos\t%s\n", logosText[g.Logos])
 		if g.ReadAt.IsZero() {
 			fmt.Fprintf(tw, "  Last read\tnever\n")
 		} else {
@@ -308,6 +310,11 @@ func (a *Admin) bundleGuides(ctx context.Context, now time.Time) (string, error)
 	}
 	fmt.Fprintf(&b, "Channels matched by name alone: %s\n", count(counts[store.ShowByName]))
 	fmt.Fprintf(&b, "Channels whose guide was chosen by hand (D140): %s\n", count(counts[store.ShowByHand]))
+	checked, failing, err := a.store.LogoCounts(ctx)
+	if err != nil {
+		return "", err
+	}
+	fmt.Fprintf(&b, "Logos checked (D141): %s, of which %s do not load\n", count(checked), count(failing))
 	return b.String(), nil
 }
 

@@ -257,6 +257,7 @@ type apiSource struct {
 	Numbers             string  `json:"numbers"`
 	CatchupZone         string  `json:"catchup_zone"`
 	NewCategoriesHidden bool    `json:"new_categories_hidden"`
+	GuideLogos          string  `json:"guide_logos"`
 	PublicOnly          bool    `json:"public_only"`
 	Channels            int     `json:"channels"`
 	RefreshedAt         *string `json:"refreshed_at"`
@@ -341,7 +342,8 @@ var addressNames = map[store.AddressState]string{
 func sourceBody(s store.Source, reads libraryReads, brings map[int64][]bringSummary) apiSource {
 	out := apiSource{ID: s.ID, Name: s.Name, Type: s.Type, Host: s.Host, Address: addressNames[s.Address], Enabled: s.Enabled,
 		MaxConnections: s.MaxConnections, RefreshSeconds: int64(s.Refresh / time.Second), UserAgent: s.UserAgent,
-		Numbers: s.Numbers, CatchupZone: s.CatchupZone, NewCategoriesHidden: s.NewCategoriesHidden, PublicOnly: s.PublicOnly,
+		Numbers: s.Numbers, CatchupZone: s.CatchupZone, NewCategoriesHidden: s.NewCategoriesHidden, GuideLogos: s.GuideLogos,
+		PublicOnly:   s.PublicOnly,
 		Channels:     s.Channels,
 		RefreshError: s.RefreshError,
 		StreamLimit:  s.StreamLimit(), Account: accountBody(s.Account),
@@ -438,6 +440,7 @@ type apiSourceChange struct {
 	CatchupZone         *string `json:"catchup_zone"`
 	Enabled             *bool   `json:"enabled"`
 	NewCategoriesHidden *bool   `json:"new_categories_hidden"`
+	GuideLogos          *string `json:"guide_logos"`
 	PublicOnly          *bool   `json:"public_only"`
 	// Bring is what a new source brings: "every" category, as before, or
 	// only those "ticked" once its first read lists them (D135). A source
@@ -547,6 +550,9 @@ func (a *Admin) apiAddSource(w http.ResponseWriter, r *http.Request, _ store.Adm
 	if err == nil && body.NewCategoriesHidden != nil {
 		err = sourceError(a.store.SetNewCategoriesHidden(ctx, id, *body.NewCategoriesHidden))
 	}
+	if err == nil && body.GuideLogos != nil {
+		err = a.setSourceGuideLogos(ctx, id, *body.GuideLogos)
+	}
 	if a.editAnswer(w, err) {
 		return
 	}
@@ -596,7 +602,23 @@ func (a *Admin) apiChangeSource(w http.ResponseWriter, r *http.Request, _ store.
 	if body.NewCategoriesHidden != nil && a.editAnswer(w, sourceError(a.store.SetNewCategoriesHidden(ctx, id, *body.NewCategoriesHidden))) {
 		return
 	}
+	if body.GuideLogos != nil && a.editAnswer(w, a.setSourceGuideLogos(ctx, id, *body.GuideLogos)) {
+		return
+	}
 	a.writeSource(w, r, http.StatusOK, id)
+}
+
+// setSourceGuideLogos sets how a source's guide's icons are used as its
+// channels' logos (D141).
+func (a *Admin) setSourceGuideLogos(ctx context.Context, id int64, how string) error {
+	if !store.ValidGuideLogos(how) {
+		return badEdit(http.StatusBadRequest, "bad_guide_logos", `How its guide's logos are used is "none", "fill" or "first".`)
+	}
+	if err := a.store.SetSourceGuideLogos(ctx, id, how); err != nil {
+		return sourceError(err)
+	}
+	a.log.Info("a source's guide's logos set in the admin", "source_id", id, "guide_logos", how)
+	return nil
 }
 
 func (a *Admin) apiDeleteSource(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
@@ -1355,6 +1377,11 @@ func (a *Admin) sourceAction(w http.ResponseWriter, r *http.Request, s store.Adm
 		row := sourceRow{Source: src}
 		if name, err = a.deleteSource(ctx, id); err == nil {
 			done = "Deleted " + name + ", with " + row.What() + "."
+		}
+	case "guide-logos":
+		how := r.PostFormValue("guide_logos")
+		if err = a.setSourceGuideLogos(ctx, id, how); err == nil {
+			done = "The logos of " + src.Name + "'s guide: " + strings.ToLower(logosText[how][:1]) + logosText[how][1:] + "."
 		}
 	case "categories-hidden", "categories-shown":
 		hidden := r.PathValue("action") == "categories-hidden"

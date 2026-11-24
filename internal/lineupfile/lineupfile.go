@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -32,16 +33,21 @@ import (
 // Kind and Version name the file's format: Version is the latest that
 // Overscan reads. A file of a later version is refused, so that nothing in
 // it is dropped without a word. Version 2 adds a lineup's own_groups, a
-// group's numbers_from, and a merge rule's sources and prefer: best; a
-// file is written as version 1 when it holds nothing of version 2, so that
-// an Overscan that reads only version 1 imports it too.
+// group's numbers_from, and a merge rule's sources and prefer: best;
+// version 3 a channel's logo set by hand (D141). A file is written as the
+// earliest version that holds what it has, so that an Overscan that reads
+// only that version imports it too.
 const (
 	Kind    = "overscan-lineups"
-	Version = 2
+	Version = 3
 )
+
+// NoLogo is a channel's logo, set by hand, of a channel that has none.
+const NoLogo = "none"
 
 // Limits on a file, as the admin has them for what it holds.
 const (
+	maxLogo        = 2048    // of a logo's address, as a rule's
 	MaxBytes       = 2 << 20 // of a file read
 	MaxLineups     = 20      // as a server has at most
 	MaxBackups     = 5       // of a channel
@@ -111,9 +117,12 @@ type Channel struct {
 	Group  string `yaml:"group,omitempty"`  // chosen by hand, or ""
 	// Hidden is set when the channel is hidden or shown by hand, and nil
 	// when it follows its group.
-	Hidden  *bool `yaml:"hidden,omitempty"`
-	Locked  bool  `yaml:"locked,omitempty"`
-	Backups []Ref `yaml:"backups,omitempty"`
+	Hidden *bool `yaml:"hidden,omitempty"`
+	Locked bool  `yaml:"locked,omitempty"`
+	// Logo is its logo set by hand, an address, or NoLogo for none; ""
+	// for the one that its rules, source and guide give it (version 3).
+	Logo    string `yaml:"logo,omitempty"`
+	Backups []Ref  `yaml:"backups,omitempty"`
 }
 
 // Error is what is wrong with a file, which its writer can put right.
@@ -123,9 +132,17 @@ func (e *Error) Error() string { return e.Text }
 
 func bad(format string, args ...any) error { return &Error{fmt.Sprintf(format, args...)} }
 
-// Needs returns the version of the file format that f needs: 2 if it
-// holds anything of version 2, else 1.
+// Needs returns the version of the file format that f needs: 3 if it
+// holds anything of version 3, else 2 if it holds anything of version 2,
+// else 1.
 func (f File) Needs() int {
+	for _, l := range f.Lineups {
+		for _, c := range l.Channels {
+			if c.Logo != "" {
+				return 3
+			}
+		}
+	}
 	for _, l := range f.Lineups {
 		if l.OwnGroups {
 			return 2
@@ -233,8 +250,12 @@ func Parse(data []byte) (f File, err error) {
 		return File{}, bad("The file holds something that a lineup file does not: %s", firstLine(err))
 	}
 	if need := f.Needs(); need > f.Version {
-		return File{}, bad("The file says version %d, but holds own_groups, numbers_from, or a merge's sources or prefer: best, which version %d of lineup files added: change its version to %d.",
-			f.Version, need, need)
+		what := "own_groups, numbers_from, or a merge's sources or prefer: best"
+		if need == 3 {
+			what = "a channel's logo"
+		}
+		return File{}, bad("The file says version %d, but holds %s, which version %d of lineup files added: change its version to %d.",
+			f.Version, what, need, need)
 	}
 	return f, f.Check()
 }
@@ -395,6 +416,11 @@ func (l Lineup) check() error {
 		if c.Group != "" {
 			if err := checkName(c.Group, "group", maxGroupName); err != nil {
 				return bad("the channel %s: %v", c.Ref, err)
+			}
+		}
+		if c.Logo != "" && c.Logo != NoLogo {
+			if u, err := url.Parse(c.Logo); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || len(c.Logo) > maxLogo {
+				return bad("the channel %s: a logo is an address that starts with http:// or https://, or %s.", c.Ref, NoLogo)
 			}
 		}
 		if len(c.Title) > maxKey {

@@ -727,6 +727,8 @@ table.list { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
 .cell-label { display: none; }
 
 /* Channels and their guides (D140). */
+.facts .inline-form { max-width: 100%; }
+.facts select { max-width: 100%; min-width: 0; }
 .lineup-tabs.guide-tabs { display: inline-flex; max-width: 100%; }
 .lineup-tabs.guide-tabs a { white-space: nowrap; }
 @media (max-width: 47.5rem) {
@@ -752,6 +754,9 @@ table.list { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
 .option-list .option-text { flex: 1 1 16rem; min-width: 0; overflow-wrap: anywhere; }
 .option-list .option-text .note { display: block; }
 .option-list form { margin: 0; }
+.logo-field .logo-now { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
+.logo-field .logo-preview { flex: none; width: 7.5rem; height: 3rem; object-fit: contain; border-radius: 6px; background: var(--chip); }
+.logo-field input[name="logo"] { margin-top: 0.5rem; }
 .channel-panel .its-guide { padding: 1rem 1.25rem 1.25rem; border-top: 1px solid var(--line); }
 .channel-panel .its-guide h3 { margin: 0 0 0.5rem; font-size: 0.8125rem; font-weight: 600; }
 .channel-panel .its-guide .now-next { margin-bottom: 0.75rem; }
@@ -1160,6 +1165,10 @@ details.lineups-menu > .menu { left: auto; right: 0; min-width: 22rem; max-width
 .facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 1rem 1.5rem; margin: 0; }
 .facts dt { color: var(--text3); font-size: 0.75rem; font-weight: 600; }
 .facts dd { margin: 0.1875rem 0 0; font-size: 0.875rem; overflow-wrap: anywhere; }
+.facts > div.wide { grid-column: span 2; }
+@media (max-width: 47.5rem) {
+  .facts > div.wide { grid-column: 1 / -1; }
+}
 .inline-form { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.5rem; margin: 0; }
 button.link { height: auto; padding: 0; border: 0; background: none; color: var(--accent); font-size: inherit; font-weight: 600; }
 button.link:hover { background: none; color: var(--accent-hover); text-decoration: underline; }
