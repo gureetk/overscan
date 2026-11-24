@@ -66,6 +66,11 @@ var threeChannels = []fakeChannel{
 	{key: "wt", name: "Willow Travel", group: "Travel"},
 }
 
+// extraFills are the channels that the guide of the household's own,
+// extra.xml, fills: their sources' guide has none of them. It lists
+// Granite News too, which keeps its source's programmes.
+var extraFills = []string{"Lantern Sport", "Cobalt Films", "Orchard Extra"}
+
 // libraryFiles are the folder source's films and episodes, relative to its
 // folder. Overscan lists them by their names; their bytes are no video.
 var libraryFiles = []string{
@@ -142,6 +147,7 @@ func startProvider() (*provider, error) {
 		})
 	}
 	mux.HandleFunc("GET /guide.xml", p.guide)
+	mux.HandleFunc("GET /extra.xml", p.extraGuide)
 	mux.HandleFunc("GET /logo/{key}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 		_, _ = w.Write(p.logo)
@@ -193,6 +199,32 @@ func (p *provider) guide(w http.ResponseWriter, r *http.Request) {
 			start := p.base.Add(time.Duration(h) * time.Hour)
 			fmt.Fprintf(&b, "<programme start=\"%s\" stop=\"%s\" channel=\"%s\"><title lang=\"en\">%s at %s</title><desc lang=\"en\">A made-up programme.</desc></programme>\n",
 				start.Format(layout), start.Add(time.Hour).Format(layout), c.guide, c.name, start.Format("15:04"))
+		}
+	}
+	b.WriteString("</tv>\n")
+	_, _ = w.Write([]byte(b.String()))
+}
+
+// extraGuide serves the guide of the household's own: the channels of
+// extraFills under IDs of its own, and Granite News under its source's.
+func (p *provider) extraGuide(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/xml")
+	var b strings.Builder
+	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n<tv generator-info-name=\"upgradetest extra\">\n")
+	type listed struct{ id, name string }
+	channels := []listed{{"granite-news.example", "Granite News"}}
+	for i, name := range extraFills {
+		channels = append(channels, listed{fmt.Sprintf("extra-%d.example", i+1), name})
+	}
+	for _, c := range channels {
+		fmt.Fprintf(&b, "<channel id=\"%s\"><display-name>%s</display-name></channel>\n", c.id, c.name)
+	}
+	const layout = "20060102150405 -0700"
+	for _, c := range channels {
+		for h := -12; h < 48; h += 2 {
+			start := p.base.Add(time.Duration(h) * time.Hour)
+			fmt.Fprintf(&b, "<programme start=\"%s\" stop=\"%s\" channel=\"%s\"><title lang=\"en\">%s, from the extra guide</title></programme>\n",
+				start.Format(layout), start.Add(2*time.Hour).Format(layout), c.id, c.name)
 		}
 	}
 	b.WriteString("</tv>\n")

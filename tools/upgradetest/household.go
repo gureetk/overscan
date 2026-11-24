@@ -33,6 +33,9 @@ type features struct {
 	// the household's own groups, groups' first numbers, merges by source
 	// and by the best picture, and channels hidden until they play.
 	playlists bool
+	// guides is v1.2.0's: guides of the household's own (from its first
+	// pre-release on).
+	guides bool
 }
 
 func featuresOf(version string) features {
@@ -45,7 +48,10 @@ func featuresOf(version string) features {
 		minor, _ = strconv.Atoi(parts[1])
 	}
 	at := func(want int) bool { return major > 0 || minor >= want }
-	return features{households: at(4), hub: at(5), playlists: major > 1 || major == 1 && minor >= 1}
+	from := func(wantMajor, wantMinor int) bool {
+		return major > wantMajor || major == wantMajor && minor >= wantMinor
+	}
+	return features{households: at(4), hub: at(5), playlists: from(1, 1), guides: from(1, 2)}
 }
 
 // household holds what the setup made, by name, so that the probes can
@@ -62,6 +68,7 @@ type household struct {
 	guests   int64 // the account "Guests"
 	kids     int64 // the lineup "Kids"
 	mine     int64 // the lineup "Mine", of the household's own groups
+	guide    int64 // the guide of the household's own, "extra"
 	token    string
 	box      *box
 	client   *stalkerClient
@@ -182,6 +189,12 @@ func (h *household) setUp(a *admin, base string, since time.Time) error {
 			name string
 			run  func() error
 		}{"what sources bring, own groups, first numbers and channels hidden until they play", func() error { return h.setUpPlaylists(a) }})
+	}
+	if h.f.guides {
+		steps = append(steps, struct {
+			name string
+			run  func() error
+		}{"a guide of the household's own", func() error { return h.setUpGuides(a) }})
 	}
 	for _, s := range steps {
 		if err := s.run(); err != nil {
@@ -667,6 +680,42 @@ func (h *household) setUpPlaylists(a *admin) error {
 	return nil
 }
 
+// setUpGuides adds a guide of the household's own (D139), which fills the
+// channels that their sources' guide leaves out, by name, and waits for its
+// first read.
+func (h *household) setUpGuides(a *admin) error {
+	var added idName
+	if err := a.call("POST", "guides", map[string]any{"name": "extra", "address": h.p.url + "/extra.xml"}, &added); err != nil {
+		return err
+	}
+	h.guide = added.ID
+	deadline := time.Now().Add(60 * time.Second)
+	for {
+		var g struct {
+			Reading   bool    `json:"reading"`
+			ReadAt    *string `json:"read_at"`
+			ReadError string  `json:"read_error"`
+			Fills     int     `json:"fills"`
+			Waiting   int     `json:"waiting"`
+		}
+		if err := a.call("GET", fmt.Sprintf("guides/%d", h.guide), nil, &g); err != nil {
+			return err
+		}
+		switch {
+		case g.ReadError != "":
+			return fmt.Errorf("the guide extra: %s", g.ReadError)
+		case g.ReadAt != nil && !g.Reading && g.Waiting == 0:
+			if g.Fills != len(extraFills) {
+				return fmt.Errorf("the guide extra fills %d channels, not %d", g.Fills, len(extraFills))
+			}
+			return nil
+		case time.Now().After(deadline):
+			return errors.New("the guide extra was not read within 60 seconds")
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+}
+
 // A probe is one request whose answer the upgrade must keep.
 type probe struct {
 	name string
@@ -710,6 +759,12 @@ func (h *household) probes(a *admin, base string) []probe {
 		mine := strconv.FormatInt(h.mine, 10)
 		for _, p := range []string{"health", fmt.Sprintf("sources/%d/categories/live", h.sources["two"]), "lineup/groups?lineup=" + mine,
 			"lineup/channels?limit=1000&lineup=" + mine, "lineup/rules?lineup=" + mine} {
+			adminGet(p)
+		}
+	}
+
+	if h.f.guides {
+		for _, p := range []string{"guides", fmt.Sprintf("guides/%d", h.guide)} {
 			adminGet(p)
 		}
 	}
