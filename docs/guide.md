@@ -44,7 +44,7 @@ A choice belongs to the channel at its source, so it holds in every lineup and s
 
 ## Logos
 
-A channel's logo is, in this order: one you set by hand, in its panel on *Live TV* → *Logo*, an address or *None*; a rule's; else its source's, if it loads; else its guide's, if it loads; else none, and devices show its name. Its guide's is the icon that a guide of yours gives the channel that fills it, or that its source's guide gives it. *Guides* → a guide's *Change* → *Its logos* says when a guide's icons are used: where a channel's own is missing or does not load, before it, or never. Each source's card has the same for its guide, *Its guide's logos*, not used until you choose. Overscan checks in the background, a logo at a time, whether the logos that channels choose between load, so a box is never given one that does not; the panel says where each channel's logo comes from (D141).
+A channel's logo is, in this order: one you set by hand, in its panel on *Live TV* → *Logo*, an address or *None*; a rule's; else its source's, if it loads; else its guide's, if it loads; else none, and devices show its name. Its guide's is the icon that a guide of yours gives the channel that fills it, or that its source's guide gives it. *Guides* → a guide's *Change* → *Its logos* says when a guide's icons are used: where a channel's own is missing or does not load, before it, or never. Each source's card has the same for its guide, *Its guide's logos*, not used until you choose. Overscan checks in the background, a logo at a time, whether the logos that channels choose between load, as soon as a guide has been read and every five minutes, so a box is never given one that does not; the panel says where each channel's logo comes from (D141).
 
 ## Placeholder programmes
 

@@ -96,7 +96,7 @@ func TestLogoByHand(t *testing.T) {
 // logos, and of a source's guide's (D141).
 func TestGuideLogosSettings(t *testing.T) {
 	ta := newTestAdmin(t)
-	c, csrf, _ := ta.withGuides()
+	c, csrf, f := ta.withGuides()
 	h := []string{csrfHeader, csrf}
 	ctx := context.Background()
 	hx := []string{"HX-Request", "true"}
@@ -118,7 +118,9 @@ func TestGuideLogosSettings(t *testing.T) {
 		t.Errorf("a new guide's logos: status %d, %s", rec.Code, rec.Body)
 	}
 
-	// A source's guide's: not used at first; its card and the API.
+	// A source's guide's: not used at first; its card and the API. Each
+	// change tells the guides, whose matches the logos' checks follow.
+	changes := f.changed()
 	body = ta.do("GET", "/admin/sources", nil, c).Body.String()
 	mustContain(t, "the sources", body, "<dt>Its guide's logos</dt>", `<option value="none" selected>Not used</option>`)
 	rec = ta.do("POST", "/admin/sources/1/guide-logos", url.Values{"csrf": {csrf}, "guide_logos": {"fill"}}, c, hx...)
@@ -126,6 +128,9 @@ func TestGuideLogosSettings(t *testing.T) {
 		`<option value="fill" selected>`)
 	if src, err := ta.st.Source(ctx, 1); err != nil || src.GuideLogos != store.GuideLogosFill {
 		t.Errorf("the source %+v, %v", src, err)
+	}
+	if f.changed() != changes+1 {
+		t.Errorf("the guides were told of %d changes, want 1", f.changed()-changes)
 	}
 	if rec := ta.do("POST", "/admin/sources/1/guide-logos", url.Values{"csrf": {csrf}, "guide_logos": {"some"}}, c, hx...); rec.Code != http.StatusBadRequest {
 		t.Errorf("a bad choice: status %d", rec.Code)

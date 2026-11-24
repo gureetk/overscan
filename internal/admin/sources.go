@@ -618,6 +618,8 @@ func (a *Admin) setSourceGuideLogos(ctx context.Context, id int64, how string) e
 		return sourceError(err)
 	}
 	a.log.Info("a source's guide's logos set in the admin", "source_id", id, "guide_logos", how)
+	// The channels' logos to check change with it.
+	a.guidesChanged()
 	return nil
 }
 

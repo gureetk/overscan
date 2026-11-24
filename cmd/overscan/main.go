@@ -280,12 +280,14 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger, recent *log
 	// after it has.
 	bgCtx, stopBackground := context.WithCancel(ctx)
 	var background sync.WaitGroup
+	// Logos are checked in the background, into the cache that serves
+	// them, and again as soon as the guides were read or matched (D141).
+	art := artwork.New(filepath.Join(cfg.DataDir, "artwork"), log, version)
+	logos := artwork.NewChecker(st, art, log)
+	ownGuides.OnChange(logos.Poke)
 	background.Go(func() { refresher.Run(bgCtx) })
 	background.Go(func() { ownGuides.Run(bgCtx) })
-	// Logos are checked in the background, into the cache that serves
-	// them (D141).
-	art := artwork.New(filepath.Join(cfg.DataDir, "artwork"), log, version)
-	background.Go(func() { artwork.NewChecker(st, art, log).Run(bgCtx) })
+	background.Go(func() { logos.Run(bgCtx) })
 	background.Go(func() { streams.Run(bgCtx) })
 	background.Go(func() { lib.Run(bgCtx) })
 	// Programmes that boxes schedule are recorded through the hub, into the

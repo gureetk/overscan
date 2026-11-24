@@ -66,6 +66,9 @@ type Own struct {
 
 	wake     chan struct{}
 	requests chan readRequest
+	// changed is told after the channels were matched again or a guide
+	// was read, nil for nothing.
+	changed func()
 
 	mu      sync.Mutex
 	sources bool  // a source's channels or guide changed since the last match
@@ -131,6 +134,12 @@ func (o *Own) poke() {
 	}
 }
 
+// OnChange makes Own call fn after it matched the channels with the
+// guides again or read a guide, so that what follows from the matches,
+// such as the checks of logos (D141), can follow at once. Call it before
+// Run.
+func (o *Own) OnChange(fn func()) { o.changed = fn }
+
 // Reading returns the guide that is being read, 0 if none is.
 func (o *Own) Reading() int64 {
 	o.mu.Lock()
@@ -173,6 +182,9 @@ func (o *Own) Run(ctx context.Context) {
 		case req := <-o.requests:
 			res, err := o.readNow(ctx, req.id)
 			req.done <- readOutcome{res, err}
+			if err == nil && o.changed != nil {
+				o.changed()
+			}
 		}
 	}
 }
@@ -184,6 +196,12 @@ func (o *Own) step(ctx context.Context) {
 	again, changed := o.sources || o.guides, o.guides
 	o.sources, o.guides = false, false
 	o.mu.Unlock()
+	matched, read := false, false
+	defer func() {
+		if (matched || read) && o.changed != nil {
+			o.changed()
+		}
+	}()
 	guides, err := o.store.Guides(ctx)
 	if err != nil {
 		if ctx.Err() == nil {
@@ -204,6 +222,7 @@ func (o *Own) step(ctx context.Context) {
 			}
 			return
 		}
+		matched = true
 	}
 	if len(enabled) == 0 {
 		return
@@ -215,7 +234,6 @@ func (o *Own) step(ctx context.Context) {
 		}
 		return
 	}
-	read := false
 	for _, g := range enabled {
 		if ctx.Err() != nil {
 			return
