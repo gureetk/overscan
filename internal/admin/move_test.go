@@ -149,4 +149,11 @@ func TestMoveAPI(t *testing.T) {
 		http.StatusBadRequest, "bad_move")
 	apiErrorOf(t, ta.apiDo("POST", fmt.Sprintf("sources/%d/moves", main), `{"moves": []}`, c, h...), http.StatusBadRequest,
 		"nothing_to_move")
+	// A large source's moves fit in one body.
+	var many []string
+	for i := range 5000 {
+		many = append(many, fmt.Sprintf(`{"channel": %d, "to": %d}`, 100000+i, 200000+i))
+	}
+	apiErrorOf(t, ta.apiDo("POST", fmt.Sprintf("sources/%d/moves", main), `{"moves": [`+strings.Join(many, ", ")+`]}`, c, h...),
+		http.StatusBadRequest, "bad_move")
 }

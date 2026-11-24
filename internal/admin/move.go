@@ -22,8 +22,8 @@ import (
 // administrator to confirm; nothing moves until they do, and the old
 // source stays until they remove it.
 
-// maxMoveFormBytes bounds the form that confirms a move: a pair of channel
-// IDs for each of 40,000 channels.
+// maxMoveFormBytes bounds the form, or the API's body, that confirms a
+// move: a pair of channel IDs for each of 40,000 channels.
 const maxMoveFormBytes = 2 << 20
 
 // moveRow is a channel that moves, and where to.
@@ -412,7 +412,7 @@ func (a *Admin) apiMoves(w http.ResponseWriter, r *http.Request, _ store.AdminSe
 			To      int64 `json:"to"`
 		} `json:"moves"`
 	}
-	if !readJSON(w, r, &body) {
+	if !readJSONWithin(w, r, &body, maxMoveFormBytes) {
 		return
 	}
 	moves := make([]store.ChannelMove, len(body.Moves))

@@ -240,7 +240,8 @@ func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 
 // readJSONWithin is readJSON for a body of at most limit bytes: the lists
 // of a source's categories, which the page's forms send within the same
-// limit (maxCategoriesFormBytes).
+// limit (maxCategoriesFormBytes), and the moves of a source's channels
+// (maxMoveFormBytes).
 func readJSONWithin(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
 	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
 		apiError(w, http.StatusUnsupportedMediaType, "not_json", "Send the body as application/json.")
