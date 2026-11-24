@@ -89,6 +89,7 @@ type MovieInfo struct {
 	Rating    int           // out of 100
 	Duration  time.Duration // 0 if not known
 	Container string        // the file's extension, "" if not known
+	TMDBID    int64         // the film's ID on TMDB, 0 if the server gives none
 }
 
 // ShowInfo is what the server says about one series, with its episodes.
@@ -334,6 +335,7 @@ func (c *Client) MovieInfo(ctx context.Context, id int64) (MovieInfo, error) {
 			DurationSec number   `json:"duration_secs"`
 			Duration    text     `json:"duration"`
 			RunTime     number   `json:"episode_run_time"`
+			TMDBID      number   `json:"tmdb_id"`
 		}] `json:"info"`
 		MovieData object[struct {
 			ID        number `json:"stream_id"`
@@ -367,6 +369,7 @@ func (c *Client) MovieInfo(ctx context.Context, id int64) (MovieInfo, error) {
 		Rating:    rating(in.Rating, in.Rating5),
 		Duration:  duration(int64(in.DurationSec), string(in.Duration), int64(in.RunTime)),
 		Container: container(string(data.Container)),
+		TMDBID:    max(0, int64(in.TMDBID)),
 	}
 	if m.Name == "" {
 		m.Name = clean(string(in.Name), maxNameLen)

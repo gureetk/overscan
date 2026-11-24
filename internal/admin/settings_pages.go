@@ -47,6 +47,9 @@ type settingsData struct {
 	TMDBFound        int               // folders' titles that TMDB found
 	TMDBMissed       int               // and that it had no match for
 	TMDBNotice       string            // the notice TMDB asks applications to show
+	TMDBPictures     bool              // providers' titles take TMDB's pictures where theirs want replacing (D143)
+	TMDBFilled       int               // titles that show TMDB's pictures
+	PicturesFailing  int               // providers' pictures recorded as not loading
 	CanRecord        bool              // this server records programmes (D89)
 	RecordingsCap    int               // the room recordings may take, in gigabytes; 0 while recording is off
 	RecordUntil      string            // what a recording that a box starts on a channel runs until (D98)
@@ -151,6 +154,12 @@ func (a *Admin) settings(r *http.Request) (settingsData, error) {
 		return d, err
 	}
 	if d.TMDBFound, d.TMDBMissed, err = a.store.TMDBCounts(ctx); err != nil {
+		return d, err
+	}
+	if d.TMDBPictures, err = a.store.TMDBPictures(ctx); err != nil {
+		return d, err
+	}
+	if d.TMDBFilled, d.PicturesFailing, err = a.store.PictureCounts(ctx); err != nil {
 		return d, err
 	}
 	if d.RecordingsCap, err = a.store.RecordingsCap(ctx); err != nil {

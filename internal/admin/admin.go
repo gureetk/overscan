@@ -44,7 +44,7 @@ type Admin struct {
 	// tmdbBase is TMDB's address, which a test changes (D88).
 	tmdbBase string
 	recorder Recorder // records programmes; nil if this server cannot (D89)
-	folders  Folders  // reads the folder sources again; nil for none (D88)
+	folders  Folders  // reads the folder sources again, and looks pictures up on TMDB; nil for none (D88, D143)
 	lists    Lists    // reads a source's films or series again; nil for none (D135)
 }
 
@@ -177,6 +177,7 @@ func (a *Admin) Handler() http.Handler {
 	mux.Handle("POST /admin/settings/timeshift", a.page(a.timeshiftForm))
 	mux.Handle("POST /admin/settings/shared", a.page(a.sharedForm))
 	mux.Handle("POST /admin/settings/tmdb", a.page(a.tmdbForm))
+	mux.Handle("POST /admin/settings/tmdb-pictures", a.page(a.tmdbPicturesForm))
 	mux.Handle("POST /admin/settings/recordings", a.page(a.recordingsForm))
 	mux.Handle("POST /admin/settings/recordings/end", a.page(a.recordingEndForm))
 	mux.Handle("POST /admin/recordings/{id}/{action}", a.page(a.recordingAction))

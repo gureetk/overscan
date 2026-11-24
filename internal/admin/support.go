@@ -391,6 +391,14 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	tmdbPictures, err := a.store.TMDBPictures(ctx)
+	if err != nil {
+		return "", err
+	}
+	tmdbFilled, picturesFailing, err := a.store.PictureCounts(ctx)
+	if err != nil {
+		return "", err
+	}
 	recordingsCap, err := a.store.RecordingsCap(ctx)
 	if err != nil {
 		return "", err
@@ -493,6 +501,8 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 	fmt.Fprintf(&b, "Locks on shelves of films and series, and on titles: %d\n", libraryLocks)
 	fmt.Fprintf(&b, "Radio stations: %d; on the Radio screen alone: %v\n", radio, radioApart)
 	fmt.Fprintf(&b, "Details from TMDB: key set: %v; titles found: %d, without a match: %d\n", tmdbKey != "", tmdbFound, tmdbMissed)
+	fmt.Fprintf(&b, "TMDB's pictures for providers' titles (D143): %v; titles showing them: %d; sources' pictures that do not load: %d\n",
+		tmdbPictures, tmdbFilled, picturesFailing)
 	fmt.Fprintf(&b, "Recordings: room: %d GB (0 is off); the server records: %v; to come: %d, under way: %d, made: %d, failed: %d, called off: %d\n",
 		recordingsCap, a.recorder != nil, recordings[store.RecordingScheduled], recordings[store.RecordingRecording],
 		recordings[store.RecordingDone], recordings[store.RecordingFailed], recordings[store.RecordingCancelled])

@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
+	"time"
 
 	"overscan.gureet.ca/internal/adapters/folder"
 	"overscan.gureet.ca/internal/adapters/plex"
@@ -91,6 +93,13 @@ func Handler(st *store.Store, c *Cache, log *slog.Logger) http.Handler {
 			err = ErrUnusable
 		}
 		if err != nil {
+			if (kind == PosterKind || kind == ThumbKind) && Settled(err) && ProviderPicture(src.Type, address) {
+				// A provider's poster that does not load wants TMDB's in
+				// its place (D143).
+				if err := st.PictureFailed(context.WithoutCancel(r.Context()), src.ID, address, time.Now()); err != nil {
+					log.Error("cannot record a picture that does not load", "kind", kind.Name, "id", id, "error", err)
+				}
+			}
 			http.NotFound(w, r)
 			return
 		}
@@ -145,4 +154,14 @@ func Handler(st *store.Store, c *Cache, log *slog.Logger) http.Handler {
 	})
 	mux.HandleFunc("/artwork/", http.NotFound)
 	return mux
+}
+
+// tmdbImages is where TMDB's pictures are.
+const tmdbImages = "https://image.tmdb.org/"
+
+// ProviderPicture reports whether a title's picture at an address is one
+// that its source gives, of an Xtream server or a Stalker portal, which
+// TMDB's can take the place of when it does not load (D143).
+func ProviderPicture(sourceType, address string) bool {
+	return (sourceType == source.TypeXtream || sourceType == source.TypeStalker) && !strings.HasPrefix(address, tmdbImages)
 }

@@ -81,6 +81,9 @@ type TitleDetails struct {
 	Rating    int             `json:"rating,omitempty"`   // out of 100
 	Duration  int             `json:"duration,omitempty"` // a film's seconds
 	Seasons   []SeasonDetails `json:"seasons,omitempty"`  // a series' seasons, as its source describes them
+	// TMDBID is the film's ID on TMDB that its source gives, 0 if none
+	// (D143).
+	TMDBID int64 `json:"tmdb_id,omitempty"`
 }
 
 // SeasonDetails is what a source says about a season of a series.
@@ -246,6 +249,8 @@ func (s *Store) ApplyLibrary(ctx context.Context, sourceID int64, kind string, c
 			year = excluded.year,
 			rating = excluded.rating,
 			poster = CASE WHEN excluded.poster <> '' THEN excluded.poster ELSE titles.poster END,
+			poster_fill = CASE WHEN excluded.poster <> '' AND excluded.poster <> titles.poster THEN '' ELSE titles.poster_fill END,
+			backdrop_fill = CASE WHEN excluded.poster <> '' AND excluded.poster <> titles.poster THEN '' ELSE titles.backdrop_fill END,
 			container = CASE WHEN excluded.container <> '' THEN excluded.container ELSE titles.container END,
 			file = CASE WHEN excluded.file <> '' THEN excluded.file ELSE titles.file END,
 			added_at = excluded.added_at,
@@ -539,19 +544,22 @@ func (s *Store) Shelves(ctx context.Context, kind string, u Sources) ([]Shelf, e
 
 // TitleRow is a film or a series as a list shows it.
 type TitleRow struct {
-	ID      int64
-	Kind    string
-	Name    string
-	Year    int    // 0 if not known
-	Rating  int    // out of 100, 0 if not known
-	Poster  string // the source's address of its picture, "" if none; devices get one on Overscan
+	ID     int64
+	Kind   string
+	Name   string
+	Year   int // 0 if not known
+	Rating int // out of 100, 0 if not known
+	// Poster is the address of its picture, "" if none: TMDB's where it
+	// replaces the source's (D143), else the source's. Devices get one on
+	// Overscan.
+	Poster  string
 	AddedAt time.Time
 	// Locked is set when devices need the parental PIN to play it, once
 	// the account has one (D85, D86).
 	Locked bool
 }
 
-const titleRowColumns = `t.id, t.kind, t.name, t.year, t.rating, t.poster, t.added_at, ` + titleLocked
+const titleRowColumns = `t.id, t.kind, t.name, t.year, t.rating, ` + titlePosterSQL + `, t.added_at, ` + titleLocked
 
 func scanTitleRow(row rowScanner, extra ...any) (TitleRow, error) {
 	var r TitleRow
@@ -711,7 +719,7 @@ func (s *Store) TitlePage(ctx context.Context, kind string, shelfID int64, text,
 		sort = "t.name COLLATE NOCASE, t.id"
 	}
 	out, err := s.listings(ctx, what, `SELECT `+titleRowColumns+`, COALESCE(c.name, ''), COALESCE(t.category_id, 0),
-		t.summary, t.details, t.container`+from+where+` ORDER BY `+sort+` LIMIT ? OFFSET ?`,
+		t.summary, t.details, t.container, t.poster_fill, t.backdrop_fill`+from+where+` ORDER BY `+sort+` LIMIT ? OFFSET ?`,
 		append(args, max(0, limit), max(0, offset))...)
 	if err != nil {
 		return nil, 0, err
@@ -740,16 +748,16 @@ type Title struct {
 // ErrNotFound if they do not.
 func (s *Store) Title(ctx context.Context, id int64) (Title, error) {
 	var t Title
-	var summary string
+	var summary, posterFill, backdropFill string
 	var details, detailsAt sql.NullString
 	r, err := scanTitleRow(s.db.QueryRowContext(ctx, `
 		SELECT `+titleRowColumns+`, t.source_id, s.type, t.source_key, t.container, t.file, COALESCE(c.name, ''),
-			COALESCE(t.category_id, 0), t.summary, t.details, t.details_at
+			COALESCE(t.category_id, 0), t.summary, t.details, t.details_at, t.poster_fill, t.backdrop_fill
 		FROM titles t JOIN sources s ON s.id = t.source_id
 			LEFT JOIN library_categories c ON c.id = t.category_id
 		WHERE t.id = ? AND `+libraryShown, id),
 		&t.SourceID, &t.SourceType, &t.Key, &t.Container, &t.File, &t.Shelf, &t.CategoryID, &summary, &details,
-		&detailsAt)
+		&detailsAt, &posterFill, &backdropFill)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Title{}, ErrNotFound
 	}
@@ -772,6 +780,7 @@ func (s *Store) Title(ctx context.Context, id int64) (Title, error) {
 			}
 		}
 	}
+	withFills(t.Details, &t.Summary, posterFill, backdropFill)
 	return t, nil
 }
 
@@ -1218,16 +1227,17 @@ type ArtSource struct {
 }
 
 // TitleArt returns the addresses of a title's pictures that devices may ask
-// for, if devices see it: its posters, from its source's list and from its
-// details, and its wide pictures, with its source.
+// for, if devices see it: its posters, TMDB's where it replaces the
+// source's (D143), from its source's list and from its details, and its
+// wide pictures likewise, with its source.
 func (s *Store) TitleArt(ctx context.Context, id int64) (posters, backdrops []string, src ArtSource, err error) {
-	var poster, summary string
+	var poster, summary, posterFill, backdropFill string
 	var details sql.NullString
 	err = s.db.QueryRowContext(ctx, `
-		SELECT t.poster, t.summary, t.details, s.id, s.type, s.user_agent, s.public_only
+		SELECT t.poster, t.summary, t.details, t.poster_fill, t.backdrop_fill, s.id, s.type, s.user_agent, s.public_only
 		FROM titles t JOIN sources s ON s.id = t.source_id
-		WHERE t.id = ? AND `+libraryShown, id).Scan(&poster, &summary, &details, &src.ID, &src.Type, &src.UserAgent,
-		&src.PublicOnly)
+		WHERE t.id = ? AND `+libraryShown, id).Scan(&poster, &summary, &details, &posterFill, &backdropFill, &src.ID, &src.Type,
+		&src.UserAgent, &src.PublicOnly)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil, ArtSource{}, ErrNotFound
 	}
@@ -1240,12 +1250,12 @@ func (s *Store) TitleArt(ctx context.Context, id int64) (posters, backdrops []st
 	if details.Valid {
 		_ = json.Unmarshal([]byte(details.String), &d)
 	}
-	for _, p := range []string{poster, d.Poster} {
+	for _, p := range []string{posterFill, poster, d.Poster} {
 		if p != "" {
 			posters = append(posters, p)
 		}
 	}
-	for _, b := range []string{sum.Backdrop, d.Backdrop} {
+	for _, b := range []string{backdropFill, sum.Backdrop, d.Backdrop} {
 		if b != "" {
 			backdrops = append(backdrops, b)
 		}

@@ -44,8 +44,9 @@ func (s *Store) TMDBKey(ctx context.Context) (string, error) {
 }
 
 // SetTMDBKey keeps the key for TMDB, sealed. An empty key removes it, and
-// with it what TMDB said of titles and the posters on TMDB that folders'
-// titles had from it; the next read of each folder drops the rest.
+// with it what TMDB said of titles, the posters on TMDB that folders'
+// titles had from it, and the pictures that providers' titles had from it
+// (D143); the next read of each folder drops the rest.
 func (s *Store) SetTMDBKey(ctx context.Context, key string) error {
 	if key == "" {
 		tx, err := s.db.BeginTx(ctx, nil)
@@ -63,6 +64,10 @@ func (s *Store) SetTMDBKey(ctx context.Context, key string) error {
 			UPDATE titles SET poster = '' WHERE poster LIKE ? || '%'
 				AND source_id IN (SELECT id FROM sources WHERE type = ?)`, tmdbImages, source.TypeFolder); err != nil {
 			return fmt.Errorf("store: remove TMDB's key: %w", err)
+		}
+		// Providers' titles show their own pictures again (D143).
+		if err := s.clearPictureFills(ctx, tx); err != nil {
+			return err
 		}
 		return tx.Commit()
 	}

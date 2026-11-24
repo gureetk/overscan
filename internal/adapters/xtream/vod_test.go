@@ -47,7 +47,7 @@ const (
 	movieInfo = `{"info":{"name":"The Long Field (2024)","o_name":"","cover_big":"http://img.example/5001-big.jpg",
 		"movie_image":"http://img.example/5001-still.jpg","releasedate":"2024-09-12","director":"C. Director","actors":"D. Actor",
 		"cast":"","description":"A long field.","plot":"","age":"","mpaa_rating":"PG","country":"Nowhere","genre":"Drama",
-		"backdrop_path":["","http://img.example/5001-wide.jpg"],"duration_secs":0,"duration":"01:52:10","rating":"7.4"},
+		"backdrop_path":["","http://img.example/5001-wide.jpg"],"duration_secs":0,"duration":"01:52:10","rating":"7.4","tmdb_id":"90001"},
 		"movie_data":{"stream_id":5001,"name":"The Long Field","added":"1767225600","category_id":"21","container_extension":"mkv"}}`
 
 	seriesInfo = `{"seasons":[{"air_date":"2021-02-03","episode_count":2,"id":11,"name":"Season 1","overview":"The first.",
@@ -193,7 +193,7 @@ func TestMovieInfo(t *testing.T) {
 	want := MovieInfo{Name: "The Long Field", Poster: "http://img.example/5001-big.jpg",
 		Backdrop: "http://img.example/5001-wide.jpg", Plot: "A long field.", Genre: "Drama", Cast: "D. Actor",
 		Director: "C. Director", Country: "Nowhere", Released: "2024-09-12", AgeRating: "PG", Year: 2024, Rating: 74,
-		Duration: time.Hour + 52*time.Minute + 10*time.Second, Container: "mkv"}
+		Duration: time.Hour + 52*time.Minute + 10*time.Second, Container: "mkv", TMDBID: 90001}
 	if got != want {
 		t.Errorf("got  %+v\nwant %+v", got, want)
 	}
