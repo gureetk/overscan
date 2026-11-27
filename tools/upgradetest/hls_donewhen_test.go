@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // M11's Done when (the plan, section 14), as far as its first two phases
@@ -25,7 +26,8 @@ import (
 // connection to the source while the shared tuner is off; set always with a
 // profile, the channel reaches two more players in the profile's size
 // through one transcode and the same connection; no address shows the
-// source; and turning it off puts everything back.
+// source; and turning it off puts everything back, ends the sessions, whose
+// tokens then open nothing, and leaves no segments behind.
 //
 // The rest is walked elsewhere: the playlist's rules and the cutting in
 // internal/hub's TestCutPlaylistRules and internal/hlscut's tests; ffmpeg
@@ -188,12 +190,14 @@ func TestHLSDoneWhen(t *testing.T) {
 	call("POST", "transcode-profiles", map[string]any{"name": "small", "max_lines": 576, "quality": "low"}, nil)
 	call("PATCH", fmt.Sprintf("lineup/channels/%d", hn), map[string]any{"transcode": map[string]any{"mode": "always", "profile": "small"}}, nil)
 	before = len(p.asked())
+	var last string // the last player's rendition
 	for i, agent := range []string{"VLC/3.0.20 LibVLC/3.0.20", "TiviMate/5.1.7"} {
 		resp, master := fetch(agent, xtream+".m3u8")
 		lines := strings.Split(strings.TrimSpace(string(master)), "\n")
 		if resp.StatusCode != http.StatusOK || len(lines) != 4 {
 			t.Fatalf("player %d's playlist of renditions, transcoded: %s %q", i, resp.Status, master)
 		}
+		last = lines[3]
 		resp, media := fetch(agent, base+lines[3])
 		if resp.StatusCode != http.StatusOK || !strings.Contains(string(media), "#EXT-X-TARGETDURATION:4\n") {
 			t.Fatalf("player %d's media playlist, transcoded: %s %q", i, resp.Status, media)
@@ -226,5 +230,34 @@ func TestHLSDoneWhen(t *testing.T) {
 	}
 	if f := formats(); strings.Join(f, ",") != "ts" {
 		t.Errorf("formats once off again: %v", f)
+	}
+	// The sessions' own addresses open nothing any more, the session's
+	// token included, and the buffers that they were cut from go.
+	agent := "TiviMate/5.1.7"
+	for path, want := range map[string]int{
+		last: http.StatusNotFound,
+		strings.TrimSuffix(last, "hls.m3u8") + "1.ts":   http.StatusNotFound,
+		strings.TrimSuffix(last, "/hls.m3u8") + ".m3u8": http.StatusForbidden,
+	} {
+		if resp, _ := fetch(agent, base+path); resp.StatusCode != want {
+			t.Errorf("the ended session's %s: %s, want %d", path[strings.LastIndex(path, "/"):], resp.Status, want)
+		}
+	}
+	buffers := filepath.Join(w.data, "timeshift")
+	files := func() int {
+		n := 0
+		_ = filepath.WalkDir(buffers, func(_ string, d os.DirEntry, err error) error {
+			if err == nil && !d.IsDir() {
+				n++
+			}
+			return nil
+		})
+		return n
+	}
+	for deadline := time.Now().Add(time.Minute); files() > 0; time.Sleep(250 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Errorf("%d files left in the buffers a minute after the players' HLS ended", files())
+			break
+		}
 	}
 }

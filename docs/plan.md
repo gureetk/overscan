@@ -661,6 +661,7 @@ Players that ask for HLS get it from the hub, for live channels as their sources
   - the security checklist on what is new: the playlist's and the segments' addresses, tokens and sessions, and what a player can make the hub keep;
   - docs, upgrade tests with M11's settings, and a test that walks the *Done when*;
   - a soak that serves HLS, with the server's memory, the disk that segments take and the processor measured and written in [`testing.md`](testing.md).
+  - **In place:** the review in [`security.md`](security.md), after which the tokens of HLS that the hub stopped, and those that an output gave the stopped players, start nothing again while they are valid; `TestCutHLSStopped`, with forged and changed tokens; the walk of the *Done when*, to the end of the sessions and their buffers; the soak's `-hls`, which the *Soak* workflow's job of transcodes runs with two players; and the measures in [`testing.md`](testing.md), *For 1.4*.
 
   Then v1.4.0-rc.N, whose steps test M10's essentials too, and v1.4.0 on the maintainer's word.
 
@@ -673,7 +674,7 @@ Players that ask for HLS get it from the hub, for live channels as their sources
 - memory stays within section 15's budgets, with the disk that segments take measured and written down;
 - and an upgrade changes nothing.
 
-*Status:* planned in detail (D153). Its first phase, live channels as HLS as their sources send them, is in place (v1.4.0-alpha.1), and so is its second, HLS of live transcodes (v1.4.0-alpha.2).
+*Status:* planned in detail (D153). Its first phase, live channels as HLS as their sources send them, is in place (v1.4.0-alpha.1), and so is its second, HLS of live transcodes (v1.4.0-alpha.2), and its hardening, in the candidate v1.4.0-rc.1.
 
 ---
 

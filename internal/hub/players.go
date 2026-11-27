@@ -153,8 +153,12 @@ func (h *Hub) StopPlayers(match func(Player) bool, reason string) int {
 		}
 	}
 	for _, s := range stop {
+		if s.cut {
+			h.stopCut(s.nonce)
+		}
 		h.end(s, reason)
 	}
+	h.stopCutLinks(match)
 	return len(stop)
 }
 

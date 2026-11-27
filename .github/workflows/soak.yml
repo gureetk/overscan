@@ -6,11 +6,12 @@
 # hour-long placeholder programmes and a read of the XMLTV guide, and four
 # simulated boxes that watch channels, switch between them and browse the
 # films, checked against the memory budgets of the plan (section 15); and,
-# in a job of its own, two boxes on channels of 720p pictures that live TV
-# transcodes always in software with a small profile (D147), measuring the
-# server's ffmpegs too. It runs for ten minutes every Monday, and on demand
-# for as long as asked, up to five and a half hours, since a job of
-# GitHub's stops at six; not on every pull request.
+# in a job of its own, two boxes and two HLS players (D153) on channels of
+# 720p pictures that live TV transcodes always in software with a small
+# profile (D147), measuring the server's ffmpegs and its buffers too. It
+# runs for ten minutes every Monday, and on demand for as long as asked, up
+# to five and a half hours, since a job of GitHub's stops at six; not on
+# every pull request.
 name: Soak
 
 on:
@@ -110,7 +111,7 @@ jobs:
             echo "::error::'$DURATION' is longer than 330 minutes, which a job of six hours cannot hold with the build and the setting up"
             exit 1
           fi
-          go run ./tools/soak -duration "$DURATION" -boxes 2 -channels 2000 -transcode small -picture-size 1280x720 -ffmpeg-mb 400 -out soak-transcode.csv
+          go run ./tools/soak -duration "$DURATION" -boxes 2 -hls 2 -channels 2000 -transcode small -picture-size 1280x720 -ffmpeg-mb 400 -out soak-transcode.csv
 
       - name: Keep the samples
         if: always()
