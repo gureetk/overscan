@@ -6,7 +6,8 @@
 # Builds and starts the container image with Docker Compose from DIR, which
 # holds an overscan binary, the Dockerfile and compose.yaml, as an unpacked
 # release archive does, then checks that the server answers, finds ffmpeg,
-# runs as its own user and keeps its files private, and that the backup and
+# holds VA-API drivers and tests the graphics, runs as its own user and
+# keeps its files private, and that the backup and
 # restore steps of docs/install-docker.md work. It stops the container and
 # removes its volume at the end.
 set -euo pipefail
@@ -47,6 +48,22 @@ echo "The server answers."
 "${compose[@]}" logs --no-color | grep "ffmpeg found to repair streams with" >/dev/null || fail "the server found no ffmpeg"
 "${compose[@]}" logs --no-color | grep "ffprobe found to read" >/dev/null || fail "the server found no ffprobe"
 echo "The server found ffmpeg and ffprobe."
+
+# Debian's VA-API drivers are in the image (D149), and the test of the
+# graphics ends, one way or the other, without any.
+"${compose[@]}" exec -T overscan sh -c 'ls /usr/lib/*/dri/*_drv_video.so' | grep -E '/(radeonsi|iHD)_drv_video\.so$' >/dev/null ||
+	fail "the image has no VA-API drivers"
+tested=no
+for _ in $(seq 1 30); do
+	if "${compose[@]}" logs --no-color | grep -E "graphics tested for ffmpeg|no graphics for ffmpeg" >/dev/null; then
+		tested=yes
+		break
+	fi
+	sleep 1
+done
+[ "$tested" = yes ] || fail "the server did not say what its graphics can do"
+"${compose[@]}" exec -T overscan overscan gpu || [ $? -eq 1 ] || fail "the gpu command failed"
+echo "The image has VA-API drivers, and tests the graphics."
 
 uid=$("${compose[@]}" exec -T overscan id -u)
 [ "$uid" != 0 ] || fail "the server runs as root"

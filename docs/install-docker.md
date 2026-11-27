@@ -1,6 +1,6 @@
 # Running Overscan in Docker
 
-The first target is a Proxmox container ([`install-lxc.md`](install-lxc.md)), but every release archive also holds a `Dockerfile` and a `compose.yaml`. They build a small image from the archive's own binary: Debian's slim image with ffmpeg, which repairs streams (D57). Nothing is pulled from a registry but Debian's image and packages. From v1.0.0 on, each full release also publishes that image, ready to pull ([below](#the-published-image)).
+The first target is a Proxmox container ([`install-lxc.md`](install-lxc.md)), but every release archive also holds a `Dockerfile` and a `compose.yaml`. They build a small image from the archive's own binary: Debian's slim image with ffmpeg, which repairs and transcodes streams (D57, D147), and Debian's free VA-API drivers, for ffmpeg to transcode on Intel and AMD graphics (D148). Nothing is pulled from a registry but Debian's image and packages. From v1.0.0 on, each full release also publishes that image, ready to pull ([below](#the-published-image)).
 
 Overscan is made for the home network: do not forward its port on your router, and reach it from away through a VPN into your home network (D128).
 
@@ -33,6 +33,14 @@ The image has no configuration file: Overscan uses its defaults and the `OVERSCA
     docker compose up -d
 
 The container runs as its own user, with a read-only file system apart from its volume, no privileges and no capabilities.
+
+## Graphics
+
+For ffmpeg to transcode on the machine's graphics (D148), give the container the render devices, and the group that owns them. On the machine:
+
+    getent group render | cut -d: -f3
+
+prints the group's number. In `compose.yaml`, remove the `#` before the lines `devices:`, `- /dev/dri:/dev/dri`, `group_add:` and the line under it, and put that number in place of `<that number>`. Then `docker compose up -d`. The log says `graphics tested for ffmpeg to transcode on`, with what they can do, or `no graphics for ffmpeg to transcode on`, with why; so does the admin's *Settings* → *Transcoding* page. `docker compose exec overscan overscan gpu` tests them again and prints it. The image's drivers cover Intel graphics from Broadwell on (on amd64) and AMD graphics; [transcoding.md](transcoding.md) says more.
 
 ## Manage
 

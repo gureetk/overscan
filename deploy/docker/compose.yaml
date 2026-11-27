@@ -29,6 +29,13 @@ services:
     environment:
       OVERSCAN_LOG_LEVEL: info
       # OVERSCAN_ADMIN_LISTEN: "127.0.0.1:8081"
+    # The server's graphics, for ffmpeg to transcode on them (D148): the
+    # render devices, and the ID of the group that owns them on this
+    # machine, which `getent group render | cut -d: -f3` prints.
+    # devices:
+    #   - /dev/dri:/dev/dri
+    # group_add:
+    #   - "<that number>"
     # Overscan writes only to its volume, and needs no privileges.
     read_only: true
     tmpfs:

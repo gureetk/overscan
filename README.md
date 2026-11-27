@@ -50,9 +50,11 @@ interface, and in apps that speak the Stalker portal protocol. The admin adds
 sources, arranges the lineup (groups, names, numbers, hidden channels, parental
 locks), approves devices and shows what is playing. The stream hub proxies every
 stream, relays HLS, leaves out what a source sends again, and can repair a
-channel's timestamps with ffmpeg. Overscan installs as a service in a Proxmox
-container or another Debian system, from an archive or a Debian package, or
-runs in Docker, from the archive or the published image.
+channel's timestamps with ffmpeg, or transcode channels with profiles of the
+household's own, on the server's Intel or AMD graphics where it has them
+([docs/transcoding.md](docs/transcoding.md)). Overscan installs as a service
+in a Proxmox container or another Debian system, from an archive or a Debian
+package, or runs in Docker, from the archive or the published image.
 
 The box and Stalker clients browse and play the films and series of Xtream
 servers, Stalker portals, Jellyfin and Plex servers and folders on the server,

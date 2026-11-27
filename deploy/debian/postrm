@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # The Debian package's postrm (D124). Removing the package keeps the
-# configuration and the data; purging it removes the configuration file. The
+# configuration and the data; purging it removes the configuration file, and
+# the drop-in for the graphics if it was installed. The
 # data in /var/lib/overscan, which holds the database, the key file and the
 # recordings, always stays, and so does the overscan user.
 set -e
@@ -17,6 +18,9 @@ remove)
 purge)
 	rm -f /etc/overscan/overscan.yaml
 	rmdir /etc/overscan 2>/dev/null || true
+	# The drop-in for the graphics, copied from /usr/share/overscan (D149).
+	rm -f /etc/systemd/system/overscan.service.d/gpu.conf
+	rmdir /etc/systemd/system/overscan.service.d 2>/dev/null || true
 	echo "Removed /etc/overscan/overscan.yaml. The data in /var/lib/overscan stays: remove it yourself once you no longer need it."
 	;;
 esac

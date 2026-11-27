@@ -57,6 +57,24 @@ Recordings (D89), once turned on in the admin's *Settings*, go in `/var/lib/over
 
 At its start, the server points the `recordings` source at the new folder. Recordings made before stay where they were: move their files into the new folder to keep them on the box's shelf. The admin still deletes them, from either folder.
 
+### Graphics
+
+For ffmpeg to transcode on the server's graphics (D148), the container needs the host's render device, and the service needs to reach it:
+
+1. In the container, `getent group render | cut -d: -f3` prints the number of the group that will own the device.
+2. On the host, with the container stopped, add a line to `/etc/pve/lxc/<id>.conf`, with that number, then start the container:
+
+       dev0: /dev/dri/renderD128,gid=<that number>
+
+   The host's kernel loads the graphics' firmware, where the host has it; Intel graphics need it to keep to a bit rate in low-power mode ([transcoding.md](transcoding.md)).
+3. In the container, from the unpacked archive:
+
+       ./install.sh --gpu
+
+   It installs a drop-in that gives the service the graphics (D149), adds the `overscan` user to the `render` group, and installs the VA-API driver for Intel or AMD graphics. Later upgrades with `./install.sh` keep it; `./install.sh --no-gpu` removes it. With the Debian package, [transcoding.md](transcoding.md) gives the two commands.
+
+The log then says `graphics tested for ffmpeg to transcode on`, with what they can do; `runuser -u overscan -- overscan gpu` tests them again and prints it.
+
 ## 4. Manage
 
 Run Overscan's commands as its user. Debian containers may not have `sudo`; `runuser` is always there:
