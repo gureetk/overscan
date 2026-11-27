@@ -130,6 +130,7 @@ func (a *Admin) Handler() http.Handler {
 	mux.Handle("GET /admin/guides/{id}", a.page(a.guidePage))
 	mux.Handle("POST /admin/guides/{id}", a.page(a.saveGuideForm))
 	mux.Handle("POST /admin/guides/{id}/{action}", a.page(a.guideAction))
+	mux.Handle("POST /admin/guides/sources/{id}/{action}", a.page(a.sourceGuideAction))
 	mux.Handle("GET /admin/lineup", a.page(a.lineupRoute(a.lineupPage)))
 	mux.Handle("GET /admin/lineup/channels/{id}/edit", a.page(a.lineupRoute(a.entryPanel)))
 	mux.Handle("POST /admin/lineup/channels/{id}", a.page(a.lineupRoute(a.saveEntry)))

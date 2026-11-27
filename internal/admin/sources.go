@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"overscan.gureet.ca/internal/catalog"
+	"overscan.gureet.ca/internal/guide"
 	"overscan.gureet.ca/internal/source"
 	"overscan.gureet.ca/internal/store"
 )
@@ -34,6 +35,11 @@ type Sources interface {
 	RefreshNow(ctx context.Context, id int64) (store.CatalogChanges, error)
 	// Reload makes the reader take the sources' new settings.
 	Reload()
+	// ReadGuideNow reads a source's guide now, due or not; the read goes on
+	// if ctx ends first.
+	ReadGuideNow(ctx context.Context, id int64) (guide.Result, error)
+	// GuideReading reports whether a source's guide is being read.
+	GuideReading(id int64) bool
 }
 
 // UseSources gives the admin what reads the sources. Without it, the admin

@@ -17,6 +17,7 @@ import (
 
 	"overscan.gureet.ca/internal/adapters/xtream"
 	"overscan.gureet.ca/internal/catalog"
+	"overscan.gureet.ca/internal/guide"
 	"overscan.gureet.ca/internal/source"
 	"overscan.gureet.ca/internal/store"
 )
@@ -30,6 +31,32 @@ type fakeSources struct {
 	account  *xtream.Account // what a test finds about an Xtream account
 	refreshd []int64
 	readErr  error
+	// What ReadGuideNow does: the sources whose guides it read, what it
+	// gives back, and whether it waits for its context to end; and the
+	// source whose guide GuideReading says is being read.
+	guideReads   []int64
+	guideRes     guide.Result
+	guideErr     error
+	guideSlow    bool
+	readingGuide int64
+}
+
+func (f *fakeSources) ReadGuideNow(ctx context.Context, id int64) (guide.Result, error) {
+	f.mu.Lock()
+	f.guideReads = append(f.guideReads, id)
+	slow, res, err := f.guideSlow, f.guideRes, f.guideErr
+	f.mu.Unlock()
+	if slow {
+		<-ctx.Done()
+		return guide.Result{}, ctx.Err()
+	}
+	return res, err
+}
+
+func (f *fakeSources) GuideReading(id int64) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.readingGuide == id
 }
 
 func (f *fakeSources) Test(_ context.Context, s source.Settings) (catalog.Tested, error) {

@@ -32,6 +32,9 @@ type fakePanel struct {
 	formats  string // allowed_output_formats, as JSON
 	streams  string // get_live_streams, as JSON
 	playlist string // get.php, with HOST for the server's address
+	guides   int    // how many times xmltv.php was asked for
+	// hold, if not nil, holds each answer of xmltv.php until it closes.
+	hold chan struct{}
 }
 
 const panelPassword = "pw/" + secret
@@ -78,6 +81,12 @@ func newPanel(t *testing.T) (*fakePanel, *httptest.Server) {
 		case "/player_api.php?get_live_streams":
 			io.WriteString(w, p.streams)
 		case "/xmltv.php?":
+			p.guides++
+			if hold := p.hold; hold != nil {
+				p.mu.Unlock()
+				<-hold
+				p.mu.Lock()
+			}
 			start := time.Now().UTC().Truncate(time.Hour)
 			fmt.Fprintf(w, `<?xml version="1.0"?><tv><channel id="news.example"><display-name>Example News</display-name></channel>
 				<programme start="%s +0000" stop="%s +0000" channel="news.example"><title>News Hour</title></programme></tv>`,
@@ -476,5 +485,68 @@ func TestGuideAfterRefresh(t *testing.T) {
 	}
 	if strings.Contains(logs.String(), secret) {
 		t.Errorf("the log shows the password: %s", logs)
+	}
+}
+
+// TestReadGuideNow reads a source's guide that is not due, as the admin's
+// Read now does, and waits for it no longer than its context says.
+func TestReadGuideNow(t *testing.T) {
+	p, srv := newPanel(t)
+	st, r, _ := newStore(t)
+	ctx := context.Background()
+	id, err := st.AddSource(ctx, xtreamSettings(srv))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.ReadGuideNow(ctx, id); !errors.Is(err, ErrNoGuideReads) {
+		t.Errorf("before Run: %v", err)
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		r.Run(runCtx)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+	waitFor(t, "the guide", func() bool {
+		src, err := st.Source(ctx, id)
+		return err == nil && !src.Guide.ReadAt.IsZero() && !r.GuideReading(id)
+	})
+	asked := func() int {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		return p.guides
+	}
+	if asked() != 1 {
+		t.Fatalf("the guide was asked for %d times", asked())
+	}
+	res, err := r.ReadGuideNow(ctx, id)
+	if err != nil || res.Channels != 1 || res.Programmes != 1 || asked() != 2 || r.GuideReading(id) {
+		t.Fatalf("read now: %+v, %v; asked %d times", res, err, asked())
+	}
+	// A read that takes longer than the caller waits goes on, and the
+	// source's guide is marked as being read until it ends.
+	hold := make(chan struct{})
+	p.mu.Lock()
+	p.hold = hold
+	p.mu.Unlock()
+	short, stop := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer stop()
+	if _, err := r.ReadGuideNow(short, id); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a read longer than its wait: %v", err)
+	}
+	if !r.GuideReading(id) {
+		t.Error("the guide is not marked as being read")
+	}
+	close(hold)
+	waitFor(t, "the read to end", func() bool { return !r.GuideReading(id) })
+	if src, err := st.Source(ctx, id); err != nil || src.Guide.Error != "" || src.Guide.Channels != 1 || asked() != 3 {
+		t.Errorf("after the read that went on: %+v, %v; asked %d times", src.Guide, err, asked())
+	}
+	if _, err := r.ReadGuideNow(ctx, 9999); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("a source that is not there: %v", err)
 	}
 }

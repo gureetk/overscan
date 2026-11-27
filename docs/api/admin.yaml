@@ -3709,6 +3709,64 @@ paths:
         "502":
           $ref: "#/components/responses/SourceFailed"
 
+  /sources/{id}/guide/read:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [sources, guides]
+      operationId: readSourceGuide
+      summary: Read a source's guide now
+      description: >-
+        Reads the source's own guide now, whether or not it is due, once a
+        read of it under way ends, and waits up to 20 seconds for it: an
+        Xtream server's or a Stalker portal's guide, or the one that a
+        playlist names. A read that takes longer goes on: the answer is then
+        202, with `reading` true, and the source's `guide` says how it ended.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "200":
+          description: What the read stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceGuideRead"
+        "202":
+          description: The read goes on.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceGuideRead"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >-
+            The source has no channels, so no guide (`no_channels`), its
+            playlist names no guide (`no_guide`), or it is off (`source_off`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: >-
+            The guide could not be read (`guide_failed`): the message says
+            why, without the address or the login.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: This server cannot read sources' guides from the admin (`no_reader`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /sources/{id}/moves:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -5141,6 +5199,27 @@ components:
         skipped:
           type: integer
           description: Programmes and channels that it could not read, or that were too many.
+    SourceGuideRead:
+      type: object
+      description: What a read of a source's guide stored, or, with `reading` true, that it goes on.
+      required: [reading, channels, by_name, listed, programmes, skipped]
+      properties:
+        reading:
+          type: boolean
+        channels:
+          type: integer
+          description: The source's channels that it gives programmes to.
+        by_name:
+          type: integer
+          description: Of those, the ones that their names matched.
+        listed:
+          type: integer
+          description: The channels that the guide describes.
+        programmes:
+          type: integer
+        skipped:
+          type: integer
+          description: Programmes that it could not read, or that were too many.
     Source:
       type: object
       required: [id, name, type, host, address, enabled, max_connections, refresh_seconds, user_agent, numbers,
