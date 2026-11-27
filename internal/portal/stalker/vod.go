@@ -452,13 +452,14 @@ func seasonName(number int, name string) string {
 
 // createTitleLink answers vod/create_link and series/create_link with a link
 // that plays the film, or the episode of a season, that cmd names, through
-// the hub, as it is (D75): a season's episode is the one that the series
-// parameter names, or its first. The answer is an address with no player
+// the hub, as it is (D75), or transcoded where its setting says always, for
+// the client to seek in by bytes (D151): a season's episode is the one that
+// the series parameter names, or its first. The answer is an address with no player
 // prefix, which clients that keep a cmd's last word read the same way. The
 // error is nothing_to_play for a title that devices do not see, one that is
 // locked once the account has a PIN (D85), a series without a season, or an
 // episode that the season lacks, and limit when the title's source has no
-// free connection.
+// free connection, or the server no room to transcode it.
 func (a *API) createTitleLink(w http.ResponseWriter, r *http.Request, d store.Device) {
 	reply := func(cmd, errText string) {
 		writeJS(w, struct {
@@ -503,7 +504,12 @@ func (a *API) createTitleLink(w http.ResponseWriter, r *http.Request, d store.De
 		reply("", "limit")
 		return
 	}
-	reply("http://"+r.Host+a.hub.ItemLink(d.ID, item), "")
+	link, err := a.hub.PreparePlayer(ctx, d.ID, item)
+	if err != nil {
+		reply("", "limit") // no free connection, or no room to transcode it
+		return
+	}
+	reply("http://"+r.Host+link, "")
 }
 
 // episodeOf returns the episode of a series that a season's number and an

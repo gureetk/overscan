@@ -602,6 +602,7 @@ A household chooses what Overscan transcodes and how, for live TV and for films 
 
   A Jellyfin server's own transcoder (D71) stays as D78 says.
   - **In place:** *Settings* → *Transcoding* → *Films and series*, a shelf's *Transcoding…* on *Movies* and *Series*, and *Transcoding* in the bar of ticked titles; the API's `vod_transcode`, and `transcode` on shelves and titles, with `set_by` in the titles' lists (schema 54); *always* through D73's path, on the graphics or in software, with the profile's sound as far as the box plays it; D73's own transcodes on the graphics where they make H.264; and the support bundle's counts (D150).
+  - **Changed after rc.1** (D151): *always* reaches players of the Xtream output and Stalker clients too, transcoded at a constant rate so that they seek in it by bytes; *never* no longer stops a Jellyfin server's own transcoder.
 - The milestone's hardening:
   - the security checklist on what is new: profiles' values on ffmpeg's command line, the device's path, and the sandbox's drop-in;
   - docs, and upgrade tests with M10's settings;
@@ -625,7 +626,7 @@ A household chooses what Overscan transcodes and how, for live TV and for films 
 - memory stays within section 15's budgets, with each kind of transcode's ffmpeg measured and written down;
 - and an upgrade changes nothing.
 
-*Status:* planned in detail (D146). Its first phase, profiles and what is transcoded for live TV in software, is in place (v1.3.0-alpha.1), and so are its second, the graphics through VA-API (v1.3.0-alpha.2), its third, the packaging that lets the service reach them (v1.3.0-alpha.3), its fourth, films and series (v1.3.0-alpha.4), and its hardening, in the candidate v1.3.0-rc.1.
+*Status:* planned in detail (D146). Its first phase, profiles and what is transcoded for live TV in software, is in place (v1.3.0-alpha.1), and so are its second, the graphics through VA-API (v1.3.0-alpha.2), its third, the packaging that lets the service reach them (v1.3.0-alpha.3), its fourth, films and series (v1.3.0-alpha.4), and its hardening, in the candidate v1.3.0-rc.1; rc.2 adds films set always for players and Stalker clients (D151).
 
 ### M11: HLS output (M)
 Planned in detail once M10 ends. HLS from the hub for players that ask for it: films and episodes that ffmpeg makes, so that players that seek by byte ranges can seek in them, and live channels as HLS. It replaces D110's line that HLS output waits in the backlog.
@@ -818,7 +819,8 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 - Profiles that the administrator makes, of a codec, a largest size, a quality, a highest bit rate, a frame rate, deinterlacing, HDR made SDR and the sound, beside the fixed ones; live TV, a group and a channel are transcoded as needed, always with one, or never; every live transcode's speed is watched (D147).
 - The server tests at start what its graphics do through VA-API, with pictures that ffmpeg makes, and transcodes on them what passed, up to a number at a time of their own; a stream that finds them busy or failing goes to software, then as its source sends it (D148).
 - The service reaches the graphics only where the administrator chooses it, through a drop-in that opens the DRM devices and the `render` group alone; the package suggests the VA-API drivers, and the image holds the free ones (D149).
-- Films and series as a whole, a shelf and a title are transcoded for the boxes as needed, always with a profile, or never, the narrowest winning; *always* and D73's own transcodes go on the graphics where they make the codec, else in software; *never* sends the video as it is (D150).
+- Films and series as a whole, a shelf and a title are transcoded for the boxes as needed, always with a profile, or never, the narrowest winning; *always* and D73's own transcodes go on the graphics where they make the codec, else in software; *never* keeps Overscan's own transcodes from the video (D150).
+- A title set always reaches players and Stalker clients transcoded at a constant rate, which they seek in by bytes (D151).
 - The reference client reads Overscan through the Xtream output, without a source type of Overscan's own (open question 2).
 - HDHomeRun emulation waits in the backlog (open question 6).
 

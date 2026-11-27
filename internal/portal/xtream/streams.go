@@ -184,8 +184,10 @@ func (o *Output) live(w http.ResponseWriter, r *http.Request) {
 
 // movie serves GET /movie/<username>/<password>/<stream_id>.<ext>: the
 // film's file as it is, through the hub, which passes on a player's range
-// requests so that it can seek (D64, D75). The extension is not checked:
-// a player takes the one its list gave.
+// requests so that it can seek (D64, D75), or, where its setting transcodes
+// it always, ffmpeg's transcode, in which the player seeks by bytes as in
+// a file (D151). The extension is not checked: a player takes the one its
+// list gave.
 func (o *Output) movie(w http.ResponseWriter, r *http.Request) {
 	o.item(w, r, store.KindMovie)
 }
@@ -226,7 +228,7 @@ func (o *Output) item(w http.ResponseWriter, r *http.Request, kind string) {
 		return
 	}
 	player := output.Player(o.hub, acct.ID, output.Xtream, r)
-	o.hub.ServeLink(w, r, o.hub.ItemLink(player, item))
+	o.hub.ServePlayerItem(w, r, player, item)
 }
 
 // archive serves GET /timeshift/<username>/<password>/<stream_id>.ts?start=S&end=E,

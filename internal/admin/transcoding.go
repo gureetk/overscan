@@ -419,10 +419,10 @@ func liveTranscodeText(t store.Transcode, describe func(string) string) string {
 func vodTranscodeText(t store.Transcode, describe func(string) string) string {
 	switch {
 	case t.Never:
-		return "Never: every film and episode plays with its video as its source sends it, even where the box may not play it, unless its shelf or the title says otherwise. Their sound is still converted where the Settings page says so."
+		return "Never: this server never transcodes a film's or an episode's video, even where the box may not play it, unless its shelf or the title says otherwise. A Jellyfin server still transcodes its own where Let Jellyfin transcode is on, and the sound is still converted where the Settings page says so."
 	case t.Profile != "":
-		return fmt.Sprintf("Always: every film and episode is transcoded with %s (%s) for the boxes, whether or not they could play it as it is, unless its shelf or the title says otherwise.",
+		return fmt.Sprintf("Always: every film and episode is transcoded with %s (%s) for the boxes, the players and the Stalker clients, whether or not they could play it as it is, unless its shelf or the title says otherwise.",
 			t.Profile, describe(t.Profile))
 	}
-	return "As needed: a film or an episode is transcoded only when the box cannot play its video, as the Settings page allows, unless its shelf or the title says otherwise."
+	return "As needed: a film or an episode is transcoded only when the box cannot play its video, as the Settings page allows, unless its shelf or the title says otherwise. Players and Stalker clients get it as its source sends it."
 }

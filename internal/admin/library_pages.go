@@ -384,7 +384,7 @@ func (a *Admin) titlesAction(kind string) signedInFn {
 			"show":           "Showed " + what + ".",
 			"lock":           "Locked " + what + ": devices need the parental PIN to play them.",
 			"unlock":         "Unlocked " + what + ". Those on a locked shelf stay locked.",
-			"notranscode":    "Set " + what + " never to be transcoded: the boxes get their video as their sources send it.",
+			"notranscode":    "Set " + what + " never to be transcoded by this server.",
 			"transcodeshelf": "Set " + what + " to be transcoded as their shelf says.",
 			"transcode":      "Set " + what + " to be transcoded always, with " + t.Profile + ".",
 		}[action]
