@@ -40,7 +40,7 @@ Overscan is the server. It ingests content from the sources people already have,
 2. **The server owns the truth.** Upstream URLs and credentials never reach a client. Clients get short-lived links minted by Overscan, and streams are proxied unless a source is marked as safe to redirect.
 3. **Resolve at play time.** Links expire upstream, so Overscan asks for them when someone presses play.
 4. **Be lenient in, strict out.** Parse messy upstream data defensively and emit clean, predictable answers.
-5. **Prefer not transcoding.** Redirect, proxy or remux first; transcode only when a device cannot play the source.
+5. **Prefer not transcoding.** Redirect, proxy or remux first; transcode only when a device cannot play the source, or where the household says to transcode always (D146).
 6. **Light enough for an LXC.** Budgets for RAM and CPU are part of the design (section 15).
 7. **Clean room.** See section 17.
 8. **Interoperate, and grow where households need it.** Overscan reads the M3U, XMLTV and Xtream output of other tools, so a household can keep one it likes, or manage its sources in Overscan alone (D133). Jobs outside a household's needs, such as pseudo-channels from libraries, stay with tools made for them.
@@ -560,12 +560,65 @@ Each phase ends with a pre-release of v1.2.0. In this order:
 *Status:* done, and released in v1.2.0 on 27 November 2026, before tests on the box and with players. Its pre-releases: guides of their own (v1.2.0-alpha.1), a channel's guide chosen by hand (alpha.2), logos (alpha.3), placeholder programmes (alpha.4), TMDB's pictures for providers' titles (alpha.5), moving to other sources (alpha.6); then the candidates, with the milestone's hardening (rc.1) and each source's own guide on the *Guides* page (rc.2, D145). v1.2.0 is rc.2's code. Its *Done when* is walked through by tests with every change ([`testing.md`](testing.md), *Upgrades*), and the soak's results with a large guide are in [`testing.md`](testing.md), *Baseline*.
 
 ### M10: Transcoding (L)
-Planned in detail once M9 ends. In outline:
-- What is transcoded: *as needed*, as before, *always* with a profile, or *never*, for all of live TV, a group or a channel, and for all films and series, a shelf or a title, beside the profiles of accounts and devices (D110). Nothing changes until the administrator sets something.
-- How: profiles that the administrator makes, of a codec (H.264 or HEVC), a largest size, a quality and a highest bit rate, the frame rate, deinterlacing, the dynamic range and the sound, beside the profiles there are today.
-- Hardware: VA-API on Intel and AMD graphics, for decoding, filters and encoding, with a test of what the GPU does when the server starts, a fallback to software, and a number of transcodes at a time of its own. NVIDIA comes later.
-- Packaging: a choice that lets the service reach the GPU, which the unit's sandbox hides today (`PrivateDevices`), in `install.sh`, the Debian package, the image and the LXC guide's device passthrough, tested in CI as ffmpeg is in the sandbox (D126). A server without a GPU keeps today's sandbox.
-*Status:* planned (D132).
+A household chooses what Overscan transcodes and how, for live TV and for films and series, and the server's graphics do the work where it has them (D146). Transcoding stays the exception (principle 5): nothing is transcoded until a device's profile asks for it, as since D110, or the administrator says so. Each phase ends with a pre-release of v1.3.0 (`v1.3.0-alpha.N`, then `-rc.N`), as M9's did with v1.2.0. What is new starts as Overscan behaved before: D110's three output profiles keep their names and what they do, D73's and D78's switches keep their meaning, and a household that sets nothing new sees no change (D115). In this order:
+- M10's order and *Done when* (D146).
+- Profiles and what is transcoded, for live TV, in software.
+  - **Profiles** that the administrator makes, beside D110's three:
+    - a codec, H.264 or HEVC;
+    - a largest size: as the source sends it, or at most 1080, 720 or 576 lines, never larger than the source;
+    - a quality, high, medium or low, with a highest bit rate if wanted;
+    - a frame rate, kept steady: as the source sends it, which makes one picture of each field of an interlaced picture, or at most 30 a second, which makes one of each frame;
+    - deinterlacing where the picture is interlaced, or never;
+    - HDR made SDR where the picture is HDR. In software only films' transcodes do it, as D73's do, since it is too slow for live TV there; live TV gets it with the GPU;
+    - the sound: AAC in stereo, as the source sends it, or Dolby Digital in up to 5.1.
+
+    A profile's values are checked, and only checked values reach ffmpeg's arguments. Accounts and devices choose among them as they choose among D110's.
+  - **What is transcoded.** Live TV as a whole, a lineup's group and a channel are each *as needed*, *always* with a profile, or *never*:
+    - *As needed* is what Overscan does today: a device's own profile, else its account's.
+    - *Always* transcodes a channel with its profile for devices that would get it as its source sends it. A device or an account whose own profile transcodes keeps that one, since it says what the device can take.
+    - *Never* sends the channel as its source sends it, whatever a device's profile.
+
+    The narrowest setting wins: a channel's, then its group's, then live TV's. A channel's setting belongs to the source's channel, as repair does (D57), so it holds in every lineup and through a move (D144). A group's belongs to its lineup, and lineup files carry it from version 4.
+  - **Smoothness.** A transcode that cannot keep up with its stream stutters on the screen. The hub measures how fast each live transcode goes, as it does a film's (D73), and the log and the *Overview* say when one falls behind. Every transcode in software still counts against D73's number at a time.
+- Hardware: VA-API on Intel and AMD graphics, for decoding, deinterlacing, scaling, mapping HDR to SDR and encoding, all on the GPU. It encodes in low-power mode where the hardware encodes only so, and at a constant quality where the hardware cannot keep to a bit rate.
+  - **The test at start.** With clips that ffmpeg makes, and never a channel, the server finds which codecs the GPU decodes and encodes, how it keeps to a bit rate, and which filters it has. The Settings page and the support bundle say what it found, and a server without a GPU says so.
+  - Overscan uses the GPU for what passed, and a switch on the Settings page stops it. Hardware transcodes have a number at a time of their own, 2 at first.
+  - **Fallbacks.** A stream that finds the GPU full, or whose transcode fails to start on it, is transcoded in software where D73's number allows, and is otherwise sent as its source sends it; the log says why. A stream whose decoding fails on the GPU part way starts again, once, with software decoding and the GPU's encoder.
+  - NVIDIA comes later (section 22).
+- Packaging: a choice that lets the service reach the GPU, which the unit's sandbox hides (`PrivateDevices`).
+  - An `install.sh` option, and a documented step for the Debian package, add a drop-in that gives the service the render device and its group.
+  - Debian's VA drivers are suggestions of the package, never dependencies.
+  - The image holds Debian's free VA drivers, and `compose.yaml` and [`install-docker.md`](install-docker.md) show how to pass `/dev/dri` with the render group.
+  - [`install-lxc.md`](install-lxc.md) passes `/dev/dri/renderD128` through to the container on Proxmox.
+  - CI installs the choice and checks that the service starts with it and that ffmpeg runs in its sandbox, as it checks the sandbox without it (D126). A server without a GPU keeps today's sandbox.
+- Films and series through the same profiles and hardware. All films and series, a shelf and a title are each *as needed*, *always* with a profile, or *never*, and the narrowest setting wins:
+  - *As needed* is D73's plan from the box's playback check, with the GPU where the server has one.
+  - *Always* transcodes a title that a box would play as it is.
+  - *Never* sends its video as it is. D68's conversion of sound still follows its own switch (D78).
+
+  A Jellyfin server's own transcoder (D71) stays as D78 says.
+- The milestone's hardening:
+  - the security checklist on what is new: profiles' values on ffmpeg's command line, the device's path, and the sandbox's drop-in;
+  - docs, and upgrade tests with M10's settings;
+  - a test that walks the *Done when*;
+  - a soak that transcodes: in software at a small size in CI, and with the GPU on a machine that has one. Each kind of transcode's memory, processor and speed is measured and written in [`testing.md`](testing.md).
+
+  Then v1.3.0-rc.N, and v1.3.0 on the maintainer's word.
+
+*Done when*, with fictional sources and clips that ffmpeg makes:
+- a household that sets nothing new gets every stream as before;
+- a channel set to *always* with a profile reaches a device that takes channels as their sources send them in that profile's codec and size; a device whose own profile transcodes keeps its profile; and a channel set to *never* reaches every device as its source sends it;
+- a channel's setting wins over its group's, and a group's over live TV's, in every output;
+- a film set to *always* plays transcoded, and a title set to *never* plays as it is;
+- each profile's ffmpeg arguments, in software and with VA-API, and each fallback, are as written;
+- a server without a GPU says so and transcodes in software;
+- on a server with Intel graphics, the test at start finds what the GPU does; a live channel and a film are transcoded on it and keep up with their streams; and a full or failing GPU gives way to software, or to the source as sent;
+- the packaging's choice lets the service reach the GPU, and without it the sandbox is as before;
+- no transcode takes a connection to a source that its stream would not take, or goes past its number at a time;
+- memory stays within section 15's budgets, with each kind of transcode's ffmpeg measured and written down;
+- and an upgrade changes nothing.
+
+*Status:* planned in detail (D146); not started.
 
 ### M11: HLS output (M)
 Planned in detail once M10 ends. HLS from the hub for players that ask for it: films and episodes that ffmpeg makes, so that players that seek by byte ranges can seek in them, and live channels as HLS. It replaces D110's line that HLS output waits in the backlog.
@@ -593,6 +646,7 @@ Planned in detail once M10 ends. HLS from the hub for players that ask for it: f
 - Large catalog (tens of thousands of channels and titles): under about 150 MB RSS.
 - Proxying a few streams: a few percent of one core.
 - Setting `GOMEMLIMIT` as a guard.
+- Transcoding: each transcode is an ffmpeg process beside the server, outside its own budget but on the household's machine. M10 measures the memory, processor and speed of each kind, in software and on a GPU, and writes them in [`testing.md`](testing.md) (D146).
 - MAG UI: see section 9.
 
 ---
@@ -749,6 +803,11 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 - Guides of the household's own, at an address or in a file, fill the channels that their sources give no programme, matched by guide ID and then by name, a country tag choosing between names that tie; a tie left matches nothing (D139).
 - A channel's guide can be chosen by hand: a guide's channel, another channel's guide, or none, for the channel at its source, in every lineup, over matches and rules; close names are suggested, never applied (D140).
 - A channel's logo is one set by hand or by a rule, else its own if it loads, else its guide's if it loads, else its name; guides can give theirs first, and Overscan checks in the background which logos load (D141).
+- Placeholder programmes, off at first, fill the blocks in which a channel has no programme, in the guides that boxes and players read; recordings, catch-up and search never see them (D142).
+- TMDB's pictures, off at first, replace a provider's film's or series' poster that is missing, does not load or is shared by many titles (D143).
+- A source's channels can move to other sources, matched by guide ID and then by name, once the administrator confirms; lineups keep their numbers, names, groups and favourites (D144).
+- The *Guides* page lists each source's own guide first, with what it fills and *Read now* (D145).
+- M10 transcodes live TV as a whole, a group or a channel, and films and series as a whole, a shelf or a title, *as needed*, *always* with a profile the administrator makes, or *never*; the narrowest setting wins, *never* over every device's profile; VA-API graphics do the work where the server has them, with software as the fallback (D146).
 - The reference client reads Overscan through the Xtream output, without a source type of Overscan's own (open question 2).
 - HDHomeRun emulation waits in the backlog (open question 6).
 

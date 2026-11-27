@@ -54,6 +54,16 @@ The notes in [protocol/tmdb-notes.md](protocol/tmdb-notes.md) are **Documented**
 
 Guides of the household's own (D139) are read as sources' guides are, from the XMLTV project's description of its format, [`xmltv.dtd`](https://github.com/XMLTV/xmltv/blob/master/xmltv.dtd), which also gives a channel's icon. How their channels are matched with the sources' channels is Overscan's own, by guide ID and by name; no other project's matcher, and no guide manager's code, is read. The country tags it reads are ISO 3166-1's two-letter codes, a public standard. The suggestions for a channel's guide chosen by hand (D140) are Overscan's own too: words weighed by how few names have them, and Levenshtein's edit distance, a textbook algorithm, for words spelt a little differently. Moving a source's channels to other sources (D144) matches them in the same way, by guide ID and by name.
 
+Transcoding (D73, D110, D146) is written from public documentation only:
+- ffmpeg's own manual: its codecs, with the VA-API encoders and their rate controls and low-power mode, its filters, and its options;
+- the FFmpeg wiki's pages on hardware acceleration and on VA-API;
+- the README of Intel's media driver for VA-API (MIT), for which codecs Intel graphics decode and encode, in which of its builds, and what bit-rate control in low-power encoding needs;
+- Debian's packages and their descriptions, for which packages hold the drivers;
+- the systemd.exec manual page, for the unit's sandbox and its devices;
+- Proxmox VE's manual of `pct.conf`, for passing a device to a container.
+
+Other sources, such as Mesa's documentation for AMD graphics, are added here before they are used. No other project's transcoding code is read: no media server's, stream proxy's or transcoding tool's. How Overscan chooses what to transcode, its profiles and their mapping to ffmpeg's options are its own.
+
 The matrix in [compatibility.md](compatibility.md) says how to connect each app from its public documentation, and what each did from tests with the app, which are **Observed**. No app's code is read.
 
 ## Contributor rules
