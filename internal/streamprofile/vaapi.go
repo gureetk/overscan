@@ -83,6 +83,10 @@ func widthOf(lines int) int {
 	return 0
 }
 
+// AsMade returns the settings of a fixed profile that transcodes (D110) as
+// a profile that the administrator could make, as asMade does.
+func (p Profile) AsMade() Profile { return p.asMade() }
+
 // asMade returns the settings of a fixed profile that transcodes (D110) as
 // a profile that the administrator could make, for the graphics: H.264 of
 // its size, its quality and its highest bit rate, deinterlaced a picture
@@ -158,31 +162,46 @@ func (p Profile) DecodesOnGPU(hw Hardware) bool {
 // HardwareArgs returns ffmpeg's arguments to transcode a live stream to the
 // profile on the graphics: as Args, with the device opened for the
 // filters, the stream decoded on the graphics where hw says so,
-// HardwareFilter's filters, and the graphics' encoder.
-//
-// The encoder keeps to the profile's highest bit rate where the graphics
-// keep to one (VBR, averaging three quarters of it); otherwise it keeps a
-// constant quality (ICQ), or else a constant quantiser (CQP), and a
-// highest bit rate does not hold.
+// HardwareFilter's filters, and HardwareVideo's encoder.
 func (p Profile) HardwareArgs(hw Hardware) []string {
 	m := p.asMade()
-	args := []string{
+	args := append([]string{
 		"-hide_banner", "-nostdin", "-nostats", "-loglevel", "warning",
 		"-protocol_whitelist", "pipe",
 		"-fflags", "+genpts",
 		"-analyzeduration", "2000000", "-probesize", "4000000",
-		"-init_hw_device", "vaapi=va:" + hw.Device, "-filter_hw_device", "va",
-	}
-	if p.DecodesOnGPU(hw) {
-		args = append(args, "-hwaccel", "vaapi", "-hwaccel_device", "va", "-hwaccel_output_format", "vaapi")
-	}
+	}, p.HardwareInput(hw)...)
 	args = append(args, "-f", "mpegts", "-i", "pipe:0", "-map", "0:v:0?")
 	if m.Sound == SoundCopy {
 		args = append(args, "-map", "0:a?")
 	} else {
 		args = append(args, "-map", "0:a:0?")
 	}
-	args = append(args, "-vf", p.HardwareFilter(hw), "-c:v", m.Codec+"_vaapi", "-profile:v", VAAPIProfile(m.Codec))
+	args = append(append(args, "-vf", p.HardwareFilter(hw)), p.HardwareVideo(hw)...)
+	args = append(args, "-force_key_frames", "expr:gte(t,n_forced*2)")
+	return append(args, m.soundArgs()...)
+}
+
+// HardwareInput returns ffmpeg's arguments, before its input, that open
+// the graphics for the filters, and have them decode the input where hw
+// says so.
+func (p Profile) HardwareInput(hw Hardware) []string {
+	args := []string{"-init_hw_device", "vaapi=va:" + hw.Device, "-filter_hw_device", "va"}
+	if p.DecodesOnGPU(hw) {
+		args = append(args, "-hwaccel", "vaapi", "-hwaccel_device", "va", "-hwaccel_output_format", "vaapi")
+	}
+	return args
+}
+
+// HardwareVideo returns ffmpeg's arguments for the graphics' encoder of the
+// profile's codec: h264_vaapi at High profile or hevc_vaapi at Main, in
+// low-power mode where hw says so. It keeps to the profile's highest bit
+// rate where the graphics keep to one (VBR, averaging three quarters of
+// it); otherwise it keeps a constant quality (ICQ), or else a constant
+// quantiser (CQP), and a highest bit rate does not hold.
+func (p Profile) HardwareVideo(hw Hardware) []string {
+	m := p.asMade()
+	args := []string{"-c:v", m.Codec + "_vaapi", "-profile:v", VAAPIProfile(m.Codec)}
 	if hw.LowPower {
 		args = append(args, "-low_power", "1")
 	}
@@ -196,8 +215,32 @@ func (p Profile) HardwareArgs(hw Hardware) []string {
 	default:
 		args = append(args, "-rc_mode", "CQP", "-qp", q)
 	}
-	args = append(args, "-force_key_frames", "expr:gte(t,n_forced*2)")
-	return append(args, m.soundArgs()...)
+	return args
+}
+
+// SoftwareVideo returns ffmpeg's arguments for the software encoder of a
+// profile that the administrator made: libx264 at High profile or libx265
+// at Main, at its quality, capped at its highest bit rate if it has one.
+func (p Profile) SoftwareVideo() []string {
+	var args []string
+	switch p.Codec {
+	case HEVC:
+		args = []string{"-c:v", "libx265", "-preset", "veryfast", "-crf", strconv.Itoa(p.crf()),
+			"-profile:v", "main", "-x265-params", "log-level=error"}
+	default:
+		args = []string{"-c:v", "libx264", "-preset", "veryfast", "-crf", strconv.Itoa(p.crf()), "-profile:v", "high"}
+	}
+	if p.MaxKbps > 0 {
+		args = append(args, "-maxrate", strconv.Itoa(p.MaxKbps)+"k", "-bufsize", strconv.Itoa(2*p.MaxKbps)+"k")
+	}
+	return args
+}
+
+// Box returns the largest picture of a profile that the administrator
+// made, in pixels, as 16:9 of its largest size; 0 and 0 for the source's.
+func (p Profile) Box() (width, height int) {
+	m := p.asMade()
+	return widthOf(m.MaxLines), m.MaxLines
 }
 
 // soundArgs returns ffmpeg's arguments for a made profile's sound, and the

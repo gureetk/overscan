@@ -85,10 +85,12 @@ tags:
     description: Where channels come from.
   - name: transcoding
     description: >-
-      The profiles that live channels can be transcoded with: Overscan's own
-      fixed ones (D110) and those that the administrator makes (D147). What
-      is transcoded is set on live TV as a whole (`live_transcode` in the
-      settings), on each group and on each channel (`transcode`). Where the
+      The profiles that live channels, films and series can be transcoded
+      with: Overscan's own fixed ones (D110) and those that the
+      administrator makes (D147). What is transcoded is set on live TV as a
+      whole (`live_transcode` in the settings), on each group and on each
+      channel (`transcode`), and on films and series as a whole
+      (`vod_transcode`), on each shelf and on each title (D150). Where the
       server's graphics make a profile's codec, they transcode it, up to
       `gpu_transcodes` streams at a time (D148); `graphics` says what the
       test at start found.
@@ -2744,6 +2746,8 @@ paths:
                     many of their source's titles share take TMDB's (D143).
                 live_transcode:
                   $ref: "#/components/schemas/Transcode"
+                vod_transcode:
+                  $ref: "#/components/schemas/Transcode"
                 gpu_transcodes:
                   type: integer
                   minimum: 0
@@ -2977,7 +2981,7 @@ paths:
     patch:
       tags: [library]
       operationId: changeShelf
-      summary: Hide, show, lock, unlock or rename a shelf
+      summary: Hide, show, lock, unlock or rename a shelf, or say whether its titles are transcoded
       security:
         - session: []
           csrf: []
@@ -2998,6 +3002,10 @@ paths:
                   type: [string, "null"]
                   maxLength: 100
                   description: The name devices see it by; null or empty for its sources' name.
+                transcode:
+                  allOf:
+                    - $ref: "#/components/schemas/Transcode"
+                  description: What is transcoded of its titles that say nothing of their own (D150).
       responses:
         "200":
           description: The shelf.
@@ -3132,7 +3140,7 @@ paths:
     patch:
       tags: [library]
       operationId: changeTitle
-      summary: Hide, show, lock or unlock a film or a series
+      summary: Hide, show, lock or unlock a film or a series, or say whether it is transcoded
       security:
         - session: []
           csrf: []
@@ -3150,6 +3158,12 @@ paths:
                 locked:
                   type: boolean
                   description: It needs the parental PIN (D85); one on a locked shelf stays locked.
+                transcode:
+                  allOf:
+                    - $ref: "#/components/schemas/Transcode"
+                  description: >-
+                    What is transcoded of it for the boxes, and of a series'
+                    episodes (D150).
       responses:
         "200":
           description: The title.
@@ -4551,7 +4565,11 @@ components:
         What is transcoded (D147): `as_needed`, as a device's or account's
         profile says, or as the level above says; `always`, with `profile`,
         for devices that would get the stream as its source sends it; or
-        `never`, whatever a device's profile. `profile` names a profile that
+        `never`, whatever a device's profile. For films and series (D150),
+        which only the boxes get transcoded: `as_needed`, when the box
+        cannot play the video, as the settings allow; `always`, with
+        `profile`, whether or not the box could play it; or `never`, with
+        its video as its source sends it. `profile` names a profile that
         transcodes, fixed or made by the administrator, and is null unless
         `mode` is `always`. A profile that does not exist, or that does not
         transcode, is refused (`bad_transcode`).
@@ -4704,7 +4722,7 @@ components:
           description: The first sound track as AAC in stereo or Dolby Digital, or every sound track as the source sends it.
         uses:
           type: object
-          required: [accounts, devices, channels, groups, live_tv]
+          required: [accounts, devices, channels, groups, live_tv, titles, shelves, films_and_series]
           properties:
             accounts:
               type: integer
@@ -4716,6 +4734,14 @@ components:
               type: integer
             live_tv:
               type: boolean
+            titles:
+              type: integer
+              description: The films and series that name it (D150).
+            shelves:
+              type: integer
+            films_and_series:
+              type: boolean
+              description: Films and series as a whole name it.
     TranscodeProfileSettings:
       type: object
       additionalProperties: false
@@ -4937,7 +4963,7 @@ components:
           examples: [["DTS", "Dolby TrueHD"]]
     Shelf:
       type: object
-      required: [id, name, own, sources, titles, hidden_titles, portal, hidden, locked, placed]
+      required: [id, name, own, sources, titles, hidden_titles, portal, hidden, locked, placed, transcode]
       properties:
         id:
           type: integer
@@ -4970,9 +4996,13 @@ components:
         placed:
           type: boolean
           description: The administrator put it in an order of its own.
+        transcode:
+          allOf:
+            - $ref: "#/components/schemas/Transcode"
+          description: What is transcoded of its titles that say nothing of their own (D150).
     LibraryTitle:
       type: object
-      required: [id, kind, name, source, hidden, locked, adult, needs_pin]
+      required: [id, kind, name, source, hidden, locked, adult, needs_pin, transcode, transcode_own]
       properties:
         id:
           type: integer
@@ -5003,6 +5033,27 @@ components:
             Devices need the parental PIN for it once the account has one: it,
             or its shelf, is locked, or the setting locks what is marked for
             adults.
+        transcode:
+          type: object
+          required: [mode, profile, set_by]
+          description: >-
+            What is transcoded of it for the boxes, and of a series'
+            episodes (D150): its own setting, else its shelf's, else that of
+            films and series as a whole, as `set_by` says; as needed, with
+            `set_by` null, when none says anything.
+          properties:
+            mode:
+              type: string
+              enum: [as_needed, always, never]
+            profile:
+              type: [string, "null"]
+            set_by:
+              type: [string, "null"]
+              enum: [title, shelf, films_and_series, null]
+        transcode_own:
+          allOf:
+            - $ref: "#/components/schemas/Transcode"
+          description: Its own setting.
     Group:
       type: object
       required: [id, name, hidden, locked, edited, channels, shown, first_number, transcode, categories]
@@ -6464,7 +6515,7 @@ components:
         application/json:
           schema:
             type: object
-            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes, adult_marks, radio_apart, tmdb_key_set, tmdb_language, recordings_cap, recordings_until, recordings_max_hours, timeshift_minutes, shared_tuner, outputs, outputs_anywhere, guide_placeholders, tmdb_pictures, live_transcode, gpu_transcodes]
+            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes, adult_marks, radio_apart, tmdb_key_set, tmdb_language, recordings_cap, recordings_until, recordings_max_hours, timeshift_minutes, shared_tuner, outputs, outputs_anywhere, guide_placeholders, tmdb_pictures, live_transcode, vod_transcode, gpu_transcodes]
             properties:
               repair_default:
                 type: boolean
@@ -6587,6 +6638,13 @@ components:
                 description: >-
                   What is transcoded of live TV as a whole (D147), below what
                   each group and channel says. As needed at first.
+              vod_transcode:
+                allOf:
+                  - $ref: "#/components/schemas/Transcode"
+                description: >-
+                  What is transcoded of films and series as a whole for the
+                  boxes (D150), below what each shelf and title says. As
+                  needed at first.
               gpu_transcodes:
                 type: integer
                 minimum: 0

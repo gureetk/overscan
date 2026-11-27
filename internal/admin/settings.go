@@ -52,6 +52,7 @@ type apiSettings struct {
 	Placeholders     int          `json:"guide_placeholders"`
 	TMDBPictures     bool         `json:"tmdb_pictures"`
 	LiveTranscode    apiTranscode `json:"live_transcode"`
+	VODTranscode     apiTranscode `json:"vod_transcode"`
 	GPUTranscodes    int          `json:"gpu_transcodes"`
 }
 
@@ -94,11 +95,13 @@ func (a *Admin) apiSettings(w http.ResponseWriter, r *http.Request, _ store.Admi
 				var block time.Duration
 				if block, err = a.store.Placeholders(ctx); err == nil {
 					if v.TMDBPictures, err = a.store.TMDBPictures(ctx); err == nil {
-						var live store.Transcode
+						var live, vod store.Transcode
 						if live, err = a.store.LiveTranscode(ctx); err == nil {
-							v.GPUTranscodes, err = a.store.GPUTranscodes(ctx)
+							if vod, err = a.store.VODTranscode(ctx); err == nil {
+								v.GPUTranscodes, err = a.store.GPUTranscodes(ctx)
+							}
 						}
-						v.LiveTranscode = transcodeBody(live)
+						v.LiveTranscode, v.VODTranscode = transcodeBody(live), transcodeBody(vod)
 					}
 				}
 				v.Placeholders = int(block / time.Minute)
@@ -124,6 +127,14 @@ func (a *Admin) apiChangeSettings(w http.ResponseWriter, r *http.Request, _ stor
 				return
 			}
 			if a.editAnswer(w, a.setLiveTranscode(r.Context(), t)) {
+				return
+			}
+		case "vod_transcode":
+			t, err := readTranscode(v)
+			if a.editAnswer(w, err) {
+				return
+			}
+			if a.editAnswer(w, a.setVODTranscode(r.Context(), t)) {
 				return
 			}
 		case "gpu_transcodes":

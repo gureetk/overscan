@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"overscan.gureet.ca/internal/streamprofile"
 )
 
 // file returns an Info with the given format and streams, numbered in
@@ -257,6 +259,46 @@ func TestEncodePlan(t *testing.T) {
 	}
 }
 
+// A profile's sound, as far as the box plays it (D150).
+func TestProfilePlanSound(t *testing.T) {
+	info := file(mkv, video("h264", 1920, 1080, 8), sound("dts", 6, "eng"), sound("ac3", 6, "fre"))
+	prof := func(sound string) streamprofile.Profile {
+		return streamprofile.Profile{Name: "small", Made: true, Codec: streamprofile.H264, MaxLines: 720,
+			Quality: streamprofile.Medium, FrameRate: streamprofile.RateSource, Sound: sound}
+	}
+	converted := func(plan Plan) []bool {
+		var out []bool
+		for _, t := range plan.Tracks {
+			out = append(out, t.Convert)
+		}
+		return out
+	}
+	noAAC := MAG322
+	noAAC.Audio = []string{"ac3", "mp2"}
+	for _, c := range []struct {
+		sound string
+		box   Profile
+		made  string
+		conv  []bool
+	}{
+		{streamprofile.SoundAAC, MAG322, streamprofile.SoundAAC, []bool{true, true}},
+		{streamprofile.SoundAAC, noAAC, streamprofile.SoundAC3, []bool{true, true}},
+		{streamprofile.SoundAC3, MAG322, streamprofile.SoundAC3, []bool{true, true}},
+		{streamprofile.SoundCopy, MAG322, streamprofile.SoundCopy, []bool{true, false}},
+	} {
+		plan := ProfilePlan(info, c.box, prof(c.sound), true)
+		if !plan.Encode || plan.Width != 1280 || plan.Height != 720 || plan.Profile.Sound != c.made ||
+			!reflect.DeepEqual(converted(plan), c.conv) {
+			t.Errorf("%s on %v: %+v", c.sound, c.box.Audio, plan)
+		}
+		args := strings.Join(plan.Args("in", 0), " ")
+		if want := map[string]string{streamprofile.SoundAAC: "-c:a:0 aac -ac:a:0 2", streamprofile.SoundAC3: "-c:a:0 ac3",
+			streamprofile.SoundCopy: "-c:a:1 copy"}[c.made]; !strings.Contains(args, want) {
+			t.Errorf("%s on %v: args %s, want %s", c.sound, c.box.Audio, args, want)
+		}
+	}
+}
+
 func TestEncodeArgs(t *testing.T) {
 	plan := Plan{Convert: true, Encode: true, Video: 0, Width: 1920, Height: 1080, FrameRate: 23.976,
 		Tracks: []Track{{Index: 1, Codec: "dts", Channels: 6, Convert: true}}}
@@ -280,5 +322,47 @@ func TestEncodeArgs(t *testing.T) {
 	plan.ToneMap, plan.Width, plan.Height = false, 0, 0
 	if got := strings.Join(plan.Args("in", 0), " "); !strings.Contains(got, " -vf format=yuv420p ") {
 		t.Errorf("without a size: %s", got)
+	}
+}
+
+// On the graphics, a transcode opens them and decodes where Hardware says,
+// then filters and encodes there (D148, D150); D73's transcode keeps its
+// size and bit rate.
+func TestHardwareArgs(t *testing.T) {
+	hw := streamprofile.Hardware{Device: "/dev/dri/renderD128", VBR: true, Filters: true, Decode: true, Rate: true, ToneMap: true}
+	plan := Plan{Convert: true, Encode: true, Video: 0, Width: 1920, Height: 1080, ToneMap: true, Hardware: &hw,
+		Tracks: []Track{{Index: 1, Codec: "dts", Channels: 6, Convert: true}}}
+	got := strings.Join(plan.Args("http://127.0.0.1:9/in/abc", 61.5), " ")
+	for _, want := range []string{
+		"-init_hw_device vaapi=va:/dev/dri/renderD128 -filter_hw_device va -hwaccel vaapi -hwaccel_device va -hwaccel_output_format vaapi -ss 61.500 -i http://127.0.0.1:9/in/abc ",
+		"-map 0:0 -vf deinterlace_vaapi=rate=field:auto=1," + streamprofile.ToneMapVAAPI + ",scale_vaapi=w='min(1920,iw)':h='min(1080,ih)'",
+		"-c:v h264_vaapi -profile:v high -rc_mode VBR -b:v 6000k -maxrate 8000k -bufsize 16000k -color_primaries bt709",
+		"-map 0:1 -c:a:0 ac3 -ac:a:0 6 -b:a:0 448k",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("args lack %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "libx264") || strings.Contains(got, "zscale") {
+		t.Errorf("software in %s", got)
+	}
+
+	// With a profile of AAC in stereo, decoded in software.
+	small, _ := streamprofile.Check(streamprofile.Profile{Name: "small", Codec: streamprofile.HEVC, MaxLines: 720})
+	soft := streamprofile.Hardware{Device: "/dev/dri/renderD128", LowPower: true, ICQ: true, Filters: true}
+	plan.Profile, plan.Hardware, plan.ToneMap = small, &soft, false
+	got = strings.Join(plan.Args("http://127.0.0.1:9/in/abc", 0), " ")
+	for _, want := range []string{
+		"-init_hw_device vaapi=va:/dev/dri/renderD128 -filter_hw_device va -i http://127.0.0.1:9/in/abc ",
+		"-vf format=nv12,hwupload,scale_vaapi=w='min(1280,iw)'",
+		"-c:v hevc_vaapi -profile:v main -low_power 1 -rc_mode ICQ -global_quality 25 ",
+		"-c:a:0 aac -ac:a:0 2 -b:a:0 128k",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("args lack %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "-hwaccel") || strings.Contains(got, "-ss") {
+		t.Errorf("args %s", got)
 	}
 }

@@ -255,7 +255,7 @@
     {{- $tt := .D.GroupTranscodeText .G}}
     <details class="popover">
       <summary class="button small{{if $tt}} accent{{end}}" title="Whether the group's channels are transcoded">{{if $tt}}{{$tt}}{{else}}Transcoding…{{end}}</summary>
-      <div class="menu form-menu">
+      <div class="menu form-menu wide">
         <form method="post" action="/admin/lineup/groups/{{.G.ID}}/transcode" hx-post="/admin/lineup/groups/{{.G.ID}}/transcode" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" class="row-form">
           <input type="hidden" name="csrf" value="{{.CSRF}}">
           <input type="hidden" name="back" value="{{.D.View.Back}}">

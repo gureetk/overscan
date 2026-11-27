@@ -1043,6 +1043,7 @@ details.lineups-menu > .menu { left: auto; right: 0; min-width: 22rem; max-width
 .entry-link:hover { color: var(--text); text-decoration: underline; }
 .channels .group { color: var(--text2); }
 .channels .state .chips { justify-content: flex-end; }
+.year-note { display: none; }
 .channels tr.open td { background: var(--sel); }
 .channels tr.is-hidden .entry-link, .channels tr.is-hidden .num { color: var(--text3); }
 .channels-panel .pages { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: 0.875rem 1.25rem; border-top: 1px solid var(--line); color: var(--text3); font-size: 0.84375rem; }
@@ -1159,6 +1160,9 @@ details.lineups-menu > .menu { left: auto; right: 0; min-width: 22rem; max-width
   .channels .num { width: 3.5rem; }
   .channels td.state { padding-right: 1rem; }
   .channels .state .chips { flex-direction: column; align-items: flex-end; }
+  /* A title's year goes under its name, which leaves room for its badges. */
+  .titles th.year, .titles td.year { display: none; }
+  .titles .year-note { display: revert; }
   .pages .tick-hint { display: none; }
   .bulk { bottom: calc(5.75rem + env(safe-area-inset-bottom)); margin: 0 0.5rem 0.75rem; }
   .bulk { flex-wrap: nowrap; }

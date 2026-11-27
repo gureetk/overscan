@@ -357,3 +357,110 @@ func TestGPUTranscodes(t *testing.T) {
 		}
 	}
 }
+
+// What is transcoded of films and series (D150): a title's own, then its
+// shelf's, then films' and series'; a profile that they name is in use,
+// keeps them when renamed, and cannot be removed.
+func TestTitleTranscode(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t, newPath(t))
+	for _, q := range []string{`
+		INSERT INTO sources (id, name, type, host, enabled, max_connections, refresh_seconds, numbers,
+				new_categories_hidden, public_only, refreshed_at, refresh_error)
+			VALUES (3, 'main', 'xtream', 'provider.example', 1, 2, 43200, 'playlist', 0, 0, '2026-12-04T03:00:00Z', ''),
+			       (4, 'portal', 'stalker', 'portal.example', 1, 1, 43200, 'playlist', 0, 0, '2026-12-04T03:00:00Z', '')`, `
+		INSERT INTO library_categories (id, source_id, kind, source_key, name, position, generation)
+			VALUES (20, 3, 'movie', '1', 'Drama', 1, 1), (21, 4, 'movie', '7', 'Drama', 1, 1)`, `
+		INSERT INTO titles (id, source_id, kind, source_key, category_id, name, position, generation)
+			VALUES (30, 3, 'movie', '100', 20, 'Quiet Harbour', 1, 1),
+			       (31, 3, 'movie', '101', 20, 'Copper Field', 2, 1),
+			       (32, 4, 'movie', '102', 21, 'Granite Peak', 1, 1),
+			       (33, 3, 'movie', '103', NULL, 'Loose Ends', 3, 1)`,
+	} {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	small, _ := streamprofile.Check(streamprofile.Profile{Name: "small", MaxLines: 576})
+	if err := s.AddTranscodeProfile(ctx, small); err != nil {
+		t.Fatal(err)
+	}
+	want := func(id int64, tc Transcode, by string) {
+		t.Helper()
+		got, gotBy, err := s.TitleTranscode(ctx, id)
+		if err != nil || got != tc || gotBy != by {
+			t.Errorf("title %d: %+v by %q, %v; want %+v by %q", id, got, gotBy, err, tc, by)
+		}
+	}
+	want(30, Transcode{}, "")
+
+	// Films and series, then a shelf, then a title.
+	if err := s.SetVODTranscode(ctx, Transcode{Profile: "small"}); err != nil {
+		t.Fatal(err)
+	}
+	want(33, Transcode{Profile: "small"}, TranscodeByVOD)
+	if err := s.SetShelfTranscode(ctx, KindMovie, "name:Drama", Transcode{Never: true}); err != nil {
+		t.Fatal(err)
+	}
+	want(30, Transcode{Never: true}, TranscodeByShelf)
+	want(32, Transcode{Profile: "small"}, TranscodeByVOD) // a portal's category is a shelf of its own
+	if n, err := s.SetTitlesTranscode(ctx, []int64{31, 99}, Transcode{Profile: "h264-720p"}); err != nil || n != 1 {
+		t.Fatalf("set titles: %d, %v", n, err)
+	}
+	want(31, Transcode{Profile: "h264-720p"}, TranscodeByTitle)
+	want(30, Transcode{Never: true}, TranscodeByShelf)
+	if _, err := s.SetTitlesTranscode(ctx, []int64{30}, Transcode{Profile: "source"}); !errors.Is(err, ErrNotTranscoding) {
+		t.Errorf("source: %v", err)
+	}
+	if _, err := s.SetTitlesTranscode(ctx, []int64{30}, Transcode{Profile: "nobody"}); !errors.Is(err, ErrNoSuchProfile) {
+		t.Errorf("nobody: %v", err)
+	}
+	if _, _, err := s.TitleTranscode(ctx, 99); !errors.Is(err, ErrNotFound) {
+		t.Errorf("no title: %v", err)
+	}
+
+	// The shelf keeps its setting when another is dropped.
+	if err := s.SetShelfHidden(ctx, KindMovie, "name:Drama", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetShelfHidden(ctx, KindMovie, "name:Drama", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PlaceShelves(ctx, KindMovie, nil); err != nil {
+		t.Fatal(err)
+	}
+	want(30, Transcode{Never: true}, TranscodeByShelf)
+	if err := s.SetShelfTranscode(ctx, KindMovie, "name:Drama", Transcode{Profile: "small"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The profile's uses, its rename and its removal.
+	u, err := s.TranscodeProfileUses(ctx, "small")
+	if err != nil || u != (ProfileUses{Shelves: 1, FilmsAndSeries: true}) || u.String() != "1 shelf and every film and series" {
+		t.Errorf("uses: %+v %q, %v", u, u.String(), err)
+	}
+	if _, err := s.SetTitlesTranscode(ctx, []int64{33}, Transcode{Profile: "small"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RemoveTranscodeProfile(ctx, "small"); !errors.Is(err, ErrProfileInUse) {
+		t.Errorf("remove: %v", err)
+	}
+	tiny := small
+	tiny.Name = "tiny"
+	if err := s.ChangeTranscodeProfile(ctx, "small", tiny); err != nil {
+		t.Fatal(err)
+	}
+	want(33, Transcode{Profile: "tiny"}, TranscodeByTitle)
+	want(30, Transcode{Profile: "tiny"}, TranscodeByShelf)
+	if vod, err := s.VODTranscode(ctx); err != nil || vod.Profile != "tiny" {
+		t.Errorf("films and series after the rename: %+v, %v", vod, err)
+	}
+	shelves, err := s.LibraryShelves(ctx, KindMovie)
+	if err != nil || len(shelves) == 0 || shelves[0].Key != "name:Drama" || shelves[0].Transcode.Profile != "tiny" {
+		t.Errorf("shelves: %+v, %v", shelves, err)
+	}
+	c, err := s.TranscodeCounts(ctx)
+	if err != nil || c.TitlesAlways != 2 || c.ShelvesAlways != 1 || c.TitlesNever != 0 {
+		t.Errorf("counts: %+v, %v", c, err)
+	}
+}

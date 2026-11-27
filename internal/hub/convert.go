@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -21,6 +22,7 @@ import (
 	"overscan.gureet.ca/internal/adapters/folder"
 	"overscan.gureet.ca/internal/media"
 	"overscan.gureet.ca/internal/store"
+	"overscan.gureet.ca/internal/streamprofile"
 	"overscan.gureet.ca/internal/subtitles"
 )
 
@@ -197,24 +199,45 @@ func (h *Hub) Prepare(ctx context.Context, deviceID int64, item store.PlayableIt
 
 	plan := media.Decide(info, profile)
 	limit := h.transcodeLimit(ctx, item, plan)
+	// What is transcoded of the title (D150): its own setting, its
+	// shelf's, or films' and series'.
+	tc, tcBy := h.titleTranscode(ctx, item)
+	var always streamprofile.Profile
+	if tc.Profile != "" && info.First(media.Video) != nil {
+		always, _ = h.alwaysProfile(ctx, item, tc, tcBy)
+	}
+	busy := func(most string) (Playback, error) {
+		h.log.Warn("a title's video must be transcoded, and Overscan transcodes as many titles as it may at once, so it cannot start",
+			"title", item.Name, "source", src, "device", deviceID, "most", most)
+		if s != nil {
+			h.mu.Lock()
+			h.end(s, "the server transcodes as many titles as it may at once")
+			h.mu.Unlock()
+		}
+		return Playback{}, ErrBusy
+	}
 	switch {
+	case always.Made:
+		// Its setting transcodes it always with a profile, whether or not
+		// the box plays it.
+		if !h.roomToEncode(ctx, deviceID, always) {
+			return busy(h.encodeMost(ctx, always))
+		}
+		plan = media.ProfilePlan(info, profile, always, h.encoder.ToneMap)
+	case tc.Never && plan.VideoNote != "":
+		h.log.Warn("the box may not play a title's video, which is set never to be transcoded, so it plays as it is",
+			"title", item.Name, "source", src, "video", plan.VideoNote, "profile", profile.Name, "set_by", tcBy)
 	case plan.VideoNote != "" && item.TranscodeURL != "" && h.serverTranscodes(ctx):
 		// The source's server transcodes it (D71).
 		plan = media.TranscodePlan(info, profile)
 	case limit > 0:
-		// This server's ffmpeg transcodes it (D73), if it may now.
-		if n := h.encodesElsewhere(deviceID); n >= limit {
-			h.log.Warn("a title's video must be transcoded, and Overscan transcodes as many titles as it may at once, so it cannot start",
-				"title", item.Name, "source", src, "device", deviceID, "most", limit)
-			if s != nil {
-				h.mu.Lock()
-				h.end(s, "the server transcodes as many titles as it may at once")
-				h.mu.Unlock()
-			}
-			return Playback{}, ErrBusy
+		// This server's ffmpeg transcodes it (D73), if it may now: on the
+		// graphics, or in software.
+		if !h.roomToEncode(ctx, deviceID, media.D73Profile) {
+			return busy(h.encodeMost(ctx, media.D73Profile))
 		}
 		plan = media.EncodePlan(info, profile, h.encoder.ToneMap)
-		if v := info.First(media.Video); v != nil && v.HDR != "" && !plan.ToneMap {
+		if v := info.First(media.Video); v != nil && v.HDR != "" && !plan.ToneMap && !h.gpuMapsHDR(v) {
 			h.log.Warn("this server's ffmpeg cannot map a title's high dynamic range to the standard one, so its colours may look washed out",
 				"title", item.Name, "source", src)
 		}
@@ -255,14 +278,18 @@ func (h *Hub) Prepare(ctx context.Context, deviceID int64, item store.PlayableIt
 	switch {
 	case plan.Transcode:
 		h.log.Info("a title plays through its source's server, which transcodes what the box cannot play", "title", item.Name,
-			"source", src, "device", deviceID, "why", plan.Why, "sound", trackSummary(plan.Tracks), "profile", profile.Name)
+			"source", src, "device", deviceID, "why", plan.Why, "sound", trackSummary(plan), "profile", profile.Name)
+	case plan.Encode && plan.Profile.Made:
+		h.log.Info("a title plays through ffmpeg, which transcodes it as its setting says", "title", item.Name,
+			"source", src, "device", deviceID, "with", plan.Profile.Name, "set_by", tcBy, "video", encodeSummary(plan),
+			"sound", trackSummary(plan), "profile", profile.Name)
 	case plan.Encode:
 		h.log.Info("a title plays through ffmpeg, which transcodes its video for the box", "title", item.Name,
 			"source", src, "device", deviceID, "why", plan.Why, "video", encodeSummary(plan),
-			"sound", trackSummary(plan.Tracks), "profile", profile.Name)
+			"sound", trackSummary(plan), "profile", profile.Name)
 	default:
 		h.log.Info("a title plays through ffmpeg, which converts what the box cannot play", "title", item.Name,
-			"source", src, "device", deviceID, "why", plan.Why, "sound", trackSummary(plan.Tracks), "profile", profile.Name)
+			"source", src, "device", deviceID, "why", plan.Why, "sound", trackSummary(plan), "profile", profile.Name)
 	}
 	return withSubtitles(Playback{Path: "/vod/" + token + ".ts", Converted: true, Transcoded: plan.Transcode,
 		StartPath: "/vod/" + token + "/start", Duration: info.Duration, Tracks: plan.Tracks}, s, token)
@@ -308,12 +335,12 @@ func fileVersion(item store.PlayableItem) (size, mtime int64, err error) {
 
 // trackSummary describes a converted stream's sound tracks for the log,
 // such as "dts 6ch eng to ac3, aac 2ch fre".
-func trackSummary(tracks []media.Track) string {
-	parts := make([]string, 0, len(tracks))
-	for _, t := range tracks {
+func trackSummary(plan media.Plan) string {
+	parts := make([]string, 0, len(plan.Tracks))
+	for _, t := range plan.Tracks {
 		d := media.Stream{Type: media.Audio, Codec: t.Codec, Channels: t.Channels, Language: t.Language}.Describe()
 		if t.Convert {
-			d += " to ac3"
+			d += " to " + plan.SoundCodec()
 		}
 		parts = append(parts, d)
 	}
@@ -496,18 +523,11 @@ func (h *Hub) serveConverted(w http.ResponseWriter, r *http.Request, s *session)
 		return
 	}
 	defer h.convertsRunning.Add(-1)
+	// The ways to make the stream: for a transcode, on the graphics and
+	// then in software (D150); otherwise ffmpeg's conversion alone.
+	attempts := []filmAttempt{{plan: *plan, take: func() bool { return true }, give: func() {}}}
 	if plan.Encode {
-		// A link made before the administrator turned transcoding off
-		// still plays, as the one transcode that may run.
-		limit := max(h.transcodeCap(ctx), 1)
-		if !h.takeEncode(s.deviceID, limit) {
-			h.log.Warn("Overscan transcodes as many titles as it may at once; this one cannot start", append(about, "most", limit)...)
-			http.Error(w, "the server transcodes as many titles as it may at once", http.StatusServiceUnavailable)
-			return
-		}
-		defer h.endEncode(s.deviceID)
-		s.encoding.Add(1)
-		defer s.encoding.Add(-1)
+		attempts = h.filmAttempts(ctx, s, plan, info)
 	}
 	s.converting.Add(1)
 	defer s.converting.Add(-1)
@@ -519,15 +539,70 @@ func (h *Hub) serveConverted(w http.ResponseWriter, r *http.Request, s *session)
 		return
 	}
 	defer closeIn()
+	for i, a := range attempts {
+		if !a.take() {
+			continue
+		}
+		instead := ""
+		if i+1 < len(attempts) {
+			instead = attempts[i+1].instead()
+		}
+		failed := h.runConvert(ctx, w, s, &a, in, from, about, instead)
+		a.give()
+		if !failed {
+			return
+		}
+	}
+	h.log.Warn("Overscan transcodes as many titles as it may at once; this one cannot start",
+		append(about, "most", h.encodeMost(ctx, plan.EncodeProfile()))...)
+	http.Error(w, "the server transcodes as many titles as it may at once", http.StatusServiceUnavailable)
+}
+
+// instead says, for the log, what a way to transcode a title does when it
+// takes over from the one before it.
+func (a filmAttempt) instead() string {
+	switch {
+	case !a.gpu:
+		return "it is transcoded in software"
+	case a.plan.Hardware != nil && !a.plan.Hardware.Decode:
+		return "it is transcoded on the graphics, decoded in software"
+	}
+	return "it is transcoded on the graphics"
+}
+
+// runConvert runs ffmpeg to make s's stream as a says, from the time from,
+// and sends it to the player. Where ffmpeg fails before sending anything
+// and instead says what the next way does, it logs so, answers nothing,
+// and reports true, for the next way to take over.
+func (h *Hub) runConvert(ctx context.Context, w http.ResponseWriter, s *session, a *filmAttempt, in string, from float64,
+	about []any, instead string) (failed bool) {
+	plan := &a.plan
+	if plan.Encode {
+		s.encoding.Add(1)
+		defer s.encoding.Add(-1)
+		if a.gpu {
+			s.graphics.Add(1)
+			defer s.graphics.Add(-1)
+			decode := "software"
+			if plan.EncodeProfile().DecodesOnGPU(*plan.Hardware) {
+				decode = "graphics"
+			}
+			about = append(slices.Clip(about), "on", "graphics", "decode", decode)
+		}
+		if plan.Profile.Made {
+			about = append(slices.Clip(about), "with", plan.Profile.Name)
+		}
+	}
 	args := plan.Args(in, from)
 	// ffmpeg says how far a transcode has got, so that the log can say
 	// whether it keeps up.
 	var progressIn, progressOut *os.File
+	var err error
 	if plan.Encode {
 		if progressIn, progressOut, err = os.Pipe(); err != nil {
 			h.log.Error("cannot start ffmpeg to transcode a title", append(about, "error", err)...)
 			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
+			return false
 		}
 		defer progressIn.Close()
 		args = append([]string{"-progress", progressFD}, args...)
@@ -554,7 +629,7 @@ func (h *Hub) serveConverted(w http.ResponseWriter, r *http.Request, s *session)
 	if err != nil {
 		h.log.Error("cannot start ffmpeg to convert a title", append(about, "error", err)...)
 		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
+		return false
 	}
 	var progress *encodeProgress
 	if plan.Encode {
@@ -598,7 +673,7 @@ func (h *Hub) serveConverted(w http.ResponseWriter, r *http.Request, s *session)
 		}
 	}
 	werr := cmd.Wait()
-	if progress != nil {
+	if progress != nil && sent {
 		h.encodeEnded(progress, about)
 	}
 	switch {
@@ -608,12 +683,17 @@ func (h *Hub) serveConverted(w http.ResponseWriter, r *http.Request, s *session)
 		http.Error(w, "the title took too long to start", http.StatusGatewayTimeout)
 	case ctx.Err() != nil || fctx.Err() != nil:
 		// The player went away, or asked for the stream from elsewhere.
+	case werr != nil && !sent && instead != "":
+		h.log.Warn("ffmpeg could not transcode a title "+a.how+"; "+instead,
+			append(about, "error", werr, "ffmpeg", messages.String())...)
+		return true
 	case werr != nil && !sent:
 		h.log.Warn("ffmpeg could not convert a title", append(about, "error", werr, "ffmpeg", messages.String())...)
 		http.Error(w, "the title cannot be converted", http.StatusBadGateway)
 	case werr != nil:
 		h.log.Warn("ffmpeg stopped converting a title", append(about, "error", werr, "ffmpeg", messages.String())...)
 	}
+	return false
 }
 
 // clockTime writes a time in seconds as h:mm:ss for the log.

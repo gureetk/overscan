@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"overscan.gureet.ca/internal/streamprofile"
 )
 
 // Profile is what a device's player plays as it is.
@@ -147,6 +149,14 @@ type Plan struct {
 	Width, Height int
 	ToneMap       bool
 	FrameRate     float64
+	// Profile, for a title that its setting transcodes always (D150), is
+	// the profile that ffmpeg makes it with; the zero Profile for D73's
+	// transcode of what a box cannot play.
+	Profile streamprofile.Profile
+	// Hardware, if not nil, has the server's graphics transcode it (D148,
+	// D150): the hub sets it as a transcode starts. Its ToneMap says that
+	// they map the video's HDR10 to SDR.
+	Hardware *streamprofile.Hardware
 }
 
 // Track is a sound track of a converted stream.
@@ -284,6 +294,68 @@ func EncodePlan(info Info, p Profile, toneMap bool) Plan {
 	return plan
 }
 
+// ProfilePlan returns how the hub plays a file whose title's setting
+// transcodes it always with prof (D150), whether or not a player that
+// plays p would play it as it is: ffmpeg makes prof's codec of its video,
+// scaled down to fit prof's largest size, with prof's frame rate and
+// deinterlacing, mapped to the standard dynamic range where prof says so
+// and toneMap says that ffmpeg can, in MPEG-TS with every sound track that
+// Decide's converted stream carries: each converted to AAC in stereo where
+// prof says so and the box plays AAC, to Dolby Digital where prof says so
+// or the box does not play AAC, or, where prof keeps the source's sound,
+// copied as Decide's converted stream copies it. A file without a video
+// plays as Decide says.
+func ProfilePlan(info Info, p Profile, prof streamprofile.Profile, toneMap bool) Plan {
+	plan := Decide(info, p)
+	video := info.First(Video)
+	if video == nil {
+		return plan
+	}
+	why := "its setting (always, with " + prof.Name + ")"
+	if plan.Why != "" {
+		why += " and " + plan.Why
+	}
+	plan.Why = why
+	plan.Convert, plan.Encode = true, true
+	plan.Video = video.Index
+	plan.Width, plan.Height = 0, 0
+	if w, h := prof.Box(); w > 0 {
+		plan.Width, plan.Height = fit(video.Width, video.Height, w, h)
+	}
+	plan.ToneMap = toneMap && prof.ToneMap && video.HDR != ""
+	plan.FrameRate = video.FrameRate
+	// The profile's sound, as far as the box plays it: AAC in stereo where
+	// it plays AAC, and else Dolby Digital; as the source sends it where it
+	// plays that from MPEG-TS, as Decide says, and else Dolby Digital.
+	if prof.Sound == streamprofile.SoundAAC && !p.PlaysAudio("aac") {
+		prof.Sound = streamprofile.SoundAC3
+	}
+	plan.Profile = prof
+	plan.Tracks = streamTracks(soundOrder(info), p)
+	if prof.Sound != streamprofile.SoundCopy {
+		for i := range plan.Tracks {
+			plan.Tracks[i].Convert = true
+		}
+	}
+	return plan
+}
+
+// D73Profile is D73's transcode of what a box cannot play as a profile, for
+// the graphics: H.264 up to 1080p, at a high quality and at most 8 Mbit/s,
+// with every sound track as Dolby Digital.
+var D73Profile = streamprofile.Profile{Name: "D73", Made: true, Codec: streamprofile.H264, MaxLines: 1080,
+	Quality: streamprofile.High, MaxKbps: 8000, FrameRate: streamprofile.RateSource, Deinterlace: true,
+	ToneMap: true, Sound: streamprofile.SoundAC3}
+
+// EncodeProfile returns the profile that a transcode makes: Profile, or
+// D73Profile for D73's.
+func (p Plan) EncodeProfile() streamprofile.Profile {
+	if p.Profile.Made {
+		return p.Profile
+	}
+	return D73Profile
+}
+
 // fit returns the size of a picture of width by height that fits within
 // maxWidth by maxHeight, keeping its shape, in even numbers as H.264 at
 // 4:2:0 needs; 0 and 0 if the size is not known.
@@ -389,10 +461,21 @@ func (p Plan) Args(input string, from float64) []string {
 // before the time asked and leaves out what comes before it, so that the
 // stream starts at that very time.
 func (p Plan) encodeArgs(args []string, input string, from float64) []string {
+	if p.Hardware != nil {
+		return p.hardwareArgs(args, input, from)
+	}
 	if from > 0 {
 		args = append(args, "-ss", Seconds(from))
 	}
 	args = append(args, "-i", input)
+	if p.Video >= 0 && p.Profile.Made {
+		args = append(args, "-map", "0:"+strconv.Itoa(p.Video), "-vf", p.profileFilter())
+		args = append(args, p.Profile.SoftwareVideo()...)
+		if p.ToneMap {
+			args = append(args, "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709")
+		}
+		return p.soundArgs(args)
+	}
 	if p.Video >= 0 {
 		level := "4.1"
 		if p.FrameRate > 30.5 {
@@ -432,14 +515,71 @@ func (p Plan) videoFilter() string {
 		"tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
 }
 
+// profileFilter returns the filters that make the pictures of a transcode
+// with a profile in software (D150): deinterlaced and kept to at most 30
+// pictures a second as the profile says, then as videoFilter makes them.
+func (p Plan) profileFilter() string {
+	var f []string
+	if p.Profile.Deinterlace {
+		mode := "send_field"
+		if p.Profile.FrameRate == streamprofile.RateAtMost {
+			mode = "send_frame"
+		}
+		f = append(f, "bwdif=mode="+mode+":deint=interlaced")
+	}
+	if p.Profile.FrameRate == streamprofile.RateAtMost {
+		f = append(f, streamprofile.HalfFast)
+	}
+	return strings.Join(append(f, p.videoFilter()), ",")
+}
+
+// hardwareArgs returns, after args, ffmpeg's arguments to transcode the
+// video on the graphics (D148, D150): the graphics opened, and decoding
+// the file where Hardware says so; from the time asked, as encodeArgs
+// does; the profile's filters and encoder on the graphics; and the sound
+// as in software.
+func (p Plan) hardwareArgs(args []string, input string, from float64) []string {
+	prof, hw := p.EncodeProfile(), *p.Hardware
+	args = append(args, prof.HardwareInput(hw)...)
+	if from > 0 {
+		args = append(args, "-ss", Seconds(from))
+	}
+	args = append(args, "-i", input)
+	if p.Video >= 0 {
+		args = append(args, "-map", "0:"+strconv.Itoa(p.Video), "-vf", prof.HardwareFilter(hw))
+		args = append(args, prof.HardwareVideo(hw)...)
+		if hw.ToneMap {
+			args = append(args, "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709")
+		}
+	}
+	return p.soundArgs(args)
+}
+
+// SoundCodec names, as ffmpeg does, what the plan converts sound tracks
+// to: AAC for a transcode with a profile of AAC in stereo (D150), and else
+// Dolby Digital.
+func (p Plan) SoundCodec() string {
+	if p.Profile.Made && p.Profile.Sound == streamprofile.SoundAAC {
+		return "aac"
+	}
+	return "ac3"
+}
+
 // soundArgs returns, after args, ffmpeg's arguments for a stream's sound
-// tracks and its MPEG-TS output.
+// tracks and its MPEG-TS output. A track converted by a transcode with a
+// profile of AAC in stereo (D150) is AAC in stereo; others are Dolby
+// Digital.
 func (p Plan) soundArgs(args []string) []string {
+	aac := p.SoundCodec() == "aac"
 	for i, t := range p.Tracks {
 		n := strconv.Itoa(i)
 		args = append(args, "-map", "0:"+strconv.Itoa(t.Index))
 		if !t.Convert {
 			args = append(args, "-c:a:"+n, "copy")
+			continue
+		}
+		if aac {
+			args = append(args, "-c:a:"+n, "aac", "-ac:a:"+n, "2", "-b:a:"+n, "128k")
 			continue
 		}
 		ch := t.Channels

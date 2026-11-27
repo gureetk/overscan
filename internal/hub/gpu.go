@@ -106,6 +106,9 @@ func gpuCodec(d streaminfo.Details) string {
 	case "":
 		return ""
 	case "H.264":
+		if d.BitDepth > 8 {
+			return "-" // the test tries 8 bits only
+		}
 		return gpu.H264
 	case "HEVC":
 		if d.BitDepth > 8 {

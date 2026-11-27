@@ -15,8 +15,9 @@ import (
 
 // The films and series that devices see (D79): the administrator hides,
 // renames, locks (D85) and orders their shelves, and hides and locks
-// titles, on the Movies and Series pages and in the API. What the API and
-// the pages do goes through the same functions here.
+// titles, on the Movies and Series pages and in the API; shelves and titles
+// also say whether they are transcoded (D150). What the API and the pages
+// do goes through the same functions here.
 
 const (
 	// pageTitles is how many titles a page of the Movies or Series page
@@ -158,6 +159,29 @@ func (a *Admin) lockTitles(ctx context.Context, ids []int64, locked bool) (int, 
 	return n, nil
 }
 
+// setShelfTranscode sets what is transcoded of a shelf's titles (D150).
+func (a *Admin) setShelfTranscode(ctx context.Context, kind string, sh store.LibraryShelf, t store.Transcode) error {
+	if err := a.store.SetShelfTranscode(ctx, kind, sh.Key, t); err != nil {
+		return transcodeError(err, t.Profile)
+	}
+	a.log.Info("a shelf's transcoding set in the admin", "kind", kind, "shelf", sh.Own, "mode", t.Mode(), "profile", t.Profile)
+	return nil
+}
+
+// setTitlesTranscode sets what is transcoded of films or series, and
+// returns how many there were.
+func (a *Admin) setTitlesTranscode(ctx context.Context, ids []int64, t store.Transcode) (int, error) {
+	if len(ids) == 0 {
+		return 0, badEdit(http.StatusBadRequest, "no_titles", "Tick the titles first.")
+	}
+	n, err := a.store.SetTitlesTranscode(ctx, ids, t)
+	if err != nil {
+		return 0, transcodeError(err, t.Profile)
+	}
+	a.log.Info("titles' transcoding set in the admin", "titles", n, "mode", t.Mode(), "profile", t.Profile)
+	return n, nil
+}
+
 // apiShelf is a shelf in the API.
 type apiShelf struct {
 	ID           int64    `json:"id"`
@@ -170,11 +194,15 @@ type apiShelf struct {
 	Hidden       bool     `json:"hidden"`
 	Locked       bool     `json:"locked"`
 	Placed       bool     `json:"placed"`
+	// Transcode is what is transcoded of its titles that say nothing of
+	// their own (D150).
+	Transcode apiTranscode `json:"transcode"`
 }
 
 func shelfOut(sh store.LibraryShelf) apiShelf {
 	out := apiShelf{ID: sh.ID, Name: sh.Name, Own: sh.Own, Sources: sh.Sources, Titles: sh.Titles,
-		HiddenTitles: sh.HiddenTitles, Portal: sh.Portal, Hidden: sh.Hidden, Locked: sh.Locked, Placed: sh.Placed}
+		HiddenTitles: sh.HiddenTitles, Portal: sh.Portal, Hidden: sh.Hidden, Locked: sh.Locked, Placed: sh.Placed,
+		Transcode: transcodeBody(sh.Transcode)}
 	if out.Sources == nil {
 		out.Sources = []string{}
 	}
@@ -193,11 +221,17 @@ type apiTitle struct {
 	Locked bool   `json:"locked"`    // the administrator locked it
 	Adult  bool   `json:"adult"`     // its source marks it for adults
 	PIN    bool   `json:"needs_pin"` // devices need the PIN for it once there is one: it, its shelf or its mark
+	// Transcode is what is transcoded of it, and where that comes from:
+	// "title", "shelf" or "films_and_series"; TranscodeOwn is its own
+	// setting (D150).
+	Transcode    apiTranscodeFrom `json:"transcode"`
+	TranscodeOwn apiTranscode     `json:"transcode_own"`
 }
 
 func titleOut(t store.AdminTitle) apiTitle {
 	return apiTitle{ID: t.ID, Kind: t.Kind, Name: t.Name, Year: t.Year, Source: t.Source, Shelf: t.Shelf, Hidden: t.Hidden,
-		Locked: t.Own, Adult: t.Adult, PIN: t.Locked}
+		Locked: t.Own, Adult: t.Adult, PIN: t.Locked,
+		Transcode: transcodeFromBody(t.Transcode, t.TranscodeBy), TranscodeOwn: transcodeBody(t.TranscodeOwn)}
 }
 
 // apiKind reads the kind in a request's path; false if it answered that
@@ -272,6 +306,11 @@ func (a *Admin) apiChangeShelf(w http.ResponseWriter, r *http.Request, _ store.A
 				given = *name
 			}
 			err = a.renameShelf(ctx, kind, sh, given)
+		case "transcode":
+			var t store.Transcode
+			if t, err = readTranscode(v); err == nil {
+				err = a.setShelfTranscode(ctx, kind, sh, t)
+			}
 		default:
 			apiError(w, http.StatusBadRequest, "bad_json", "A shelf has no field named "+k+".")
 			return
@@ -370,15 +409,24 @@ func (a *Admin) apiChangeTitle(w http.ResponseWriter, r *http.Request, _ store.A
 		return
 	}
 	var body struct {
-		Hidden *bool `json:"hidden"`
-		Locked *bool `json:"locked"`
+		Hidden    *bool           `json:"hidden"`
+		Locked    *bool           `json:"locked"`
+		Transcode json.RawMessage `json:"transcode"`
 	}
 	if !readJSON(w, r, &body) {
 		return
 	}
-	if body.Hidden == nil && body.Locked == nil {
-		apiError(w, http.StatusBadRequest, "bad_json", "Give hidden or locked, true or false.")
+	if body.Hidden == nil && body.Locked == nil && body.Transcode == nil {
+		apiError(w, http.StatusBadRequest, "bad_json", "Give hidden or locked, true or false, or transcode.")
 		return
+	}
+	var tc *store.Transcode
+	if body.Transcode != nil {
+		t, err := readTranscode(body.Transcode)
+		if a.editAnswer(w, err) {
+			return
+		}
+		tc = &t
 	}
 	ctx := r.Context()
 	if _, err := a.store.AdminTitleByID(ctx, id); errors.Is(err, store.ErrNotFound) {
@@ -395,6 +443,11 @@ func (a *Admin) apiChangeTitle(w http.ResponseWriter, r *http.Request, _ store.A
 	}
 	if body.Locked != nil {
 		if _, err := a.lockTitles(ctx, []int64{id}, *body.Locked); a.editAnswer(w, err) {
+			return
+		}
+	}
+	if tc != nil {
+		if _, err := a.setTitlesTranscode(ctx, []int64{id}, *tc); a.editAnswer(w, err) {
 			return
 		}
 	}

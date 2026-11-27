@@ -16,8 +16,9 @@ import (
 )
 
 // The Transcoding page (D147): what is transcoded of live TV as a whole,
-// and the profiles, fixed and made by the administrator. Groups and
-// channels say their own on Live TV.
+// and of films and series as a whole (D150), and the profiles, fixed and
+// made by the administrator. Groups and channels say their own on Live
+// TV, shelves and titles on Movies and Series.
 
 // transcodeOption is a setting of what is transcoded, as a select offers
 // it: "as_needed", "never", or "always:" and a profile's name.
@@ -115,6 +116,8 @@ type transcodingData struct {
 	Live         store.Transcode
 	LiveText     string
 	LiveOptions  []transcodeOption
+	VOD          store.Transcode // films' and series' own setting
+	VODText      string
 	Profiles     []transcodeProfileRow
 	Full         bool
 	Editing      bool
@@ -145,6 +148,9 @@ func (d transcodingData) Capacity() string {
 // LiveValue is live TV's setting as its select names it.
 func (d transcodingData) LiveValue() string { return transcodeValue(d.Live) }
 
+// VODValue is films' and series' setting as its select names it.
+func (d transcodingData) VODValue() string { return transcodeValue(d.VOD) }
+
 func (a *Admin) transcodingData(ctx context.Context, form transcodeProfileForm, editing bool) (transcodingData, error) {
 	can, _, missing := a.transcoder()
 	d := transcodingData{CanTranscode: can, Missing: missing, Form: form, Editing: editing}
@@ -163,6 +169,9 @@ func (a *Admin) transcodingData(ctx context.Context, form transcodeProfileForm, 
 	if d.Live, err = a.store.LiveTranscode(ctx); err != nil {
 		return d, err
 	}
+	if d.VOD, err = a.store.VODTranscode(ctx); err != nil {
+		return d, err
+	}
 	ps, err := a.allTranscodeProfiles(ctx)
 	if err != nil {
 		return d, err
@@ -176,6 +185,7 @@ func (a *Admin) transcodingData(ctx context.Context, form transcodeProfileForm, 
 		return ""
 	}
 	d.LiveText = liveTranscodeText(d.Live, describe)
+	d.VODText = vodTranscodeText(d.VOD, describe)
 	d.LiveOptions = a.transcodeOptions(ctx, "As needed")
 	made := 0
 	for _, p := range ps {
@@ -290,5 +300,15 @@ func (a *Admin) liveTranscodeForm(w http.ResponseWriter, r *http.Request, s stor
 		err = a.setLiveTranscode(r.Context(), t)
 	}
 	a.transcodingDone(w, r, s, err, "Live TV is transcoded "+transcodeText(t)+", where its groups and channels say nothing of their own.",
+		transcodeProfileForm{P: newTranscodeProfile()}, false)
+}
+
+// vodTranscodeForm sets films' and series' own setting from the page.
+func (a *Admin) vodTranscodeForm(w http.ResponseWriter, r *http.Request, s store.AdminSession) {
+	t, err := parseTranscodeValue(r.PostFormValue("transcode"))
+	if err == nil {
+		err = a.setVODTranscode(r.Context(), t)
+	}
+	a.transcodingDone(w, r, s, err, "Films and series are transcoded "+transcodeText(t)+", where their shelves and titles say nothing of their own.",
 		transcodeProfileForm{P: newTranscodeProfile()}, false)
 }

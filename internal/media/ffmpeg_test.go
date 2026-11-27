@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"overscan.gureet.ca/internal/streamprofile"
 )
 
 // tools returns the paths of ffmpeg and ffprobe, skipping the test without
@@ -210,5 +212,61 @@ func TestEncodeWithFFmpeg(t *testing.T) {
 	// From 1.5 s exactly, not from the picture before: 2.5 s are left.
 	if got.Duration < 2.4 || got.Duration > 2.6 {
 		t.Errorf("made %v s, want the 2.5 s from 1.5 s", got.Duration)
+	}
+}
+
+// A title set to be transcoded always with a profile (D150): HEVC at 50
+// pictures a second, which the box plays, is made H.264 at most 576 lines
+// and 25 pictures a second, with AAC in stereo, from the time asked.
+func TestProfileWithFFmpeg(t *testing.T) {
+	ffmpeg, ffprobe := tools(t)
+	if !strings.Contains(string(run(t, ffmpeg, "-hide_banner", "-encoders")), " libx265 ") {
+		t.Skip("ffmpeg has no libx265 to make the test file with")
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "film.mkv")
+	run(t, ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin",
+		"-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=50:duration=4",
+		"-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=4",
+		"-c:v", "libx265", "-preset", "ultrafast", "-x265-params", "log-level=error",
+		"-c:a", "ac3", "-ac", "6", src)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, src)
+	}))
+	defer srv.Close()
+	input := srv.URL + "/in/film"
+	info, err := ParseProbe(run(t, ffprobe, ProbeArgs(input)...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan := Decide(info, MAG322); plan.Convert || plan.VideoNote != "" {
+		t.Fatalf("the box plays it as it is: %+v", plan)
+	}
+	small, err := streamprofile.Check(streamprofile.Profile{Name: "small", MaxLines: 576, Quality: streamprofile.Low,
+		FrameRate: streamprofile.RateAtMost})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := ProfilePlan(info, MAG322, small, false)
+	if !plan.Encode || plan.Width != 1024 || plan.Height != 576 || plan.Profile.Name != "small" ||
+		plan.Why != "its setting (always, with small)" || len(plan.Tracks) != 1 || !plan.Tracks[0].Convert {
+		t.Fatalf("ProfilePlan = %+v", plan)
+	}
+	out := filepath.Join(dir, "out.ts")
+	if err := os.WriteFile(out, run(t, ffmpeg, plan.Args(input, 1)...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ParseProbe(run(t, ffprobe, "-hide_banner", "-loglevel", "error", "-show_format", "-show_streams", "-print_format", "json", out))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := got.First(Video); v == nil || v.Codec != "h264" || v.Width != 1024 || v.Height != 576 || v.FrameRate != 25 {
+		t.Errorf("made %s", got.Summary())
+	}
+	if a := got.First(Audio); a == nil || a.Codec != "aac" || a.Channels != 2 {
+		t.Errorf("made %s", got.Summary())
+	}
+	if got.Duration < 2.9 || got.Duration > 3.1 {
+		t.Errorf("made %v s, want the 3 s from 1 s", got.Duration)
 	}
 }

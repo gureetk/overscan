@@ -78,10 +78,18 @@ func (h *Hub) CanTranscode() bool { return h.CanConvert() && h.encoder.H264 }
 // not: the video plays, the source's server transcodes it (D71), ffmpeg
 // cannot, or the administrator has not let it.
 func (h *Hub) transcodeLimit(ctx context.Context, item store.PlayableItem, plan media.Plan) int {
-	if plan.VideoNote == "" || item.TranscodeURL != "" || !h.CanTranscode() {
+	if plan.VideoNote == "" || item.TranscodeURL != "" || !h.CanConvert() {
 		return 0
 	}
-	return h.transcodeCap(ctx)
+	n := 0
+	if h.encoder.H264 {
+		n = h.transcodeCap(ctx)
+	}
+	// The graphics transcode it too, where they make H.264 (D150).
+	if h.gpuTranscodes(ctx, media.D73Profile) {
+		n += h.gpuCap(ctx)
+	}
+	return n
 }
 
 // convertsSound reports whether a film or an episode whose sound or file a
@@ -248,7 +256,7 @@ func formatSpeed(speed float64) string {
 // encodeSummary describes what a transcode makes of the video for the log,
 // such as "h264 1920x800, mapped to the standard dynamic range".
 func encodeSummary(plan media.Plan) string {
-	d := "h264"
+	d := plan.EncodeProfile().VideoCodec()
 	if plan.Width > 0 && plan.Height > 0 {
 		d += " " + strconv.Itoa(plan.Width) + "x" + strconv.Itoa(plan.Height)
 	}

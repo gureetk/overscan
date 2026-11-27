@@ -235,7 +235,9 @@ func (s *Store) ChangeTranscodeProfile(ctx context.Context, name string, p strea
 			"UPDATE devices SET output_profile = ?1 WHERE output_profile = ?2",
 			"UPDATE channels SET transcode = ?1 WHERE transcode = ?2",
 			"UPDATE lineup_groups SET transcode = ?1 WHERE transcode = ?2",
-			"UPDATE settings SET value = ?1 WHERE key = '" + settingLiveTranscode + "' AND value = ?2",
+			"UPDATE titles SET transcode = ?1 WHERE transcode = ?2",
+			"UPDATE shelf_settings SET transcode = ?1 WHERE transcode = ?2",
+			"UPDATE settings SET value = ?1 WHERE key IN ('" + settingLiveTranscode + "', '" + settingVODTranscode + "') AND value = ?2",
 		} {
 			if _, err := tx.ExecContext(ctx, q, p.Name, name); err != nil {
 				return err
@@ -249,11 +251,16 @@ func (s *Store) ChangeTranscodeProfile(ctx context.Context, name string, p strea
 type ProfileUses struct {
 	Accounts, Devices, Channels, Groups int
 	LiveTV                              bool
+	// Titles and Shelves count the films, series and shelves that name
+	// it, and FilmsAndSeries says that films and series as a whole do
+	// (D150).
+	Titles, Shelves int
+	FilmsAndSeries  bool
 }
 
 // Any reports whether anything names the profile.
 func (u ProfileUses) Any() bool {
-	return u.Accounts+u.Devices+u.Channels+u.Groups > 0 || u.LiveTV
+	return u.Accounts+u.Devices+u.Channels+u.Groups+u.Titles+u.Shelves > 0 || u.LiveTV || u.FilmsAndSeries
 }
 
 // String says what names the profile, such as "2 accounts and live TV".
@@ -274,6 +281,11 @@ func (u ProfileUses) String() string {
 	if u.LiveTV {
 		parts = append(parts, "live TV")
 	}
+	add(u.Titles, "film or series", "films and series")
+	add(u.Shelves, "shelf", "shelves")
+	if u.FilmsAndSeries {
+		parts = append(parts, "every film and series")
+	}
 	switch len(parts) {
 	case 0:
 		return "nothing"
@@ -291,8 +303,11 @@ func (s *Store) TranscodeProfileUses(ctx context.Context, name string) (ProfileU
 			(SELECT count(*) FROM devices WHERE output_profile = ?1),
 			(SELECT count(*) FROM channels WHERE transcode = ?1),
 			(SELECT count(*) FROM lineup_groups WHERE transcode = ?1),
-			EXISTS (SELECT 1 FROM settings WHERE key = '`+settingLiveTranscode+`' AND value = ?1)`, name).
-		Scan(&u.Accounts, &u.Devices, &u.Channels, &u.Groups, &u.LiveTV)
+			EXISTS (SELECT 1 FROM settings WHERE key = '`+settingLiveTranscode+`' AND value = ?1),
+			(SELECT count(*) FROM titles WHERE transcode = ?1),
+			(SELECT count(*) FROM shelf_settings WHERE transcode = ?1),
+			EXISTS (SELECT 1 FROM settings WHERE key = '`+settingVODTranscode+`' AND value = ?1)`, name).
+		Scan(&u.Accounts, &u.Devices, &u.Channels, &u.Groups, &u.LiveTV, &u.Titles, &u.Shelves, &u.FilmsAndSeries)
 	if err != nil {
 		return ProfileUses{}, fmt.Errorf("store: uses of profile %q: %w", name, err)
 	}
@@ -312,7 +327,9 @@ func (s *Store) RemoveTranscodeProfile(ctx context.Context, name string) error {
 				OR EXISTS (SELECT 1 FROM devices WHERE output_profile = ?1)
 				OR EXISTS (SELECT 1 FROM channels WHERE transcode = ?1)
 				OR EXISTS (SELECT 1 FROM lineup_groups WHERE transcode = ?1)
-				OR EXISTS (SELECT 1 FROM settings WHERE key = '`+settingLiveTranscode+`' AND value = ?1)`, name).Scan(&used)
+				OR EXISTS (SELECT 1 FROM titles WHERE transcode = ?1)
+				OR EXISTS (SELECT 1 FROM shelf_settings WHERE transcode = ?1)
+				OR EXISTS (SELECT 1 FROM settings WHERE key IN ('`+settingLiveTranscode+`', '`+settingVODTranscode+`') AND value = ?1)`, name).Scan(&used)
 		if err != nil {
 			return err
 		}
@@ -411,6 +428,8 @@ type TranscodeCounts struct {
 	Profiles                      int
 	ChannelsAlways, ChannelsNever int
 	GroupsAlways, GroupsNever     int
+	TitlesAlways, TitlesNever     int // films and series (D150)
+	ShelvesAlways, ShelvesNever   int
 }
 
 // TranscodeCounts returns the counts for the support bundle.
@@ -421,8 +440,13 @@ func (s *Store) TranscodeCounts(ctx context.Context) (TranscodeCounts, error) {
 			(SELECT count(*) FROM channels WHERE transcode IS NOT NULL AND transcode <> ?1),
 			(SELECT count(*) FROM channels WHERE transcode = ?1),
 			(SELECT count(*) FROM lineup_groups WHERE transcode IS NOT NULL AND transcode <> ?1),
-			(SELECT count(*) FROM lineup_groups WHERE transcode = ?1)`, Never).
-		Scan(&c.Profiles, &c.ChannelsAlways, &c.ChannelsNever, &c.GroupsAlways, &c.GroupsNever)
+			(SELECT count(*) FROM lineup_groups WHERE transcode = ?1),
+			(SELECT count(*) FROM titles WHERE transcode IS NOT NULL AND transcode <> ?1 AND missing_since IS NULL),
+			(SELECT count(*) FROM titles WHERE transcode = ?1 AND missing_since IS NULL),
+			(SELECT count(*) FROM shelf_settings WHERE transcode IS NOT NULL AND transcode <> ?1),
+			(SELECT count(*) FROM shelf_settings WHERE transcode = ?1)`, Never).
+		Scan(&c.Profiles, &c.ChannelsAlways, &c.ChannelsNever, &c.GroupsAlways, &c.GroupsNever,
+			&c.TitlesAlways, &c.TitlesNever, &c.ShelvesAlways, &c.ShelvesNever)
 	if err != nil {
 		return TranscodeCounts{}, fmt.Errorf("store: transcoding's counts: %w", err)
 	}

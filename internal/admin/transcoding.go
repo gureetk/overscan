@@ -16,7 +16,8 @@ import (
 
 // What is transcoded, and the profiles that the administrator makes
 // (D147): live TV as a whole, a lineup's group and a channel are each
-// transcoded as needed, always with a profile, or never; profiles of a
+// transcoded as needed, always with a profile, or never, as films and
+// series as a whole, a shelf and a title are (D150); profiles of a
 // codec, a largest size, a quality, a frame rate, deinterlacing, HDR made
 // SDR, and the sound, beside the fixed ones (D110).
 
@@ -27,8 +28,8 @@ type apiTranscode struct {
 }
 
 // apiTranscodeFrom is the setting that wins for a channel, and where it
-// comes from: "channel", "group" or "live_tv"; null when none says
-// anything.
+// comes from: "channel", "group" or "live_tv"; for a film or a series,
+// "title", "shelf" or "films_and_series"; null when none says anything.
 type apiTranscodeFrom struct {
 	apiTranscode
 	SetBy *string `json:"set_by"`
@@ -133,11 +134,17 @@ type apiTranscodeUses struct {
 	Channels int  `json:"channels"`
 	Groups   int  `json:"groups"`
 	LiveTV   bool `json:"live_tv"`
+	// Titles counts the films and series that name it, Shelves the
+	// shelves, and FilmsAndSeries says that films and series as a whole
+	// do (D150).
+	Titles         int  `json:"titles"`
+	Shelves        int  `json:"shelves"`
+	FilmsAndSeries bool `json:"films_and_series"`
 }
 
 func transcodeProfileBody(p streamprofile.Profile, u store.ProfileUses) apiTranscodeProfile {
 	out := apiTranscodeProfile{Name: p.Name, Fixed: !p.Made, Label: p.Label, Describes: p.Describe(),
-		Uses: apiTranscodeUses{u.Accounts, u.Devices, u.Channels, u.Groups, u.LiveTV}}
+		Uses: apiTranscodeUses{u.Accounts, u.Devices, u.Channels, u.Groups, u.LiveTV, u.Titles, u.Shelves, u.FilmsAndSeries}}
 	if p.Made {
 		out.Codec, out.MaxLines, out.Quality, out.MaxKbps = &p.Codec, &p.MaxLines, &p.Quality, &p.MaxKbps
 		out.FrameRate, out.Deinterlace, out.HDRToSDR, out.Sound = &p.FrameRate, &p.Deinterlace, &p.ToneMap, &p.Sound
@@ -260,6 +267,16 @@ func (a *Admin) setLiveTranscode(ctx context.Context, t store.Transcode) error {
 		return transcodeError(err, t.Profile)
 	}
 	a.log.Info("live TV's transcoding set in the admin", "mode", t.Mode(), "profile", t.Profile)
+	return nil
+}
+
+// setVODTranscode sets films' and series' own setting of what is
+// transcoded (D150).
+func (a *Admin) setVODTranscode(ctx context.Context, t store.Transcode) error {
+	if err := a.store.SetVODTranscode(ctx, t); err != nil {
+		return transcodeError(err, t.Profile)
+	}
+	a.log.Info("films' and series' transcoding set in the admin", "mode", t.Mode(), "profile", t.Profile)
 	return nil
 }
 
@@ -395,4 +412,17 @@ func liveTranscodeText(t store.Transcode, describe func(string) string) string {
 			t.Profile, describe(t.Profile))
 	}
 	return "As needed: a channel is transcoded only when its device's or account's profile says so, as before, unless its group or the channel says otherwise."
+}
+
+// vodTranscodeText says what films' and series' own setting does, for its
+// form.
+func vodTranscodeText(t store.Transcode, describe func(string) string) string {
+	switch {
+	case t.Never:
+		return "Never: every film and episode plays with its video as its source sends it, even where the box may not play it, unless its shelf or the title says otherwise. Their sound is still converted where the Settings page says so."
+	case t.Profile != "":
+		return fmt.Sprintf("Always: every film and episode is transcoded with %s (%s) for the boxes, whether or not they could play it as it is, unless its shelf or the title says otherwise.",
+			t.Profile, describe(t.Profile))
+	}
+	return "As needed: a film or an episode is transcoded only when the box cannot play its video, as the Settings page allows, unless its shelf or the title says otherwise."
 }
