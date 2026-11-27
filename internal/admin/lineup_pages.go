@@ -152,6 +152,11 @@ type lineupData struct {
 	CanRepair     bool // channels set to be repaired go through ffmpeg (D57)
 	Now           time.Time
 	RepairDefault bool // channels are repaired unless they say otherwise (D58)
+	// LiveTranscode is what is transcoded of live TV as a whole, and
+	// TranscodeChoices what a group or a channel can say beyond as needed:
+	// never, or always with each profile that transcodes (D147).
+	LiveTranscode    store.Transcode
+	TranscodeChoices []transcodeOption
 
 	// Channels in other groups whose names hold View.Add, to add to the
 	// group shown: the first maxCandidates of Found.
@@ -171,7 +176,26 @@ const maxCandidates = 50
 // Row returns what an entry's row, or its panel, needs.
 func (d lineupData) Row(e store.LineupEntry) entryRow {
 	return entryRow{E: e, View: d.View, CSRF: d.CSRF, Groups: d.ByName, Home: d.homeGroup[fmt.Sprint(e.SourceID, "/", e.Category)],
-		Open: e.ID == d.Edit, InGroup: d.View.Group != nil, CanRepair: d.CanRepair, RepairDefault: d.RepairDefault, Now: d.Now}
+		Open: e.ID == d.Edit, InGroup: d.View.Group != nil, CanRepair: d.CanRepair, RepairDefault: d.RepairDefault, Now: d.Now,
+		LiveTranscode: d.LiveTranscode, TranscodeChoices: d.TranscodeChoices}
+}
+
+// GroupTranscodeOptions are what a group's select offers: as live TV says,
+// then never and always with each profile (D147).
+func (d lineupData) GroupTranscodeOptions() []transcodeOption {
+	return append([]transcodeOption{{store.ModeAsNeeded, "As live TV says: " + transcodeText(d.LiveTranscode)}}, d.TranscodeChoices...)
+}
+
+// GroupTranscodeValue is a group's setting as its select names it.
+func (lineupData) GroupTranscodeValue(g store.LineupGroup) string { return transcodeValue(g.Transcode) }
+
+// GroupTranscodeText says what a group's own setting does, "" for as
+// needed.
+func (lineupData) GroupTranscodeText(g store.LineupGroup) string {
+	if g.Transcode.AsNeeded() {
+		return ""
+	}
+	return "Transcoded " + transcodeText(g.Transcode)
 }
 
 // Shown counts the channels that devices see.
@@ -230,6 +254,11 @@ type entryRow struct {
 	CanRepair     bool
 	RepairDefault bool
 	Now           time.Time
+
+	// What is transcoded of live TV as a whole, and what a channel can say
+	// beyond as needed (D147).
+	LiveTranscode    store.Transcode
+	TranscodeChoices []transcodeOption
 
 	// Backups are, for the entry open in the panel, the channels whose
 	// streams play when its own cannot start (D109), and RuleBackups those
@@ -357,6 +386,34 @@ func (entryRow) MaxBackups() int { return store.MaxBackups }
 // start: those picked by hand and those that merge rules give it.
 func (r entryRow) AllBackups() int { return r.E.Backups + r.E.RuleBackups }
 
+// TranscodeValue is its channel's own setting of what is transcoded, as
+// the panel's select names it (D147).
+func (r entryRow) TranscodeValue() string { return transcodeValue(r.E.TranscodeOwn) }
+
+// TranscodeOptions are what the panel's select offers: as its group says,
+// with what that is, then never and always with each profile.
+func (r entryRow) TranscodeOptions() []transcodeOption {
+	above := r.LiveTranscode
+	for _, g := range r.Groups {
+		if g.ID == r.E.GroupID && !g.Transcode.AsNeeded() {
+			above = g.Transcode
+		}
+	}
+	return append([]transcodeOption{{store.ModeAsNeeded, "As its group says: " + transcodeText(above)}}, r.TranscodeChoices...)
+}
+
+// TranscodeBadge says what its channel's own setting does, "" for as
+// needed.
+func (r entryRow) TranscodeBadge() string {
+	switch t := r.E.TranscodeOwn; {
+	case t.Never:
+		return "Not transcoded"
+	case t.Profile != "":
+		return "Transcoded: " + t.Profile
+	}
+	return ""
+}
+
 // RepairChoice is the entry's own repair switch, as the edit form names
 // it: "on", "off", or "" when it follows the default.
 func (r entryRow) RepairChoice() string {
@@ -434,6 +491,10 @@ func (a *Admin) lineupData(ctx context.Context, lv lineupView, csrf string, rows
 	if d.RepairDefault, err = a.store.RepairDefault(ctx); err != nil {
 		return lineupData{}, err
 	}
+	if d.LiveTranscode, err = a.store.LiveTranscode(ctx); err != nil {
+		return lineupData{}, err
+	}
+	d.TranscodeChoices = a.transcodeOptions(ctx, "")[1:]
 	if d.Lineups, err = a.store.Lineups(ctx); err != nil {
 		return lineupData{}, err
 	}
@@ -694,6 +755,17 @@ func (a *Admin) saveEntry(w http.ResponseWriter, r *http.Request, s store.AdminS
 	} else if !sameChoice(repair, e.RepairOwn) {
 		ch.Repair, ch.RepairSet = repair, true
 	}
+	// A form without the setting leaves it as it is.
+	if v := r.PostFormValue("transcode"); v != "" {
+		t, err := parseTranscodeValue(v)
+		if err != nil {
+			a.lineupDone(w, r, s, err, "", id)
+			return
+		}
+		if t != e.TranscodeOwn {
+			ch.Transcode, ch.TranscodeSet = t, true
+		}
+	}
 	number, present, ok := formInt(r, "number")
 	pin := r.PostFormValue("pinned") != ""
 	switch {
@@ -785,6 +857,13 @@ func (a *Admin) changeSome(w http.ResponseWriter, r *http.Request, s store.Admin
 		default:
 			done = "Set " + n + " to play as they are."
 		}
+	case "notranscode", "transcodegroup":
+		ch.TranscodeSet = true
+		done = "Set " + n + " to be transcoded as their group says."
+		if r.PostFormValue("action") == "notranscode" {
+			ch.Transcode.Never = true
+			done = "Set " + n + " never to be transcoded: they go as their sources send them."
+		}
 	case "move":
 		// The bar's list starts on "Move to…", which sends no group.
 		group, present, ok := formInt(r, "group")
@@ -857,6 +936,17 @@ func (a *Admin) groupAction(w http.ResponseWriter, r *http.Request, s store.Admi
 			done = fmt.Sprintf("The group's channels are numbered from %d, and a channel that joins it takes the next free number after its last.", from)
 			if from == 0 {
 				done = "The group has no first number now: its channels keep their numbers, and one that joins it is numbered as the source numbers it."
+			}
+		}
+	case "transcode":
+		var t store.Transcode
+		if t, err = parseTranscodeValue(r.PostFormValue("transcode")); err != nil {
+			break
+		}
+		if err = a.setGroupTranscode(ctx, id, t); err == nil {
+			done = "The group's channels are transcoded " + transcodeText(t) + ", unless a channel says otherwise."
+			if t.AsNeeded() {
+				done = "The group's channels are transcoded as live TV says, unless a channel says otherwise."
 			}
 		}
 	case "sort":

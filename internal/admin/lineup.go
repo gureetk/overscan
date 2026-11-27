@@ -185,6 +185,10 @@ type entryChange struct {
 	// give it.
 	Logo    *string
 	LogoSet bool
+	// Transcode is what is transcoded of its channel (D147), when
+	// TranscodeSet.
+	Transcode    store.Transcode
+	TranscodeSet bool
 }
 
 // maxLogo bounds a logo's address, as a rule's.
@@ -259,6 +263,11 @@ func (a *Admin) changeEntries(ctx context.Context, ids []int64, ch entryChange) 
 			return lineupStoreError(err, "channel")
 		}
 	}
+	if ch.TranscodeSet {
+		if err := a.setEntriesTranscode(ctx, lineup, ids, ch.Transcode); err != nil {
+			return err
+		}
+	}
 	if ch.RepairSet {
 		if err := a.store.SetEntriesRepair(ctx, lineup, ids, ch.Repair); err != nil {
 			return lineupStoreError(err, "channel")
@@ -309,12 +318,13 @@ type apiGroup struct {
 	Shown       int                `json:"shown"`
 	FirstNumber *int               `json:"first_number"`
 	NumbersFrom *int               `json:"numbers_from"`
+	Transcode   apiTranscode       `json:"transcode"`
 	Categories  []apiGroupCategory `json:"categories"`
 }
 
 func groupBody(g store.LineupGroup) apiGroup {
 	out := apiGroup{ID: g.ID, Name: g.Name, Hidden: g.Hidden, Locked: g.Locked, Edited: g.Edited, Channels: g.Channels,
-		Shown: g.Shown, Categories: []apiGroupCategory{}}
+		Shown: g.Shown, Transcode: transcodeBody(g.Transcode), Categories: []apiGroupCategory{}}
 	if g.FirstNumber > 0 {
 		out.FirstNumber = &g.FirstNumber
 	}
@@ -355,8 +365,12 @@ type apiEntry struct {
 	GroupLocked bool  `json:"group_locked"`
 	Repair      bool  `json:"repair"`
 	RepairOwn   *bool `json:"repair_own"`
-	Adult       bool  `json:"adult"` // its source marks it for adults (D86)
-	Radio       bool  `json:"radio"` // its source lists it as a radio station (D87)
+	// Transcode is what is transcoded of it, and where that comes from;
+	// TranscodeOwn its channel's own setting (D147).
+	Transcode    apiTranscodeFrom `json:"transcode"`
+	TranscodeOwn apiTranscode     `json:"transcode_own"`
+	Adult        bool             `json:"adult"` // its source marks it for adults (D86)
+	Radio        bool             `json:"radio"` // its source lists it as a radio station (D87)
 	// Rules lists what the lineup's rules do to it, by their actions
 	// (D107); the administrator's own edits win over them.
 	Rules []string `json:"rules"`
@@ -381,6 +395,7 @@ func entryBody(e store.LineupEntry) apiEntry {
 		Name: e.Name, ChannelName: e.ChannelName, Renamed: e.Renamed, Moved: e.Moved,
 		Visibility: visibilityNames[e.Visibility], Hidden: e.Hidden, Missing: e.Missing, LeftOut: e.LeftOut, Locked: e.Locked,
 		GroupLocked: e.GroupLocked, Repair: e.Repair, RepairOwn: e.RepairOwn, Adult: e.Adult, Radio: e.Radio,
+		Transcode: transcodeFromBody(e.Transcode, e.TranscodeBy), TranscodeOwn: transcodeBody(e.TranscodeOwn),
 		RuleBackups: e.RuleBackups, Health: healthBody(e.Health), LogoByHand: e.LogoByHand}
 	if path := artwork.LogoPath(e.ID, e.Logo); path != "" {
 		out.Logo = &path
@@ -495,13 +510,21 @@ func (a *Admin) apiChangeGroup(w http.ResponseWriter, r *http.Request, _ store.A
 		Hidden      *bool   `json:"hidden"`
 		Locked      *bool   `json:"locked"`
 		NumbersFrom *int    `json:"numbers_from"`
+		// Transcode is what is transcoded of its channels (D147).
+		Transcode json.RawMessage `json:"transcode"`
 	}
 	if !readJSON(w, r, &body) {
 		return
 	}
-	if body.Name == nil && body.Hidden == nil && body.Locked == nil && body.NumbersFrom == nil {
-		apiError(w, http.StatusBadRequest, "bad_json", "Say what to change: name, hidden, locked or numbers_from.")
+	if body.Name == nil && body.Hidden == nil && body.Locked == nil && body.NumbersFrom == nil && body.Transcode == nil {
+		apiError(w, http.StatusBadRequest, "bad_json", "Say what to change: name, hidden, locked, numbers_from or transcode.")
 		return
+	}
+	if body.Transcode != nil {
+		t, err := readTranscode(body.Transcode)
+		if a.editAnswer(w, err) || a.editAnswer(w, a.setGroupTranscode(r.Context(), id, t)) {
+			return
+		}
 	}
 	if body.NumbersFrom != nil {
 		if a.editAnswer(w, a.setNumbersFrom(r.Context(), id, *body.NumbersFrom)) {
@@ -686,6 +709,12 @@ func readEntryChange(w http.ResponseWriter, r *http.Request, withIDs bool) ([]in
 				return bad("repair is true, false, or null for the default.")
 			}
 			ch.Repair, ch.RepairSet = repair, true
+		case k == "transcode":
+			t, err := readTranscode(v)
+			if err != nil {
+				return bad(err.Error())
+			}
+			ch.Transcode, ch.TranscodeSet = t, true
 		case k == "logo" && !withIDs:
 			var logo *string
 			if json.Unmarshal(v, &logo) != nil {

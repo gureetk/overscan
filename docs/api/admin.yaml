@@ -83,6 +83,12 @@ tags:
       `series`.
   - name: sources
     description: Where channels come from.
+  - name: transcoding
+    description: >-
+      The profiles that live channels can be transcoded with: Overscan's own
+      fixed ones (D110) and those that the administrator makes (D147). What
+      is transcoded is set on live TV as a whole (`live_transcode` in the
+      settings), on each group and on each channel (`transcode`).
   - name: guides
     description: >-
       Guides of the household's own (D139): XMLTV guides at an address, or
@@ -1759,6 +1765,8 @@ paths:
                   type: integer
                   minimum: 0
                   maximum: 999999
+                transcode:
+                  $ref: "#/components/schemas/Transcode"
       responses:
         "200":
           $ref: "#/components/responses/Group"
@@ -2182,6 +2190,10 @@ paths:
                 repair:
                   type: [boolean, "null"]
                   description: Their channels' own repair switch (D57); null gives them back to the default (D58).
+                transcode:
+                  allOf:
+                    - $ref: "#/components/schemas/Transcode"
+                  description: What is transcoded of their channels, at their sources, so in every lineup (D147).
       responses:
         "200":
           description: Changed.
@@ -2240,6 +2252,10 @@ paths:
                 repair:
                   type: [boolean, "null"]
                   description: Its channel's own repair switch (D57); null gives it back to the default (D58).
+                transcode:
+                  allOf:
+                    - $ref: "#/components/schemas/Transcode"
+                  description: What is transcoded of its channel, at its source, so in every lineup (D147).
                 number:
                   type: [integer, "null"]
                   minimum: 1
@@ -2723,6 +2739,8 @@ paths:
                     Films and series of Xtream servers and Stalker portals
                     whose poster is missing, does not load, or is one that
                     many of their source's titles share take TMDB's (D143).
+                live_transcode:
+                  $ref: "#/components/schemas/Transcode"
       responses:
         "200":
           $ref: "#/components/responses/Settings"
@@ -3139,6 +3157,137 @@ paths:
           $ref: "#/components/responses/NotFound"
         "415":
           $ref: "#/components/responses/NotJSON"
+
+  /transcode-profiles:
+    get:
+      tags: [transcoding]
+      operationId: listTranscodeProfiles
+      summary: List the profiles that streams can be transcoded with
+      description: >-
+        Overscan's own fixed profiles first (D110), then those that the
+        administrator made, by name (D147). Accounts' and devices'
+        `output_profile`, and the `transcode` settings of live TV, groups and
+        channels, name them.
+      responses:
+        "200":
+          description: The profiles.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profiles]
+                properties:
+                  profiles:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TranscodeProfile"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    post:
+      tags: [transcoding]
+      operationId: addTranscodeProfile
+      summary: Make a profile
+      description: >-
+        `name` is needed: lower-case letters, digits and hyphens, at most 40,
+        and not a name that Overscan uses itself. What the body leaves out
+        takes its default: H.264, the source's size, medium quality, no
+        highest bit rate, the source's frame rate, deinterlacing, HDR made
+        SDR, and AAC in stereo. A server keeps at most 50 profiles of its own.
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TranscodeProfileSettings"
+      responses:
+        "201":
+          $ref: "#/components/responses/TranscodeProfile"
+        "400":
+          $ref: "#/components/responses/EditMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "409":
+          $ref: "#/components/responses/EditConflict"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+
+  /transcode-profiles/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [transcoding]
+      operationId: getTranscodeProfile
+      summary: A profile
+      responses:
+        "200":
+          $ref: "#/components/responses/TranscodeProfile"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [transcoding]
+      operationId: changeTranscodeProfile
+      summary: Change a profile that the administrator made
+      description: >-
+        What the body leaves out stays as it is. A new name carries over to
+        everything that names the profile. Overscan's own fixed profiles
+        stay as they are (`fixed_profile`).
+      security:
+        - session: []
+          csrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TranscodeProfileSettings"
+      responses:
+        "200":
+          $ref: "#/components/responses/TranscodeProfile"
+        "400":
+          $ref: "#/components/responses/EditMistake"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/EditConflict"
+        "415":
+          $ref: "#/components/responses/NotJSON"
+    delete:
+      tags: [transcoding]
+      operationId: removeTranscodeProfile
+      summary: Remove a profile that the administrator made
+      description: >-
+        Refused while an account, a device, a channel, a group or live TV
+        names it (`profile_in_use`), and for Overscan's own fixed profiles
+        (`fixed_profile`).
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "204":
+          description: Removed.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/EditConflict"
 
   /guides:
     get:
@@ -4218,8 +4367,11 @@ components:
           type: integer
         left_out:
           type: object
-          description: What it left out, since this server has no such source or channel.
-          required: [categories, channels, backups, rules]
+          description: >-
+            What it left out, since this server has no such source or channel,
+            and the groups whose transcode names a profile that this server
+            lacks, which are transcoded as needed (D147).
+          required: [categories, channels, backups, rules, transcodes]
           properties:
             categories:
               type: integer
@@ -4228,6 +4380,8 @@ components:
             backups:
               type: integer
             rules:
+              type: integer
+            transcodes:
               type: integer
     Credentials:
       type: object
@@ -4323,14 +4477,121 @@ components:
           description: Its own output profile (D110), or "" while it takes its account's.
     OutputProfile:
       type: string
-      enum: [source, h264-720p, h264-1080p]
       description: >-
         How live channels reach a device or a player (D110): `source` as the
         source sends them; `h264-720p` and `h264-1080p` made H.264, at up to
         1280×720 or 1920×1080, with AAC sound in stereo, by this server's
-        ffmpeg, while transcoding is on (`transcode_video` in the settings,
-        each such stream counting against its number at a time), and as the
-        source sends them otherwise.
+        ffmpeg; or the name of a profile that the administrator made
+        (D147, `transcode-profiles`). A profile that transcodes does so
+        while transcoding is on (`transcode_video` in the settings, each such
+        stream counting against its number at a time), and sends streams as
+        their sources send them otherwise. Unknown names are refused
+        (`bad_output_profile`).
+    Transcode:
+      type: object
+      required: [mode]
+      description: >-
+        What is transcoded (D147): `as_needed`, as a device's or account's
+        profile says, or as the level above says; `always`, with `profile`,
+        for devices that would get the stream as its source sends it; or
+        `never`, whatever a device's profile. `profile` names a profile that
+        transcodes, fixed or made by the administrator, and is null unless
+        `mode` is `always`. A profile that does not exist, or that does not
+        transcode, is refused (`bad_transcode`).
+      properties:
+        mode:
+          type: string
+          enum: [as_needed, always, never]
+        profile:
+          type: [string, "null"]
+    TranscodeProfile:
+      type: object
+      required: [name, fixed, label, describes, codec, max_lines, quality, max_kbps, frame_rate, deinterlace, hdr_to_sdr, sound, uses]
+      description: >-
+        A profile that streams can be transcoded with: one of Overscan's own
+        fixed profiles (D110), whose settings are null, or one that the
+        administrator made (D147).
+      properties:
+        name:
+          type: string
+        fixed:
+          type: boolean
+        label:
+          type: string
+        describes:
+          type: string
+          description: What it makes, in words, such as "HEVC, up to 1080p, high quality, AAC in stereo".
+        codec:
+          type: [string, "null"]
+          enum: [h264, hevc, null]
+        max_lines:
+          type: [integer, "null"]
+          enum: [0, 576, 720, 1080, null]
+          description: Its largest size, in lines; 0 for the source's. A picture is never made larger.
+        quality:
+          type: [string, "null"]
+          enum: [high, medium, low, null]
+        max_kbps:
+          type: [integer, "null"]
+          description: The highest bit rate of its video, in kbit/s, from 500 to 40000; 0 for none.
+        frame_rate:
+          type: [string, "null"]
+          enum: [source, "30", null]
+          description: >-
+            `source` makes a picture of each field of an interlaced picture;
+            `30` makes one of each frame, and halves a faster rate, steadily.
+        deinterlace:
+          type: [boolean, "null"]
+        hdr_to_sdr:
+          type: [boolean, "null"]
+          description: An HDR picture is made SDR; for live channels, only graphics do it.
+        sound:
+          type: [string, "null"]
+          enum: [aac, ac3, copy, null]
+          description: The first sound track as AAC in stereo or Dolby Digital, or every sound track as the source sends it.
+        uses:
+          type: object
+          required: [accounts, devices, channels, groups, live_tv]
+          properties:
+            accounts:
+              type: integer
+            devices:
+              type: integer
+            channels:
+              type: integer
+            groups:
+              type: integer
+            live_tv:
+              type: boolean
+    TranscodeProfileSettings:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          maxLength: 40
+        codec:
+          type: string
+          enum: [h264, hevc]
+        max_lines:
+          type: integer
+          enum: [0, 576, 720, 1080]
+        quality:
+          type: string
+          enum: [high, medium, low]
+        max_kbps:
+          type: integer
+          description: 0, or from 500 to 40000.
+        frame_rate:
+          type: string
+          enum: [source, "30"]
+        deinterlace:
+          type: boolean
+        hdr_to_sdr:
+          type: boolean
+        sound:
+          type: string
+          enum: [aac, ac3, copy]
     Theme:
       type: object
       required: [id, name, uses, file]
@@ -4591,7 +4852,7 @@ components:
             adults.
     Group:
       type: object
-      required: [id, name, hidden, locked, edited, channels, shown, first_number, categories]
+      required: [id, name, hidden, locked, edited, channels, shown, first_number, transcode, categories]
       properties:
         id:
           type: integer
@@ -4618,6 +4879,10 @@ components:
         numbers_from:
           type: [integer, "null"]
           description: Its first number (D137), which numbers its channels and those that join it; null if it has none.
+        transcode:
+          allOf:
+            - $ref: "#/components/schemas/Transcode"
+          description: What is transcoded of its channels that say nothing of their own (D147); as needed follows live TV's.
         categories:
           type: array
           items:
@@ -4639,7 +4904,7 @@ components:
                 description: Its source no longer has the category.
     Channel:
       type: object
-      required: [id, channel_id, source_id, source, number, pinned, name, channel_name, renamed, group_id, group, moved, category, visibility, hidden, missing, left_out, locked, group_locked, repair, repair_own, adult, radio, rules, backups, health, logo, logo_by_hand]
+      required: [id, channel_id, source_id, source, number, pinned, name, channel_name, renamed, group_id, group, moved, category, visibility, hidden, missing, left_out, locked, group_locked, repair, repair_own, transcode, transcode_own, adult, radio, rules, backups, health, logo, logo_by_hand]
       properties:
         id:
           type: integer
@@ -4705,6 +4970,28 @@ components:
             Its own repair switch, null when it follows the default. The switch
             belongs to the source's channel, so it holds in every lineup that
             has it.
+        transcode:
+          type: object
+          required: [mode, profile, set_by]
+          description: >-
+            What is transcoded of it (D147): its channel's own setting, else
+            its group's, else live TV's, as `set_by` says; as needed, with
+            `set_by` null, when none says anything.
+          properties:
+            mode:
+              type: string
+              enum: [as_needed, always, never]
+            profile:
+              type: [string, "null"]
+            set_by:
+              type: [string, "null"]
+              enum: [channel, group, live_tv, null]
+        transcode_own:
+          allOf:
+            - $ref: "#/components/schemas/Transcode"
+          description: >-
+            Its channel's own setting, which belongs to the source's channel,
+            so it holds in every lineup that has it.
         adult:
           type: boolean
           description: Its source marks it for adults (D86).
@@ -5598,6 +5885,19 @@ components:
             What a channel's stream holds, as the hub read it passing through,
             such as "1080i H.264, AC-3" or "2160p HEVC HDR10, AAC" (D138);
             empty until known, and for a film or an episode.
+        profile:
+          type: string
+          description: The profile that a live channel is transcoded with (D147); left out when it is not.
+        speed:
+          type: number
+          description: >-
+            How fast a live channel's transcode went lately, in seconds of
+            video a second; left out until known. Below 1, the stream stutters.
+        behind:
+          type: boolean
+          description: >-
+            The transcode fell behind its stream, which stutters on the
+            screen (D147); left out when it keeps up.
     ChannelHealth:
       type: object
       required: [failed_at, failures, played_at, hidden_until_played, stream]
@@ -5896,6 +6196,12 @@ components:
           description: A sentence for people.
 
   responses:
+    TranscodeProfile:
+      description: The profile.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/TranscodeProfile"
     NoSuchLineup:
       description: There is no such lineup (`not_found`).
       content:
@@ -6000,7 +6306,7 @@ components:
         application/json:
           schema:
             type: object
-            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes, adult_marks, radio_apart, tmdb_key_set, tmdb_language, recordings_cap, recordings_until, recordings_max_hours, timeshift_minutes, shared_tuner, outputs, outputs_anywhere, guide_placeholders, tmdb_pictures]
+            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes, adult_marks, radio_apart, tmdb_key_set, tmdb_language, recordings_cap, recordings_until, recordings_max_hours, timeshift_minutes, shared_tuner, outputs, outputs_anywhere, guide_placeholders, tmdb_pictures, live_transcode]
             properties:
               repair_default:
                 type: boolean
@@ -6117,6 +6423,12 @@ components:
                   ten of their source's titles share take TMDB's poster, and
                   its wide picture where they have none, once TMDB's key is
                   saved (D143). Off at first.
+              live_transcode:
+                allOf:
+                  - $ref: "#/components/schemas/Transcode"
+                description: >-
+                  What is transcoded of live TV as a whole (D147), below what
+                  each group and channel says. As needed at first.
     NoRecorder:
       description: This server cannot record (`no_recorder`).
       content:

@@ -86,6 +86,15 @@ type streamRow struct {
 // Since says how long ago it started.
 func (r streamRow) Since() string { return ago(r.Started, r.Now) }
 
+// SpeedText says how fast a live channel's transcode goes, such as
+// "1.00x", "" until known (D147).
+func (r streamRow) SpeedText() string {
+	if r.Speed <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%.2fx", r.Speed)
+}
+
 // Received says how much it has sent.
 func (r streamRow) Received() string { return amount(r.Bytes) }
 
@@ -508,6 +517,13 @@ type apiStream struct {
 	// Details names what a channel's stream holds, as the hub read it
 	// passing through, such as "1080i H.264, AC-3" (D138); "" until known.
 	Details string `json:"details"`
+	// Profile names the profile that a live channel is transcoded with,
+	// "" if it is not; Speed is how fast the transcode went lately, in
+	// seconds of video a second, 0 until known; Behind says that it fell
+	// behind its stream, which stutters on the screen (D147).
+	Profile string  `json:"profile,omitempty"`
+	Speed   float64 `json:"speed,omitempty"`
+	Behind  bool    `json:"behind,omitempty"`
 }
 
 func (a *Admin) apiStreams(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
@@ -520,7 +536,8 @@ func (a *Admin) apiStreams(w http.ResponseWriter, r *http.Request, _ store.Admin
 		out[i] = apiStream{ID: s.ID, Details: s.Details, Kind: s.Kind, DeviceID: s.DeviceID, Device: s.Device, AccountID: s.AccountID, EntryID: s.EntryID, ItemID: s.ItemID,
 			Channel: s.Channel, SourceID: s.SourceID, Source: s.Source, StartedAt: s.Started.UTC().Truncate(time.Second),
 			Bytes: s.Bytes, HLS: s.HLS, Repaired: s.Repaired, Converted: s.Converted, Transcoded: s.Transcoded,
-			TranscodedBy: s.TranscodedBy, Playing: s.Playing, Timeshift: s.Timeshift, Shared: s.Shared, Programme: s.Programme}
+			TranscodedBy: s.TranscodedBy, Playing: s.Playing, Timeshift: s.Timeshift, Shared: s.Shared, Programme: s.Programme,
+			Profile: s.Profile, Speed: s.Speed, Behind: s.Behind}
 		if !s.Aired.IsZero() {
 			aired := s.Aired.UTC()
 			out[i].AiredAt = &aired

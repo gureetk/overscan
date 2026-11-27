@@ -107,6 +107,12 @@ func (s *syncBuffer) String() string {
 	return s.b.String()
 }
 
+func (s *syncBuffer) Reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.b.Reset()
+}
+
 // newHarness puts fictional channels, one per path of the upstream fixture,
 // in a lineup, all from one source with the given connection limit.
 func newHarness(t *testing.T, limit int) *harness {

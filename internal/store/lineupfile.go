@@ -78,7 +78,7 @@ func exportLineup(ctx context.Context, tx *sql.Tx, id int64, sources map[int64]s
 	// The groups that the administrator made or changed, by name, with
 	// the categories that they hold.
 	rows, err := tx.QueryContext(ctx, `
-		SELECT g.id, g.name, g.hidden, g.locked, COALESCE(g.numbers_from, 0), COALESCE(m.source_id, 0), COALESCE(m.category, '')
+		SELECT g.id, g.name, g.hidden, g.locked, COALESCE(g.numbers_from, 0), COALESCE(g.transcode, ''), COALESCE(m.source_id, 0), COALESCE(m.category, '')
 		FROM lineup_groups g LEFT JOIN lineup_categories m ON m.group_id = g.id
 		WHERE g.lineup_id = ? AND g.edited = 1
 		ORDER BY g.name, g.id, m.source_id, m.category`, id)
@@ -90,7 +90,7 @@ func exportLineup(ctx context.Context, tx *sql.Tx, id int64, sources map[int64]s
 		var gid, source int64
 		var g lineupfile.Group
 		var category string
-		if err := rows.Scan(&gid, &g.Name, &g.Hidden, &g.Locked, &g.NumbersFrom, &source, &category); err != nil {
+		if err := rows.Scan(&gid, &g.Name, &g.Hidden, &g.Locked, &g.NumbersFrom, &g.Transcode, &source, &category); err != nil {
 			rows.Close()
 			return l, err
 		}
@@ -216,10 +216,13 @@ type LineupImport struct {
 // LeftOut counts what an import left out.
 type LeftOut struct {
 	Categories, Channels, Backups, Rules int
+	// Transcodes counts the groups whose transcode names a profile that
+	// this server lacks, which are transcoded as needed (D147).
+	Transcodes int
 }
 
 // Total is everything left out.
-func (l LeftOut) Total() int { return l.Categories + l.Channels + l.Backups + l.Rules }
+func (l LeftOut) Total() int { return l.Categories + l.Channels + l.Backups + l.Rules + l.Transcodes }
 
 // ImportLineups adds a file's lineups as new lineups (D112), all of them or
 // none. Each starts as a lineup made anew, with a group for each category
@@ -340,8 +343,19 @@ func importLineup(ctx context.Context, tx *sql.Tx, l lineupfile.Lineup, sources 
 		if g.NumbersFrom > 0 {
 			from = g.NumbersFrom
 		}
-		if _, err := tx.ExecContext(ctx, "UPDATE lineup_groups SET hidden = ?, locked = ?, numbers_from = ? WHERE id = ?",
-			g.Hidden, g.Locked, from, gid); err != nil {
+		// A profile that this server lacks leaves the group as needed.
+		var transcode any
+		if g.Transcode != "" {
+			transcode = g.Transcode
+			if g.Transcode != Never {
+				if p, err := profileNamed(ctx, tx, g.Transcode); err != nil || !p.Transcodes() {
+					transcode = nil
+					res.LeftOut.Transcodes++
+				}
+			}
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE lineup_groups SET hidden = ?, locked = ?, numbers_from = ?, transcode = ? WHERE id = ?",
+			g.Hidden, g.Locked, from, transcode, gid); err != nil {
 			return res, err
 		}
 		res.Groups++

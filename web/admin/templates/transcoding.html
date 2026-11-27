@@ -1,0 +1,165 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+{{define "content"}}
+<div id="transcoding-main">
+{{- if .Data.Editing}}
+<p class="crumbs"><a href="/admin/settings">Settings</a> › <a href="/admin/transcoding">Transcoding</a></p>
+<div class="page-head">
+  <div>
+    <h1>Change {{.Data.Form.Was}}</h1>
+    <p class="lead">What this profile makes of a stream. Everything that uses it takes the change from the next stream that starts.</p>
+  </div>
+</div>
+{{template "alerts" .}}
+<section class="card form-card">{{template "profile-form" .}}</section>
+{{- else}}
+<p class="crumbs"><a href="/admin/settings">Settings</a></p>
+<div class="page-head">
+  <div>
+    <h1>Transcoding</h1>
+    <p class="lead">Which live channels this server makes anew, and how. Overscan sends a channel as its source sends it, unless a device's or account's profile says otherwise, or live TV, a channel's group or the channel itself says to transcode it always or never. The narrowest of them wins: a channel's over its group's, and a group's over live TV's. A channel set never to be transcoded goes as its source sends it to every device; one set always reaches devices that would get it as it is with the profile chosen, while a device whose own profile transcodes keeps its own.</p>
+  </div>
+  {{- if not .Data.Full}}
+  <a class="button primary" href="#add-profile">{{template "i-plus"}}Make a profile</a>
+  {{- end}}
+</div>
+{{template "alerts" .}}
+{{- if not .Data.CanTranscode}}
+<p class="state-line warn"><i class="dot bad" aria-hidden="true"></i>This server cannot transcode: it lacks {{.Data.Missing}}, so every stream plays as its source sends it.</p>
+{{- else if not .Data.AtOnce}}
+<p class="state-line warn"><i class="dot bad" aria-hidden="true"></i>Transcoding is off on the <a href="/admin/settings">Settings</a> page, so every stream plays as its source sends it until it is on.</p>
+{{- else}}
+<p class="state-line"><i class="dot ok" aria-hidden="true"></i>This server transcodes up to {{.Data.AtOnce}} {{if eq .Data.AtOnce 1}}stream{{else}}streams{{end}} at a time, with its processor{{if not .Data.HEVC}}. Its ffmpeg has no libx265, so profiles that make HEVC send streams as their sources send them{{end}}.</p>
+{{- end}}
+<section class="card" aria-labelledby="live-title">
+  <h2 id="live-title">Live TV</h2>
+  <form method="post" action="/admin/transcoding/live" hx-post="/admin/transcoding/live" hx-trigger="change" hx-target="#transcoding-main" hx-select="#transcoding-main" hx-swap="outerHTML" class="switch-row with-select">
+    <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+    <div>
+      <label for="live-transcode">Every channel</label>
+      <p id="live-transcode-text">{{.Data.LiveText}}</p>
+      <noscript><button class="small" type="submit">Save</button></noscript>
+    </div>
+    <select id="live-transcode" name="transcode" aria-describedby="live-transcode-text">
+      {{- $v := .Data.LiveValue}}
+      {{- range .Data.LiveOptions}}
+      <option value="{{.Value}}"{{if eq .Value $v}} selected{{end}}>{{.Label}}</option>
+      {{- end}}
+    </select>
+  </form>
+  <p class="hint">A group's own and a channel's own are set on <a href="/admin/lineup">Live TV</a>: a group's from its title, a channel's from its panel.</p>
+</section>
+<section class="card" aria-labelledby="profiles-title">
+  <h2 id="profiles-title">Profiles</h2>
+  <p class="hint">A transcode that cannot keep up with its stream stutters on the screen. The <a href="/admin/">Overview</a> shows how fast each one goes, and the log says when one falls behind: a smaller size, at most 30 pictures a second, or H.264 rather than HEVC takes less of the processor.</p>
+  <div class="table-wrap">
+  <table class="list transcode-profiles">
+    <thead><tr><th scope="col">Profile</th><th scope="col">Makes</th><th scope="col">Used by</th><th scope="col" class="actions"><span class="sr">Actions</span></th></tr></thead>
+    <tbody>
+    {{- range .Data.Profiles}}
+    <tr>
+      <td><strong>{{.P.Name}}</strong>{{if not .P.Made}} <span class="badge">Overscan's own</span>{{end}}</td>
+      <td>{{if .P.Made}}{{.P.Describe}}{{else}}{{.P.Label}}{{if .P.Transcodes}}, with AAC in stereo{{end}}{{end}}</td>
+      <td>{{if .Uses.Any}}{{.Uses}}{{else}}<span class="muted">Nothing</span>{{end}}</td>
+      <td class="actions">
+        {{- if .P.Made}}
+        <a class="button small" href="/admin/transcoding/profiles/{{.P.Name}}">Change</a>
+        {{- if not .Uses.Any}}
+        <form method="post" action="/admin/transcoding/profiles/{{.P.Name}}/delete" hx-post="/admin/transcoding/profiles/{{.P.Name}}/delete" hx-target="#transcoding-main" hx-select="#transcoding-main" hx-swap="outerHTML" hx-confirm="{{.DeleteQuestion}}">
+          <input type="hidden" name="csrf" value="{{$.Session.CSRFToken}}">
+          <button type="submit" class="small danger">Remove</button>
+        </form>
+        {{- end}}
+        {{- end}}
+      </td>
+    </tr>
+    {{- end}}
+    </tbody>
+  </table>
+  </div>
+</section>
+{{- if not .Data.Full}}
+<section class="card form-card" id="add-profile" aria-labelledby="add-profile-title">
+  <h2 id="add-profile-title">Make a profile</h2>
+  {{template "profile-form" .}}
+</section>
+{{- end}}
+{{- end}}
+</div>
+{{end}}
+
+{{define "profile-form"}}
+{{- $f := .Data.Form}}
+{{- $p := $f.P}}
+<form method="post" action="{{if $f.Was}}/admin/transcoding/profiles/{{$f.Was}}{{else}}/admin/transcoding{{end}}" hx-post="{{if $f.Was}}/admin/transcoding/profiles/{{$f.Was}}{{else}}/admin/transcoding{{end}}" hx-target="#transcoding-main" hx-select="#transcoding-main" hx-swap="outerHTML" class="source-form">
+  <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+  <div class="form-grid">
+    <div class="field">
+      <label for="profile-name">Name</label>
+      <input id="profile-name" name="name" value="{{$p.Name}}" maxlength="40" pattern="[a-z0-9]([a-z0-9\-]*[a-z0-9])?" required spellcheck="false" autocapitalize="none" autocomplete="off" placeholder="Such as hevc-1080p">
+      <p class="hint">Lower-case letters, digits and hyphens. Accounts, devices, groups and channels name the profile by it.</p>
+    </div>
+    <div class="field">
+      <label for="profile-codec">Codec</label>
+      <select id="profile-codec" name="codec">
+        <option value="h264"{{if eq $p.Codec "h264"}} selected{{end}}>H.264</option>
+        <option value="hevc"{{if eq $p.Codec "hevc"}} selected{{end}}>HEVC</option>
+      </select>
+      <p class="hint">H.264 plays nearly everywhere. HEVC takes about half the bit rate for the same picture, and far more of the processor to make.</p>
+    </div>
+    <div class="field">
+      <label for="profile-size">Largest size</label>
+      <select id="profile-size" name="max_lines">
+        <option value="0"{{if eq $p.MaxLines 0}} selected{{end}}>As the source sends it</option>
+        <option value="1080"{{if eq $p.MaxLines 1080}} selected{{end}}>1080p</option>
+        <option value="720"{{if eq $p.MaxLines 720}} selected{{end}}>720p</option>
+        <option value="576"{{if eq $p.MaxLines 576}} selected{{end}}>576p</option>
+      </select>
+      <p class="hint">A larger picture is made smaller to fit; a smaller one is never made larger.</p>
+    </div>
+    <div class="field">
+      <label for="profile-quality">Quality</label>
+      <select id="profile-quality" name="quality">
+        <option value="high"{{if eq $p.Quality "high"}} selected{{end}}>High</option>
+        <option value="medium"{{if eq $p.Quality "medium"}} selected{{end}}>Medium</option>
+        <option value="low"{{if eq $p.Quality "low"}} selected{{end}}>Low</option>
+      </select>
+      <p class="hint">A steady picture quality; the bit rate rises and falls with what is on the screen.</p>
+    </div>
+    <div class="field">
+      <label for="profile-rate">Highest bit rate</label>
+      <select id="profile-rate" name="max_kbps">
+        {{- range $f.Rates}}
+        <option value="{{.}}"{{if eq . $p.MaxKbps}} selected{{end}}>{{$f.RateLabel .}}</option>
+        {{- end}}
+      </select>
+      <p class="hint">For a device on a slow network: the video's bit rate stays below it, and its quality drops where it must.</p>
+    </div>
+    <div class="field">
+      <label for="profile-fps">Pictures a second</label>
+      <select id="profile-fps" name="frame_rate">
+        <option value="source"{{if eq $p.FrameRate "source"}} selected{{end}}>As the source sends them</option>
+        <option value="30"{{if eq $p.FrameRate "30"}} selected{{end}}>At most 30</option>
+      </select>
+      <p class="hint">As the source sends them makes a picture of each half of an interlaced picture, so 50 a second from a 25 a second channel; at most 30 makes one of each, and halves a faster rate, which takes about half the processor.</p>
+    </div>
+    <div class="field">
+      <label for="profile-sound">Sound</label>
+      <select id="profile-sound" name="sound">
+        <option value="aac"{{if eq $p.Sound "aac"}} selected{{end}}>AAC in stereo</option>
+        <option value="ac3"{{if eq $p.Sound "ac3"}} selected{{end}}>Dolby Digital, up to 5.1</option>
+        <option value="copy"{{if eq $p.Sound "copy"}} selected{{end}}>As the source sends it</option>
+      </select>
+      <p class="hint">AAC and Dolby Digital take the first sound track; as the source sends it keeps every track, for a device that plays them.</p>
+    </div>
+    <div class="field wide">
+      <label class="check"><input type="checkbox" name="deinterlace" value="1"{{if $p.Deinterlace}} checked{{end}}> Deinterlace an interlaced picture</label>
+      <label class="check"><input type="checkbox" name="hdr_to_sdr" value="1"{{if $p.ToneMap}} checked{{end}}> Make an HDR picture SDR</label>
+      <p class="hint">Players on most devices show interlaced pictures with combed edges, and HDR on an SDR screen washed out. This server makes live HDR SDR only with graphics, which come in a later version; until then, a live HDR picture keeps its dynamic range.</p>
+    </div>
+  </div>
+  <div class="form-buttons">
+    <button type="submit" class="primary">{{if $f.Was}}Save{{else}}Make{{end}}</button>
+    {{- if $f.Was}}<a class="button" href="/admin/transcoding">Cancel</a>{{end}}
+  </div>
+</form>
+{{- end}}

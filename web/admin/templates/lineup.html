@@ -180,6 +180,10 @@
           <button type="submit" name="action" value="repair" title="Their streams go through ffmpeg, which rebuilds their timestamps">Repair</button>
           <button type="submit" name="action" value="norepair" title="Their streams play as the source sends them, whatever the default">Don't repair</button>
           <button type="submit" name="action" value="repairdefault" title="Their streams are repaired if the default says so">Repair as the default</button>
+          <hr>
+          <p class="menu-label">Transcoding</p>
+          <button type="submit" name="action" value="notranscode" title="Their streams go as their sources send them, whatever a device's profile">Never transcode</button>
+          <button type="submit" name="action" value="transcodegroup" title="Their streams are transcoded as their group says">Transcode as their group says</button>
         </div>
       </details>
       <button type="reset" class="icon untick" aria-label="Untick all" title="Untick all">{{template "i-close"}}</button>
@@ -248,6 +252,24 @@
       <input type="hidden" name="back" value="{{.D.View.Back}}">
       <button type="submit" class="small"{{if not .G.Locked}} title="Its channels need the parental PIN to play"{{end}}>{{template "i-lock"}}{{if .G.Locked}}Unlock the group{{else}}Lock the group{{end}}</button>
     </form>
+    {{- $tt := .D.GroupTranscodeText .G}}
+    <details class="popover">
+      <summary class="button small{{if $tt}} accent{{end}}" title="Whether the group's channels are transcoded">{{if $tt}}{{$tt}}{{else}}Transcoding…{{end}}</summary>
+      <div class="menu form-menu">
+        <form method="post" action="/admin/lineup/groups/{{.G.ID}}/transcode" hx-post="/admin/lineup/groups/{{.G.ID}}/transcode" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" class="row-form">
+          <input type="hidden" name="csrf" value="{{.CSRF}}">
+          <input type="hidden" name="back" value="{{.D.View.Back}}">
+          {{- $v := .D.GroupTranscodeValue .G}}
+          <select name="transcode" aria-label="Whether the group's channels are transcoded">
+            {{- range .D.GroupTranscodeOptions}}
+            <option value="{{.Value}}"{{if eq .Value $v}} selected{{end}}>{{.Label}}</option>
+            {{- end}}
+          </select>
+          <button type="submit" class="primary">Save</button>
+        </form>
+        <p class="hint">For the group's channels that say nothing of their own. Never sends them as their sources send them to every device; always transcodes them with the profile for devices that would get them as they are. <a href="/admin/transcoding">Transcoding</a> has the profiles.</p>
+      </div>
+    </details>
     <a class="button small{{if and .D.Current.OwnGroups (not .G.Categories)}} primary{{end}}" href="{{.D.View.CategoriesURL .G.ID}}">{{template "i-lineup"}}Categories…</a>
     {{template "add-channels" .}}
     <details class="popover">
@@ -366,6 +388,7 @@
     {{- $repair := .RepairChoice}}
     {{- if eq $repair "on"}}<span class="badge accent" title="{{if .CanRepair}}Its stream goes through ffmpeg{{else}}Set to be repaired, but there is no ffmpeg to run{{end}}">{{template "i-repair"}}Repair</span>
     {{- else if eq $repair "off"}}<span class="badge" title="Its stream plays as the source sends it, whatever the default">{{template "i-repair"}}No repair</span>{{end}}
+    {{- with .TranscodeBadge}}<span class="badge{{if ne . "Not transcoded"}} accent{{end}}" title="Whether its stream is transcoded, whatever its group says">{{.}}</span>{{end}}
   </div></td>
 </tr>
 {{- end}}
@@ -450,6 +473,16 @@
       <p class="hint warn">There is no ffmpeg to run, so a channel set to be repaired plays as it is. Install ffmpeg on the server, or set its path in the configuration file, then restart Overscan.</p>
       {{- end}}
     </fieldset>
+    <div class="field">
+      <label for="entry-transcode">Transcoding</label>
+      {{- $tv := .TranscodeValue}}
+      <select id="entry-transcode" name="transcode" aria-describedby="entry-transcode-text">
+        {{- range .TranscodeOptions}}
+        <option value="{{.Value}}"{{if eq .Value $tv}} selected{{end}}>{{.Label}}</option>
+        {{- end}}
+      </select>
+      <p class="hint" id="entry-transcode-text">Never sends it as its source sends it to every device, whatever their profiles; always transcodes it with the profile for devices that would get it as it is. It belongs to the channel at its source, so it holds in every lineup. <a href="/admin/transcoding">Transcoding</a> has the profiles.</p>
+    </div>
     <div class="form-buttons">
       <button type="submit" class="primary">Save</button>
       <a class="button" href="{{.View.URL 0}}" hx-get="{{.View.URL 0}}" hx-target="#lineup-main" hx-select="#lineup-main" hx-swap="outerHTML" hx-push-url="true">Cancel</a>

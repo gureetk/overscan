@@ -41,6 +41,10 @@ type features struct {
 	// alpha.5 on), and moves a channel moved to another source (from
 	// alpha.6 on).
 	guides, handGuides, logos, placeholders, pictures, moves bool
+	// transcoding is v1.3.0's, from its first pre-release on: profiles of
+	// the administrator's, and what is transcoded of live TV, a group and
+	// a channel.
+	transcoding bool
 }
 
 func featuresOf(version string) features {
@@ -62,8 +66,12 @@ func featuresOf(version string) features {
 	since := func(n int) bool {
 		return from(1, 2) && !(major == 1 && minor == 2 && strings.HasPrefix(pre, "alpha.") && alpha < n)
 	}
+	// An alpha of 1.3.0 has what the alphas before it brought.
+	since13 := func(n int) bool {
+		return from(1, 3) && !(major == 1 && minor == 3 && strings.HasPrefix(pre, "alpha.") && alpha < n)
+	}
 	return features{households: at(4), hub: at(5), playlists: from(1, 1), guides: from(1, 2), handGuides: since(2), logos: since(3),
-		placeholders: since(4), pictures: since(5), moves: since(6)}
+		placeholders: since(4), pictures: since(5), moves: since(6), transcoding: since13(1)}
 }
 
 // household holds what the setup made, by name, so that the probes can
@@ -245,9 +253,40 @@ func (h *household) setUp(a *admin, base string, since time.Time) error {
 			run  func() error
 		}{"a channel moved to another source", func() error { return h.setUpMoves(a) }})
 	}
+	if h.f.transcoding {
+		steps = append(steps, struct {
+			name string
+			run  func() error
+		}{"transcoding profiles and settings", func() error { return h.setUpTranscoding(a) }})
+	}
 	for _, s := range steps {
 		if err := s.run(); err != nil {
 			return fmt.Errorf("setting up %s: %w", s.name, err)
+		}
+	}
+	return nil
+}
+
+// setUpTranscoding makes a profile of the administrator's, and says what
+// is transcoded of live TV, a group and a channel (D147): the guests'
+// account takes the profile, live TV is never transcoded, the Kids group
+// always with the profile, and Granite News always with a fixed profile.
+// Transcoding stays off on the Settings page, so streams still play as
+// their sources send them, and the probes see that everything stays.
+func (h *household) setUpTranscoding(a *admin) error {
+	for _, c := range []struct {
+		method, path string
+		body         any
+	}{
+		{"POST", "transcode-profiles", map[string]any{"name": "kitchen", "codec": "hevc", "max_lines": 720, "quality": "low",
+			"max_kbps": 3000, "frame_rate": "30", "deinterlace": true, "hdr_to_sdr": false, "sound": "ac3"}},
+		{"PATCH", fmt.Sprintf("accounts/%d", h.guests), map[string]any{"output_profile": "kitchen"}},
+		{"PATCH", "settings", map[string]any{"live_transcode": map[string]any{"mode": "never"}}},
+		{"PATCH", fmt.Sprintf("lineup/groups/%d", h.groups["Kids"]), map[string]any{"transcode": map[string]any{"mode": "always", "profile": "kitchen"}}},
+		{"PATCH", fmt.Sprintf("lineup/channels/%d", h.entries["Granite News"]), map[string]any{"transcode": map[string]any{"mode": "always", "profile": "h264-720p"}}},
+	} {
+		if err := a.call(c.method, c.path, c.body, nil); err != nil {
+			return fmt.Errorf("%s %s: %w", c.method, c.path, err)
 		}
 	}
 	return nil
@@ -963,6 +1002,9 @@ func (h *household) probes(a *admin, base string) []probe {
 		for _, p := range []string{"guides", fmt.Sprintf("guides/%d", h.guide)} {
 			adminGet(p)
 		}
+	}
+	if h.f.transcoding {
+		adminGet("transcode-profiles")
 	}
 	if h.f.handGuides {
 		// The lists say where each channel's programmes come from, without

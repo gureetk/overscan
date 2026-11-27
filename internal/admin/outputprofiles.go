@@ -14,23 +14,27 @@ import (
 
 // Output profiles (D110), as the admin's pages and the API name them.
 
-// profileNames lists the output profiles' names, for an error.
+// profileNames lists the fixed output profiles' names, for an error: the
+// profiles that the administrator made can be named too (D147).
 func profileNames() string {
 	names := make([]string, len(streamprofile.Profiles))
 	for i, p := range streamprofile.Profiles {
 		names[i] = p.Name
 	}
-	return strings.Join(names, ", ")
+	return strings.Join(names, ", ") + ", or one made on the Transcoding page"
 }
 
 // profileText says how a profile sends live channels, after "get live
 // channels", such as "as their sources send them".
 func profileText(name string) string {
-	p, ok := streamprofile.Find(name)
-	if !ok || !p.Transcodes() {
+	p, fixed := streamprofile.Find(name)
+	switch {
+	case fixed && p.Transcodes():
+		return "made " + p.Label + " by this server"
+	case fixed || name == "":
 		return "as their sources send them"
 	}
-	return "made " + p.Label + " by this server"
+	return "transcoded with " + name + " by this server"
 }
 
 // profileOption is an output profile as a form offers it.
@@ -38,11 +42,20 @@ type profileOption struct {
 	Name, Label string
 }
 
-// profileOptions are the output profiles as the forms offer them.
-func profileOptions() []profileOption {
-	out := make([]profileOption, len(streamprofile.Profiles))
-	for i, p := range streamprofile.Profiles {
+// profileOptions are the output profiles as the forms offer them: the
+// fixed ones, then those that the administrator made.
+func (a *Admin) profileOptions(ctx context.Context) []profileOption {
+	ps, err := a.allTranscodeProfiles(ctx)
+	if err != nil {
+		a.log.Error("cannot list the profiles", "error", err)
+		ps = streamprofile.Profiles
+	}
+	out := make([]profileOption, len(ps))
+	for i, p := range ps {
 		out[i] = profileOption{p.Name, p.Label}
+		if p.Made {
+			out[i].Label = p.Name + ": " + p.Describe()
+		}
 	}
 	return out
 }
@@ -89,9 +102,5 @@ func deviceProfileText(d store.Device) string {
 	if d.OutputProfile == "" {
 		return "as its account's output profile says"
 	}
-	p, _ := streamprofile.Find(d.OutputProfile)
-	if !p.Transcodes() {
-		return "as their sources send them"
-	}
-	return "made " + p.Label + " by this server"
+	return profileText(d.OutputProfile)
 }

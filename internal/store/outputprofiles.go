@@ -14,7 +14,9 @@ import (
 
 // Output profiles (D110): how an account's devices and players get live
 // channels, as their sources send them or transcoded by the hub's ffmpeg. A
-// device's own profile, if it has one, comes before its account's.
+// device's own profile, if it has one, comes before its account's. Besides
+// the fixed profiles, they can name the profiles that the administrator
+// makes (D147).
 
 // ErrNoSuchProfile is the error for an output profile that does not exist.
 var ErrNoSuchProfile = errors.New("store: no such output profile")
@@ -22,8 +24,8 @@ var ErrNoSuchProfile = errors.New("store: no such output profile")
 // SetAccountOutputProfile sets the output profile of an account's devices
 // and players.
 func (s *Store) SetAccountOutputProfile(ctx context.Context, accountID int64, name string) error {
-	if _, ok := streamprofile.Find(name); !ok {
-		return ErrNoSuchProfile
+	if _, err := s.TranscodeProfile(ctx, name); err != nil {
+		return err
 	}
 	res, err := s.db.ExecContext(ctx, "UPDATE accounts SET output_profile = ? WHERE id = ?", name, accountID)
 	if err == nil {
@@ -42,8 +44,10 @@ func (s *Store) SetDeviceOutputProfile(ctx context.Context, mac, name string) (D
 	if err != nil {
 		return Device{}, err
 	}
-	if _, ok := streamprofile.Find(name); !ok && name != "" {
-		return Device{}, ErrNoSuchProfile
+	if name != "" {
+		if _, err := s.TranscodeProfile(ctx, name); err != nil {
+			return Device{}, err
+		}
 	}
 	return s.queryDevice(ctx, m, "UPDATE devices SET output_profile = ? WHERE mac = ? RETURNING "+deviceColumns, name, m)
 }
@@ -62,7 +66,7 @@ func (s *Store) OutputProfileOf(ctx context.Context, deviceID int64) (streamprof
 	if err != nil {
 		return streamprofile.Profile{}, fmt.Errorf("store: output profile of device %d: %w", deviceID, err)
 	}
-	return outputProfile(name), nil
+	return s.outputProfile(ctx, name)
 }
 
 // AccountOutputProfile returns the output profile of an account's players.
@@ -75,17 +79,18 @@ func (s *Store) AccountOutputProfile(ctx context.Context, accountID int64) (stre
 	if err != nil {
 		return streamprofile.Profile{}, fmt.Errorf("store: output profile of account %d: %w", accountID, err)
 	}
-	return outputProfile(name), nil
+	return s.outputProfile(ctx, name)
 }
 
 // outputProfile returns the profile with a name, or the Source profile for
 // a name that no longer names one.
-func outputProfile(name string) streamprofile.Profile {
-	if p, ok := streamprofile.Find(name); ok {
-		return p
+func (s *Store) outputProfile(ctx context.Context, name string) (streamprofile.Profile, error) {
+	p, err := s.TranscodeProfile(ctx, name)
+	if errors.Is(err, ErrNoSuchProfile) {
+		p, _ = streamprofile.Find(streamprofile.Source)
+		err = nil
 	}
-	p, _ := streamprofile.Find(streamprofile.Source)
-	return p
+	return p, err
 }
 
 // OutputProfilesInUse counts the accounts and devices whose output profiles
@@ -101,8 +106,9 @@ func (s *Store) OutputProfilesInUse(ctx context.Context) (accounts, devices int,
 	if len(transcoding) > 0 {
 		in = "?" + strings.Repeat(", ?", len(transcoding)-1)
 	}
-	if err = s.db.QueryRowContext(ctx, "SELECT count(*) FROM accounts WHERE output_profile IN ("+in+")", transcoding...).Scan(&accounts); err == nil {
-		err = s.db.QueryRowContext(ctx, "SELECT count(*) FROM devices WHERE output_profile IN ("+in+")", transcoding...).Scan(&devices)
+	made := " OR output_profile IN (SELECT name FROM transcode_profiles)"
+	if err = s.db.QueryRowContext(ctx, "SELECT count(*) FROM accounts WHERE output_profile IN ("+in+")"+made, transcoding...).Scan(&accounts); err == nil {
+		err = s.db.QueryRowContext(ctx, "SELECT count(*) FROM devices WHERE output_profile IN ("+in+")"+made, transcoding...).Scan(&devices)
 	}
 	if err != nil {
 		return 0, 0, fmt.Errorf("store: output profiles in use: %w", err)

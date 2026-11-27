@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -152,6 +153,9 @@ type ffmpegJob struct {
 	doing string // "repairing" or "transcoding", for the log
 	does  string // "repair" or "transcode", for the log
 	about []any  // more for the log
+	// watch says that the hub follows how fast ffmpeg goes, and says when
+	// it falls behind the stream (D147).
+	watch bool
 	// take takes one of the hub's slots for it, or logs why it cannot,
 	// with about naming the stream; give gives it back.
 	take func(about []any) bool
@@ -221,6 +225,11 @@ type repairSink struct {
 	stdin    io.WriteCloser
 	messages *messageTail
 	slot     bool // holds one of the hub's slots for its job
+
+	// For a job that the hub watches: where ffmpeg says how far it has
+	// got, and how fast it goes (D147).
+	progressIn *os.File
+	watch      *liveWatch
 
 	// Until ffmpeg sends something, what it was given is kept, unless
 	// there was too much of it.
@@ -305,6 +314,10 @@ func (r *repairSink) close() {
 		r.stop()
 		r.stdin.Close()
 		r.wait()
+		if r.watch != nil {
+			r.watchEnded()
+			r.progressIn.Close()
+		}
 	}
 	if r.slot {
 		r.slot = false
@@ -323,13 +336,29 @@ func (r *repairSink) start() bool {
 	if !r.job.take(r.about()) {
 		return false
 	}
+	args := r.job.args
+	// ffmpeg says how far a transcode has got, every second, so that the
+	// hub can tell whether it keeps up (D147).
+	var progressIn, progressOut *os.File
+	if r.job.watch {
+		var err error
+		if progressIn, progressOut, err = os.Pipe(); err != nil {
+			r.job.give()
+			r.h.log.Warn("cannot start ffmpeg to "+r.job.does+" a stream; it plays as it is", append(r.about(), "error", err)...)
+			return false
+		}
+		args = append([]string{"-progress", progressFD, "-stats_period", "1"}, args...)
+	}
 	ctx, stop := context.WithCancel(r.ctx)
-	cmd := exec.CommandContext(ctx, r.h.ffmpeg, r.job.args...)
+	cmd := exec.CommandContext(ctx, r.h.ffmpeg, args...)
 	cmd.Env = []string{} // nothing from Overscan's environment
 	cmd.Dir = "/"
 	cmd.WaitDelay = repairDrain
 	r.messages = &messageTail{log: r.h.log, about: r.about()}
 	cmd.Stderr = r.messages
+	if progressOut != nil {
+		cmd.ExtraFiles = []*os.File{progressOut}
+	}
 	keepChild(cmd)
 	stdin, err := cmd.StdinPipe()
 	var stdout io.ReadCloser
@@ -339,13 +368,23 @@ func (r *repairSink) start() bool {
 	if err == nil {
 		err = cmd.Start()
 	}
+	if progressOut != nil {
+		progressOut.Close() // ffmpeg has its own, and the progress ends with it
+	}
 	if err != nil {
+		if progressIn != nil {
+			progressIn.Close()
+		}
 		stop()
 		r.job.give()
 		r.h.log.Warn("cannot start ffmpeg to "+r.job.does+" a stream; it plays as it is", append(r.about(), "error", err)...)
 		return false
 	}
 	r.cmd, r.stop, r.stdin, r.slot, r.keeping = cmd, stop, stdin, true, true
+	if progressIn != nil {
+		r.progressIn = progressIn
+		r.watch = newLiveWatch(followProgress(progressIn), time.Now())
+	}
 	r.output = make(chan error, 1)
 	go r.copyOut(stdout)
 	r.h.log.Info(r.job.doing+" a stream with ffmpeg", r.about()...)
@@ -358,7 +397,12 @@ func (r *repairSink) copyOut(stdout io.Reader) {
 	buf := make([]byte, copyBufferBytes)
 	var err error
 	for {
+		waiting := time.Now()
 		n, rerr := stdout.Read(buf)
+		if r.watch != nil {
+			r.watch.progress.read(n, time.Since(waiting))
+			r.observe()
+		}
 		if n > 0 {
 			r.sent.Store(true)
 			if _, werr := r.w.Write(buf[:n]); werr != nil {
@@ -396,10 +440,52 @@ func (r *repairSink) feed(p []byte) error {
 			r.kept = append(r.kept, p...)
 		}
 	}
-	if _, err := r.stdin.Write(p); err != nil {
+	feeding := time.Now()
+	_, err := r.stdin.Write(p)
+	if r.watch != nil {
+		r.watch.feeding(time.Since(feeding))
+	}
+	if err != nil {
 		return r.stopped()
 	}
 	return nil
+}
+
+// observe notes how far a watched transcode has got, keeps its speed on its
+// session for the Overview, and logs when it falls behind its stream or
+// catches up again (D147). It runs on the goroutine that copies ffmpeg's
+// output.
+func (r *repairSink) observe() {
+	switch r.watch.note(time.Now()) {
+	case 1:
+		r.s.behind.Store(true)
+		r.h.log.Warn("ffmpeg transcodes a live stream more slowly than it comes, so it stutters on the screen; a profile with a smaller size or fewer pictures a second, or graphics, would help",
+			append(r.about(), "speed", formatSpeed(r.watch.speed))...)
+	case -1:
+		r.s.behind.Store(false)
+		r.h.log.Info("ffmpeg keeps up with a live stream again", append(r.about(), "speed", formatSpeed(r.watch.speed))...)
+	}
+	if r.watch.speed > 0 {
+		r.s.speed.Store(r.watch.speedBits())
+	}
+}
+
+// watchEnded logs, as a watched transcode ends, how much video ffmpeg made,
+// and how fast.
+func (r *repairSink) watchEnded() {
+	p := r.watch.progress
+	select {
+	case <-p.done:
+	case <-time.After(time.Second):
+	}
+	end := append(r.about(), "made", clockTime(float64(p.made.Load())/1e6))
+	if speed, ok := p.speed(encodeSpeedAfter); ok {
+		end = append(end, "speed", formatSpeed(speed))
+	}
+	if r.watch.behind {
+		end = append(end, "behind", true)
+	}
+	r.h.log.Info("ffmpeg's transcode of a live stream ended", end...)
 }
 
 // stopped deals with ffmpeg having stopped while the stream goes on. If it

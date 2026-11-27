@@ -245,7 +245,8 @@ func copyBackups(ctx context.Context, tx *sql.Tx, from, to int64) error {
 func (s *Store) playableBackups(ctx context.Context, p PlayableEntry) ([]PlayableEntry, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.id, c.source_id, c.stream_url, c.stream_secret, s.name, s.type,
-			(SELECT secret FROM source_secrets WHERE source_id = s.id), COALESCE(c.repair, `+repairDefaultSQL+`), c.radio
+			(SELECT secret FROM source_secrets WHERE source_id = s.id), COALESCE(c.repair, `+repairDefaultSQL+`), c.radio,
+			c.transcode
 		FROM (
 			SELECT channel_id, position FROM lineup_entry_backups WHERE entry_id = ?1
 			UNION ALL
@@ -268,11 +269,15 @@ func (s *Store) playableBackups(ctx context.Context, p PlayableEntry) ([]Playabl
 	for rows.Next() {
 		f := found{b: p}
 		f.b.Backups = nil
+		var own sql.NullString
 		if err := rows.Scan(&f.b.ChannelID, &f.b.SourceID, &f.b.StreamURL, &f.sealed, &f.sourceName, &f.sourceType,
-			&f.sourceSealed, &f.b.Repair, &f.b.Radio); err != nil {
+			&f.sourceSealed, &f.b.Repair, &f.b.Radio, &own); err != nil {
 			rows.Close()
 			return nil, err
 		}
+		// A backup's channel's own setting, else the entry's group's and
+		// live TV's (D147).
+		f.b.Transcode, f.b.TranscodeBy = resolveTranscode(own, p.groupTranscode, p.liveTranscode)
 		list = append(list, f)
 	}
 	rows.Close()

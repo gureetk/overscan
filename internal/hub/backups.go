@@ -79,9 +79,11 @@ func (h *Hub) openChannel(w http.ResponseWriter, r *http.Request, c claims, toke
 		http.Error(w, "this channel is not available", http.StatusNotFound)
 		return
 	}
-	profile := h.outputProfile(r.Context(), c.deviceID)
 	for i, try := range tries {
 		more := i < len(tries)-1
+		// Each stream's own channel says what is transcoded of it (D147).
+		profile, profileBy := h.streamProfile(r.Context(), c.deviceID, try)
+		h.noteNever(r.Context(), c.deviceID, try)
 		passOver := func(why string) {
 			h.log.Warn("a channel's stream cannot start; the hub tries its next stream", "channel", entry.Name,
 				"source", h.source(try.SourceID).Name, "device", c.deviceID, "reason", why)
@@ -98,7 +100,7 @@ func (h *Hub) openChannel(w http.ResponseWriter, r *http.Request, c claims, toke
 			s, err := h.openShared(r.Context(), c, token, try)
 			switch {
 			case err == nil:
-				s.profile = profile
+				s.profile, s.profileBy = profile, profileBy
 				playing()
 				h.serveShift(w, r, s)
 				return
@@ -113,7 +115,8 @@ func (h *Hub) openChannel(w http.ResponseWriter, r *http.Request, c claims, toke
 			}
 		}
 		opening := &session{token: token, channelID: try.ChannelID, sourceID: try.SourceID,
-			channel: entry.Name, streamURL: try.StreamURL, repair: try.Repair, repairHLS: try.RepairHLS, profile: profile}
+			channel: entry.Name, streamURL: try.StreamURL, repair: try.Repair, repairHLS: try.RepairHLS, profile: profile,
+			profileBy: profileBy}
 		opening.account, opening.accountLimit = h.viewer(r.Context(), c.deviceID)
 		if h.source(try.SourceID).Resolves {
 			if !h.roomFor(try.SourceID, c.deviceID) {

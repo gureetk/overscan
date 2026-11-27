@@ -134,9 +134,10 @@ MAG emulators are a different case. StbEmu loads the portal's own web page and e
 | `source_secrets` | source id, the address and credentials, encrypted (D46) |
 | `categories` | id, source id, kind (live, movie, series, radio), name, adult flag |
 | `source_categories` | source id, kind (live, movie, series), the source's key, name, items at the last read, ticked; and `source_category_choices`, whether a source brings only the ticked categories of a kind (D135) |
-| `channels` | id, source id, source ref (for M3U, the stream address, encrypted: D46), identity key, name, number, logo, category, xmltv id, archive days, adult, missing since |
+| `channels` | id, source id, source ref (for M3U, the stream address, encrypted: D46), identity key, name, number, logo, category, xmltv id, archive days, adult, missing since, repair, what is transcoded of it (D57, D147) |
 | `lineups` | id, name, whether it holds only what its groups take (D106, D136) |
-| `lineup_groups` | id, lineup id, name, hidden, first number; the categories it holds, from any source (D47, D137) |
+| `lineup_groups` | id, lineup id, name, hidden, first number, what is transcoded of its channels; the categories it holds, from any source (D47, D137, D147) |
+| `transcode_profiles` | the profiles that the administrator makes: name, codec, largest size, quality, highest bit rate, frame rate, deinterlacing, HDR made SDR, sound (D147) |
 | `lineup_entries` | id, lineup id, number, whether the administrator pinned it, the group whose first number gave its number, display name, group, logo override, hidden or shown, EPG override (D47, D137) |
 | `channel_health` | channel id, when its stream last failed to start and how many times in a row, when one last started, whether it is hidden until it plays again, and what its stream held when last read: video codec, size, scanning, bit depth, frame rate, dynamic range, audio codecs (D138) |
 | `lineup_entry_streams` | lineup entry id, channel id, priority (one row per entry until merged channels arrive in M6) |
@@ -580,6 +581,7 @@ A household chooses what Overscan transcodes and how, for live TV and for films 
 
     The narrowest setting wins: a channel's, then its group's, then live TV's. A channel's setting belongs to the source's channel, as repair does (D57), so it holds in every lineup and through a move (D144). A group's belongs to its lineup, and lineup files carry it from version 4.
   - **Smoothness.** A transcode that cannot keep up with its stream stutters on the screen. The hub measures how fast each live transcode goes, as it does a film's (D73), and the log and the *Overview* say when one falls behind. Every transcode in software still counts against D73's number at a time.
+  - **In place:** the *Transcoding* page, reached from *Settings*, and the admin API's `transcode-profiles` make, change and remove profiles, and set what is transcoded of live TV; a group's *Transcoding…* on *Live TV*, a channel's panel and the ticked channels' *More* set theirs, as the API's `transcode` does; accounts and devices can choose the profiles made; the hub picks each stream's profile from its channel, its group, live TV and its device, and a stream's speed, its profile and *Falls behind* show on the *Overview*; lineup files of version 4 carry a group's setting; the support bundle counts them (D147). As the source sends it, a frame rate keeps the source's timing; at most 30 a second is made steady.
 - Hardware: VA-API on Intel and AMD graphics, for decoding, deinterlacing, scaling, mapping HDR to SDR and encoding, all on the GPU. It encodes in low-power mode where the hardware encodes only so, and at a constant quality where the hardware cannot keep to a bit rate.
   - **The test at start.** With clips that ffmpeg makes, and never a channel, the server finds which codecs the GPU decodes and encodes, how it keeps to a bit rate, and which filters it has. The Settings page and the support bundle say what it found, and a server without a GPU says so.
   - Overscan uses the GPU for what passed, and a switch on the Settings page stops it. Hardware transcodes have a number at a time of their own, 2 at first.
@@ -618,7 +620,7 @@ A household chooses what Overscan transcodes and how, for live TV and for films 
 - memory stays within section 15's budgets, with each kind of transcode's ffmpeg measured and written down;
 - and an upgrade changes nothing.
 
-*Status:* planned in detail (D146); not started.
+*Status:* planned in detail (D146). Its first phase, profiles and what is transcoded for live TV in software, is in place (v1.3.0-alpha.1).
 
 ### M11: HLS output (M)
 Planned in detail once M10 ends. HLS from the hub for players that ask for it: films and episodes that ffmpeg makes, so that players that seek by byte ranges can seek in them, and live channels as HLS. It replaces D110's line that HLS output waits in the backlog.
@@ -808,6 +810,7 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 - A source's channels can move to other sources, matched by guide ID and then by name, once the administrator confirms; lineups keep their numbers, names, groups and favourites (D144).
 - The *Guides* page lists each source's own guide first, with what it fills and *Read now* (D145).
 - M10 transcodes live TV as a whole, a group or a channel, and films and series as a whole, a shelf or a title, *as needed*, *always* with a profile the administrator makes, or *never*; the narrowest setting wins, *never* over every device's profile; VA-API graphics do the work where the server has them, with software as the fallback (D146).
+- Profiles that the administrator makes, of a codec, a largest size, a quality, a highest bit rate, a frame rate, deinterlacing, HDR made SDR and the sound, beside the fixed ones; live TV, a group and a channel are transcoded as needed, always with one, or never; every live transcode's speed is watched (D147).
 - The reference client reads Overscan through the Xtream output, without a source type of Overscan's own (open question 2).
 - HDHomeRun emulation waits in the backlog (open question 6).
 

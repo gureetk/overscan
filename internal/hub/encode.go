@@ -42,10 +42,23 @@ const (
 // transcoded, and the hub transcodes as many titles as it may at once.
 var ErrBusy = errors.New("the server transcodes as many titles as it may at once")
 
-// Encoder is what the hub's ffmpeg can do to transcode video (D73).
+// Encoder is what the hub's ffmpeg can do to transcode video (D73, D147).
 type Encoder struct {
 	H264    bool // it encodes H.264, with libx264
+	HEVC    bool // it encodes HEVC, with libx265
 	ToneMap bool // it maps a high dynamic range to the standard one, with the zscale and tonemap filters
+}
+
+// Has reports whether the hub's ffmpeg has a software encoder, by its name:
+// libx264 or libx265.
+func (e Encoder) Has(name string) bool {
+	switch name {
+	case "libx264":
+		return e.H264
+	case "libx265":
+		return e.HEVC
+	}
+	return false
 }
 
 // UseEncoder tells the hub what its ffmpeg can do to transcode video. It
