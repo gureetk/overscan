@@ -317,7 +317,7 @@ func (a *Admin) devicesData(ctx context.Context) (devicesData, error) {
 	if err != nil {
 		return devicesData{}, err
 	}
-	data := devicesData{Accounts: accounts, Profiles: profiles, Messages: messages, Now: a.now(), OutputProfiles: profileOptions()}
+	data := devicesData{Accounts: accounts, Profiles: profiles, Messages: messages, Now: a.now(), OutputProfiles: a.profileOptions(ctx)}
 	if data.ShowOutputProfiles, err = a.liveTranscodes(ctx); err != nil {
 		return devicesData{}, err
 	}

@@ -121,6 +121,12 @@ func (a *Admin) Handler() http.Handler {
 	mux.Handle("GET /admin/sources/{id}/move", a.page(a.movePage))
 	mux.Handle("POST /admin/sources/{id}/move", a.pageWithin(maxMoveFormBytes, a.moveForm))
 	mux.Handle("POST /admin/sources/{id}/{action}", a.page(a.sourceAction))
+	mux.Handle("GET /admin/transcoding", a.page(a.transcodingPage))
+	mux.Handle("POST /admin/transcoding", a.page(a.addTranscodeProfileForm))
+	mux.Handle("POST /admin/transcoding/live", a.page(a.liveTranscodeForm))
+	mux.Handle("GET /admin/transcoding/profiles/{name}", a.page(a.transcodeProfilePage))
+	mux.Handle("POST /admin/transcoding/profiles/{name}", a.page(a.saveTranscodeProfileForm))
+	mux.Handle("POST /admin/transcoding/profiles/{name}/{action}", a.page(a.transcodeProfileAction))
 	mux.Handle("GET /admin/guides", a.page(a.guidesPage))
 	mux.Handle("POST /admin/guides", a.page(a.addGuideForm))
 	mux.Handle("POST /admin/guides/placeholders", a.page(a.placeholdersForm))
@@ -221,7 +227,7 @@ type view struct {
 
 // pageNames are the pages in admin/templates, each of which defines
 // "content" for the layout.
-var pageNames = []string{"sign-in", "home", "password", "message", "devices", "accounts", "account", "lineup", "rules", "library", "sources", "guides", "guide-channels", "move", "categories", "group-categories", "capture", "health", "settings"}
+var pageNames = []string{"sign-in", "home", "password", "message", "devices", "accounts", "account", "lineup", "rules", "library", "sources", "guides", "guide-channels", "move", "categories", "group-categories", "capture", "health", "settings", "transcoding"}
 
 // pageParts are the parts in admin/templates that pages share, by page.
 var pageParts = map[string][]string{"lineup": {"lineup-nav", "replace-form"}, "rules": {"lineup-nav"}, "library": {"replace-form"},

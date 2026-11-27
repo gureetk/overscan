@@ -734,6 +734,17 @@ table.list { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
   table.list.health .cell-label { display: inline; }
 }
 .cell-label { display: none; }
+@media (max-width: 47.5rem) {
+  /* On a phone, each transcoding profile is a block: its name, what it
+     makes, then what uses it with its buttons on the same line. */
+  table.list.transcode-profiles thead { display: none; }
+  table.list.transcode-profiles tr { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.875rem; padding: 0.875rem 1.25rem; border-bottom: 1px solid var(--line); }
+  table.list.transcode-profiles tr:last-child { border-bottom: 0; }
+  table.list.transcode-profiles td, table.list.transcode-profiles td:first-child, table.list.transcode-profiles td:last-child { display: block; padding: 0; border: 0; }
+  table.list.transcode-profiles td:first-child, table.list.transcode-profiles td:nth-child(2) { flex: 1 1 100%; }
+  table.list.transcode-profiles td:nth-child(2), table.list.transcode-profiles td:nth-child(3) { color: var(--text2); font-size: 0.8125rem; }
+  table.list.transcode-profiles td:last-child { margin-left: auto; }
+}
 
 /* Channels and their guides (D140). */
 .facts .inline-form { max-width: 100%; }

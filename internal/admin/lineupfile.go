@@ -94,6 +94,7 @@ func importNotice(got []store.LineupImport) string {
 		left.Channels += l.LeftOut.Channels
 		left.Backups += l.LeftOut.Backups
 		left.Rules += l.LeftOut.Rules
+		left.Transcodes += l.LeftOut.Transcodes
 	}
 	them := "them"
 	if len(got) == 1 {
@@ -117,7 +118,14 @@ func importNotice(got []store.LineupImport) string {
 			parts = append(parts, count(p.n)+" "+word)
 		}
 	}
-	return text + " Left out, since this server has no such source or channel: " + andList(parts) + "."
+	if len(parts) > 0 {
+		text += " Left out, since this server has no such source or channel: " + andList(parts) + "."
+	}
+	if left.Transcodes > 0 {
+		text += " " + count(left.Transcodes) + " " + plural(left.Transcodes, "group") + " named a profile that this server lacks, and " +
+			map[bool]string{true: "is", false: "are"}[left.Transcodes == 1] + " transcoded as needed: make the profile on the Transcoding page, and choose it again."
+	}
+	return text
 }
 
 // readLineupUpload reads the lineup file that the Live TV page's form
@@ -185,6 +193,9 @@ type apiLeftOut struct {
 	Channels   int `json:"channels"`
 	Backups    int `json:"backups"`
 	Rules      int `json:"rules"`
+	// Transcodes counts the groups whose transcode names a profile that
+	// this server lacks (D147).
+	Transcodes int `json:"transcodes"`
 }
 
 func (a *Admin) apiImportLineups(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
@@ -205,7 +216,7 @@ func (a *Admin) apiImportLineups(w http.ResponseWriter, r *http.Request, _ store
 	out := make([]apiLineupImport, len(got))
 	for i, l := range got {
 		out[i] = apiLineupImport{ID: l.ID, Name: l.Name, Groups: l.Groups, Channels: l.Channels, Rules: l.Rules,
-			LeftOut: apiLeftOut{l.LeftOut.Categories, l.LeftOut.Channels, l.LeftOut.Backups, l.LeftOut.Rules}}
+			LeftOut: apiLeftOut{l.LeftOut.Categories, l.LeftOut.Channels, l.LeftOut.Backups, l.LeftOut.Rules, l.LeftOut.Transcodes}}
 	}
 	writeJSON(w, http.StatusCreated, struct {
 		Lineups []apiLineupImport `json:"lineups"`

@@ -28,22 +28,28 @@ import (
 	"github.com/goccy/go-yaml/token"
 
 	"overscan.gureet.ca/internal/rules"
+	"overscan.gureet.ca/internal/streamprofile"
 )
 
 // Kind and Version name the file's format: Version is the latest that
 // Overscan reads. A file of a later version is refused, so that nothing in
 // it is dropped without a word. Version 2 adds a lineup's own_groups, a
 // group's numbers_from, and a merge rule's sources and prefer: best;
-// version 3 a channel's logo set by hand (D141). A file is written as the
+// version 3 a channel's logo set by hand (D141), and version 4 a group's
+// transcode (D147). A file is written as the
 // earliest version that holds what it has, so that an Overscan that reads
 // only that version imports it too.
 const (
 	Kind    = "overscan-lineups"
-	Version = 3
+	Version = 4
 )
 
 // NoLogo is a channel's logo, set by hand, of a channel that has none.
 const NoLogo = "none"
+
+// TranscodeNever is a group's transcode that sends its channels as their
+// sources send them (D147).
+const TranscodeNever = "never"
 
 // Limits on a file, as the admin has them for what it holds.
 const (
@@ -86,8 +92,12 @@ type Group struct {
 	Hidden bool   `yaml:"hidden,omitempty"`
 	Locked bool   `yaml:"locked,omitempty"`
 	// NumbersFrom is its first number, 0 if it has none (version 2).
-	NumbersFrom int        `yaml:"numbers_from,omitempty"`
-	Categories  []Category `yaml:"categories,omitempty"`
+	NumbersFrom int `yaml:"numbers_from,omitempty"`
+	// Transcode is what is transcoded of its channels (D147): TranscodeNever,
+	// or the name of the profile that transcodes them always; "" for as
+	// needed (version 4).
+	Transcode  string     `yaml:"transcode,omitempty"`
+	Categories []Category `yaml:"categories,omitempty"`
 }
 
 // Category is a source's live category, by name; "" names the source's
@@ -132,10 +142,16 @@ func (e *Error) Error() string { return e.Text }
 
 func bad(format string, args ...any) error { return &Error{fmt.Sprintf(format, args...)} }
 
-// Needs returns the version of the file format that f needs: 3 if it
-// holds anything of version 3, else 2 if it holds anything of version 2,
-// else 1.
+// Needs returns the version of the file format that f needs: the latest
+// version that added something that it holds, else 1.
 func (f File) Needs() int {
+	for _, l := range f.Lineups {
+		for _, g := range l.Groups {
+			if g.Transcode != "" {
+				return 4
+			}
+		}
+	}
 	for _, l := range f.Lineups {
 		for _, c := range l.Channels {
 			if c.Logo != "" {
@@ -251,8 +267,11 @@ func Parse(data []byte) (f File, err error) {
 	}
 	if need := f.Needs(); need > f.Version {
 		what := "own_groups, numbers_from, or a merge's sources or prefer: best"
-		if need == 3 {
+		switch need {
+		case 3:
 			what = "a channel's logo"
+		case 4:
+			what = "a group's transcode"
 		}
 		return File{}, bad("The file says version %d, but holds %s, which version %d of lineup files added: change its version to %d.",
 			f.Version, what, need, need)
@@ -376,6 +395,11 @@ func (l Lineup) check() error {
 		groups[g.Name] = true
 		if g.NumbersFrom < 0 || g.NumbersFrom > maxNumber {
 			return bad("the group %s: a first number is from 1 to %d.", g.Name, maxNumber)
+		}
+		if t := g.Transcode; t != "" && t != TranscodeNever {
+			if p, fixed := streamprofile.Find(t); fixed && !p.Transcodes() || !fixed && streamprofile.CheckName(t) != nil {
+				return bad("the group %s: transcode is never, or the name of a profile that transcodes.", g.Name)
+			}
 		}
 		for _, c := range g.Categories {
 			if err := checkKey(c.Source, "a category's source"); err != nil {

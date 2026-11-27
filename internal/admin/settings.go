@@ -28,28 +28,30 @@ import (
 // many minutes of a box's live channel the server keeps (D92), whether
 // one connection to a source serves every screen that plays a channel
 // (D93), the length of placeholder programmes, in minutes, 0 for none
-// (D142), and whether providers' films and series take TMDB's pictures
-// where theirs want replacing (D143).
+// (D142), whether providers' films and series take TMDB's pictures where
+// theirs want replacing (D143), and what is transcoded of live TV as a
+// whole (D147).
 
 type apiSettings struct {
-	RepairDefault    bool   `json:"repair_default"`
-	RepairHLS        bool   `json:"repair_hls"`
-	TranscodeVideo   int    `json:"transcode_video"`
-	ConvertSound     bool   `json:"convert_sound"`
-	ServerTranscodes bool   `json:"server_transcodes"`
-	AdultMarks       string `json:"adult_marks"`
-	RadioApart       bool   `json:"radio_apart"`
-	TMDBKeySet       bool   `json:"tmdb_key_set"`
-	TMDBLanguage     string `json:"tmdb_language"`
-	RecordingsCap    int    `json:"recordings_cap"`
-	RecordUntil      string `json:"recordings_until"`
-	RecordingHours   int    `json:"recordings_max_hours"`
-	TimeshiftMinutes int    `json:"timeshift_minutes"`
-	SharedTuner      bool   `json:"shared_tuner"`
-	Outputs          bool   `json:"outputs"`
-	OutputsAnywhere  bool   `json:"outputs_anywhere"`
-	Placeholders     int    `json:"guide_placeholders"`
-	TMDBPictures     bool   `json:"tmdb_pictures"`
+	RepairDefault    bool         `json:"repair_default"`
+	RepairHLS        bool         `json:"repair_hls"`
+	TranscodeVideo   int          `json:"transcode_video"`
+	ConvertSound     bool         `json:"convert_sound"`
+	ServerTranscodes bool         `json:"server_transcodes"`
+	AdultMarks       string       `json:"adult_marks"`
+	RadioApart       bool         `json:"radio_apart"`
+	TMDBKeySet       bool         `json:"tmdb_key_set"`
+	TMDBLanguage     string       `json:"tmdb_language"`
+	RecordingsCap    int          `json:"recordings_cap"`
+	RecordUntil      string       `json:"recordings_until"`
+	RecordingHours   int          `json:"recordings_max_hours"`
+	TimeshiftMinutes int          `json:"timeshift_minutes"`
+	SharedTuner      bool         `json:"shared_tuner"`
+	Outputs          bool         `json:"outputs"`
+	OutputsAnywhere  bool         `json:"outputs_anywhere"`
+	Placeholders     int          `json:"guide_placeholders"`
+	TMDBPictures     bool         `json:"tmdb_pictures"`
+	LiveTranscode    apiTranscode `json:"live_transcode"`
 }
 
 func (a *Admin) apiSettings(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
@@ -90,7 +92,11 @@ func (a *Admin) apiSettings(w http.ResponseWriter, r *http.Request, _ store.Admi
 			if v.OutputsAnywhere, err = a.store.OutputsAnywhere(ctx); err == nil {
 				var block time.Duration
 				if block, err = a.store.Placeholders(ctx); err == nil {
-					v.TMDBPictures, err = a.store.TMDBPictures(ctx)
+					if v.TMDBPictures, err = a.store.TMDBPictures(ctx); err == nil {
+						var live store.Transcode
+						live, err = a.store.LiveTranscode(ctx)
+						v.LiveTranscode = transcodeBody(live)
+					}
 				}
 				v.Placeholders = int(block / time.Minute)
 			}
@@ -109,6 +115,14 @@ func (a *Admin) apiChangeSettings(w http.ResponseWriter, r *http.Request, _ stor
 	}
 	for k, v := range body {
 		switch k {
+		case "live_transcode":
+			t, err := readTranscode(v)
+			if a.editAnswer(w, err) {
+				return
+			}
+			if a.editAnswer(w, a.setLiveTranscode(r.Context(), t)) {
+				return
+			}
 		case "repair_default":
 			var on bool
 			if json.Unmarshal(v, &on) != nil {

@@ -46,7 +46,10 @@ type LineupGroup struct {
 	// NumbersFrom is its first number (D137), which numbers its channels
 	// and those that join it; 0 if it has none.
 	NumbersFrom int
-	Categories  []GroupCategory
+	// Transcode is what is transcoded of its channels that say nothing of
+	// their own (D147).
+	Transcode  Transcode
+	Categories []GroupCategory
 }
 
 // GroupCategory is a source's category that a group holds.
@@ -68,16 +71,18 @@ func (s *Store) LineupGroups(ctx context.Context, lineupID int64) ([]LineupGroup
 	byID := map[int64]*LineupGroup{}
 	var order []int64
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, hidden, locked, edited, COALESCE(numbers_from, 0) FROM lineup_groups WHERE lineup_id = ?`, lineupID)
+		SELECT id, name, hidden, locked, edited, COALESCE(numbers_from, 0), transcode FROM lineup_groups WHERE lineup_id = ?`, lineupID)
 	if err != nil {
 		return fail(err)
 	}
 	for rows.Next() {
 		g := &LineupGroup{}
-		if err := rows.Scan(&g.ID, &g.Name, &g.Hidden, &g.Locked, &g.Edited, &g.NumbersFrom); err != nil {
+		var transcode sql.NullString
+		if err := rows.Scan(&g.ID, &g.Name, &g.Hidden, &g.Locked, &g.Edited, &g.NumbersFrom, &transcode); err != nil {
 			rows.Close()
 			return fail(err)
 		}
+		g.Transcode = transcodeOf(transcode)
 		byID[g.ID] = g
 		order = append(order, g.ID)
 	}
@@ -369,6 +374,12 @@ type LineupEntry struct {
 	GroupLocked bool    // its group is locked
 	Repair      bool    // its stream goes through ffmpeg: its own switch says so, or else the default does (D57, D58)
 	RepairOwn   *bool   // its own switch; nil if it follows the default
+	// TranscodeOwn is its channel's own setting of what is transcoded
+	// (D147); Transcode is the one that wins, its own, its group's or live
+	// TV's, as TranscodeBy says ("" for none).
+	TranscodeOwn Transcode
+	Transcode    Transcode
+	TranscodeBy  string
 	// Adult is set when its source marks it for adults (D86), and
 	// AdultLocked or AdultHidden when the setting locks or hides such
 	// channels.
@@ -481,7 +492,7 @@ const entrySelect = `
 			COALESCE((SELECT COALESCE(m.name, m.rule_name, mc.name)
 				FROM lineup_entry_rule_backups rb JOIN lineup_entries m ON m.id = rb.entry_id JOIN channels mc ON mc.id = m.channel_id
 				WHERE rb.channel_id = e.channel_id AND m.lineup_id = e.lineup_id LIMIT 1), ''),
-			` + leftOutSQL + `, NOT ` + takenEntry + `, ` + healthColumns
+			` + leftOutSQL + `, NOT ` + takenEntry + `, c.transcode, g.transcode, ` + liveTranscodeSQL + `, ` + healthColumns
 
 // leftOutSQL is true of a channel c, in its category k, that is missing
 // because its source no longer brings its category (D135).
@@ -495,14 +506,16 @@ func scanEntry(row rowScanner) (LineupEntry, error) {
 	var e LineupEntry
 	var hs healthScan
 	var own sql.NullBool
-	var logo sql.NullString
+	var logo, own2, group, live sql.NullString
 	var shift int64
 	dest := []any{&e.ID, &e.ChannelID, &e.SourceID, &e.Source, &e.Number, &e.Pinned, &e.Name, &e.ChannelName,
 		&e.Renamed, &e.GroupID, &e.Group, &e.Moved, &e.Category, &e.Visibility, &e.Hidden, &e.Missing, &e.Logo, &logo,
 		&e.Locked, &e.GroupLocked, &e.Repair, &own, &e.Adult, &e.AdultLocked, &e.AdultHidden, &e.Radio,
 		&e.RuleRenamed, &e.RuleMoved, &e.RuleShown, &e.RuleHidden, &e.RuleLogo, &e.RuleNumbered, &e.RuleGuide, &shift,
-		&e.Backups, &e.RuleBackups, &e.MergedInto, &e.LeftOut, &e.Untaken}
+		&e.Backups, &e.RuleBackups, &e.MergedInto, &e.LeftOut, &e.Untaken, &own2, &group, &live}
 	err := row.Scan(append(dest, hs.dest()...)...)
+	e.TranscodeOwn = transcodeOf(own2)
+	e.Transcode, e.TranscodeBy = resolveTranscode(own2, group, live)
 	e.Health = hs.health()
 	if own.Valid {
 		e.RepairOwn = &own.Bool

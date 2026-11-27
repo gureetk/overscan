@@ -89,12 +89,47 @@ func TestVersion2(t *testing.T) {
 	}
 }
 
+// A group's transcode needs version 4 (D147): never, or a profile's name.
+func TestVersion4(t *testing.T) {
+	f := sample()
+	f.Lineups[0].Groups[0].Transcode = TranscodeNever
+	f.Lineups[0].Groups[1].Transcode = "hevc-small"
+	out, err := Marshal(f, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"version: 4\n", "transcode: never\n", "transcode: hevc-small\n"} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("the file lacks %q:\n%s", want, out)
+		}
+	}
+	got, err := Parse(out)
+	if err != nil {
+		t.Fatalf("%v in\n%s", err, out)
+	}
+	f.Kind, f.Version = Kind, 4
+	if !reflect.DeepEqual(got, f) {
+		t.Errorf("read back\n%+v\nwant\n%+v", got, f)
+	}
+	// A fixed profile that transcodes is a name too.
+	f.Lineups[0].Groups[1].Transcode = "h264-720p"
+	if err := f.Check(); err != nil {
+		t.Errorf("a fixed profile: %v", err)
+	}
+}
+
 func TestParseRefuses(t *testing.T) {
 	head := "kind: overscan-lineups\nversion: 1\n"
 	for name, c := range map[string]struct{ text, says string }{
 		"empty":      {"", "empty"},
 		"not a file": {"lineups: []\n", "not a file of Overscan's lineups"},
-		"later":      {"kind: overscan-lineups\nversion: 4\nlineups: []\n", "Upgrade Overscan"},
+		"later":      {"kind: overscan-lineups\nversion: 5\nlineups: []\n", "Upgrade Overscan"},
+		"a transcode in version 3": {"kind: overscan-lineups\nversion: 3\nlineups:\n  - name: Kids\n    groups:\n      - {name: News, transcode: never}\n",
+			"change its version to 4"},
+		"a bad transcode": {"kind: overscan-lineups\nversion: 4\nlineups:\n  - name: Kids\n    groups:\n      - {name: News, transcode: \"Not A Name\"}\n",
+			"transcode is never"},
+		"a transcode that does not": {"kind: overscan-lineups\nversion: 4\nlineups:\n  - name: Kids\n    groups:\n      - {name: News, transcode: source}\n",
+			"transcode is never"},
 		"a logo in version 2": {"kind: overscan-lineups\nversion: 2\nlineups:\n  - name: Kids\n    channels:\n      - {source: main, key: a, logo: none}\n",
 			"change its version to 3"},
 		"a bad logo": {"kind: overscan-lineups\nversion: 3\nlineups:\n  - name: Kids\n    channels:\n      - {source: main, key: a, logo: ftp://logos.example/a.png}\n",

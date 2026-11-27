@@ -137,7 +137,7 @@ var wildcardValue = map[string]string{
 	"id": "1", "entry": "1", "mac": "00:1A:79:00:00:01", "code": "123456", "kind": "movies",
 	"key": "000000000000000000000000", "file": "1.ts", "token": strings.Repeat("A", 43),
 	"user": "nobody", "pass": "nothing", "minutes": "60", "start": "2026-12-04:10-00",
-	"action": "approve", "which": "m3u", "name...": "admin.css", "$": "",
+	"action": "approve", "which": "m3u", "name": "small", "name...": "admin.css", "$": "",
 }
 
 var wildcard = regexp.MustCompile(`\{([a-z$.]+)\}`)

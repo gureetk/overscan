@@ -44,7 +44,7 @@ func TestOutputProfiles(t *testing.T) {
 		t.Errorf("logs:\n%s", logs.String())
 	}
 	if rec := ta.do("POST", "/admin/accounts/1/live", lineupForm(csrf, "", "output_profile", "8k"), c, hx...); rec.Code != http.StatusBadRequest ||
-		!strings.Contains(rec.Body.String(), "Choose an output profile: source, h264-720p, h264-1080p.") {
+		!strings.Contains(rec.Body.String(), "Choose an output profile: source, h264-720p, h264-1080p, or one made on the Transcoding page.") {
 		t.Errorf("an unknown profile: status %d", rec.Code)
 	}
 

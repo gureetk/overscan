@@ -709,9 +709,18 @@ type PlayableEntry struct {
 	Repair    bool // its stream goes through ffmpeg: its own switch says so, or else the default does (D57, D58)
 	RepairHLS bool // the server repairs HLS streams too, made into one continuous stream (D61)
 	Radio     bool // a radio station (D87)
+	// Transcode is whether its stream is transcoded (D147): its channel's
+	// own setting, else its group's, else live TV's; TranscodeBy says
+	// which, "" when none says anything.
+	Transcode   Transcode
+	TranscodeBy string
 	// Backups are the streams that the hub tries in turn when the entry's
 	// own cannot start (D109): the entry with another channel's stream.
 	Backups []PlayableEntry
+
+	// groupTranscode and liveTranscode are its group's and live TV's
+	// settings, which its backups' channels follow too.
+	groupTranscode, liveTranscode sql.NullString
 }
 
 // PlayableEntry returns the lineup entry with the given ID if a device may
@@ -720,13 +729,17 @@ func (s *Store) PlayableEntry(ctx context.Context, entryID int64) (PlayableEntry
 	var p PlayableEntry
 	var sealed, sourceSealed []byte
 	var sourceName, sourceType string
+	var own sql.NullString
 	err := s.db.QueryRowContext(ctx, `
 		SELECT e.id, e.lineup_id, c.id, c.source_id, `+entryName+`, c.stream_url, c.stream_secret,
-			s.name, s.type, (SELECT secret FROM source_secrets WHERE source_id = s.id), `+lockedEntry+`, COALESCE(c.repair, `+repairDefaultSQL+`), `+repairHLSSQL+`, c.radio`+
+			s.name, s.type, (SELECT secret FROM source_secrets WHERE source_id = s.id), `+lockedEntry+`, COALESCE(c.repair, `+repairDefaultSQL+`), `+repairHLSSQL+`, c.radio,
+			c.transcode, g.transcode, `+liveTranscodeSQL+
 		lineupEntryJoins+`
 		WHERE e.id = ? AND `+shownEntry,
 		entryID).Scan(&p.EntryID, &p.LineupID, &p.ChannelID, &p.SourceID, &p.Name, &p.StreamURL, &sealed,
-		&sourceName, &sourceType, &sourceSealed, &p.Locked, &p.Repair, &p.RepairHLS, &p.Radio)
+		&sourceName, &sourceType, &sourceSealed, &p.Locked, &p.Repair, &p.RepairHLS, &p.Radio,
+		&own, &p.groupTranscode, &p.liveTranscode)
+	p.Transcode, p.TranscodeBy = resolveTranscode(own, p.groupTranscode, p.liveTranscode)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PlayableEntry{}, ErrNotFound
 	}

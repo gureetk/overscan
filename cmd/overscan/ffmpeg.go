@@ -116,8 +116,9 @@ func ffmpegList(ctx context.Context, path, list string) (map[string]bool, error)
 }
 
 // encoderOf returns what the ffmpeg at path can do to transcode video
-// (D73): encode H.264 with libx264, and map a high dynamic range to the
-// standard one with the zscale and tonemap filters.
+// (D73, D147): encode H.264 with libx264 and HEVC with libx265, and map a
+// high dynamic range to the standard one with the zscale and tonemap
+// filters.
 func encoderOf(ctx context.Context, path string) (hub.Encoder, error) {
 	encoders, err := ffmpegList(ctx, path, "encoders")
 	if err != nil {
@@ -127,7 +128,7 @@ func encoderOf(ctx context.Context, path string) (hub.Encoder, error) {
 	if err != nil {
 		return hub.Encoder{}, err
 	}
-	return hub.Encoder{H264: encoders["libx264"], ToneMap: filters["zscale"] && filters["tonemap"]}, nil
+	return hub.Encoder{H264: encoders["libx264"], HEVC: encoders["libx265"], ToneMap: filters["zscale"] && filters["tonemap"]}, nil
 }
 
 // useEncoder tells the hub what the ffmpeg at ffmpegPath can do to
@@ -148,6 +149,9 @@ func useEncoder(ctx context.Context, h *hub.Hub, ffmpegPath, ffprobePath string,
 		log.Info("ffmpeg can transcode the video of films that a box cannot play, where the Settings page lets it, but has no zscale filter to map a high dynamic range to the standard one")
 	default:
 		log.Info("ffmpeg can transcode the video of films that a box cannot play, where the Settings page lets it")
+	}
+	if e.H264 && !e.HEVC {
+		log.Info("this ffmpeg has no libx265, so profiles that make HEVC send streams as their sources send them")
 	}
 	h.UseEncoder(e)
 }

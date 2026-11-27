@@ -527,11 +527,14 @@ func (r accountRow) SourcesText() string {
 // LiveText says how its devices and players get live channels, if not as
 // their sources send them (D110), for its card's summary.
 func (r accountRow) LiveText() string {
-	p, ok := streamprofile.Find(r.OutputProfile)
-	if !ok || !p.Transcodes() {
+	p, fixed := streamprofile.Find(r.OutputProfile)
+	switch {
+	case fixed && p.Transcodes():
+		return "live as " + p.Label
+	case fixed || r.OutputProfile == "":
 		return ""
 	}
-	return "live as " + p.Label
+	return "live with " + r.OutputProfile
 }
 
 // accountsData is what the Accounts page shows, and what an account's own
@@ -588,7 +591,7 @@ func (a *Admin) accountsData(ctx context.Context, base string) (accountsData, er
 		lineupNames[l.ID] = l.Name
 	}
 	now := a.now()
-	data := accountsData{Themes: themes, Streams: []int{1, 2, 3, 4, 5, 6, 8, 10}, Lineups: lineups, OutputProfiles: profileOptions()}
+	data := accountsData{Themes: themes, Streams: []int{1, 2, 3, 4, 5, 6, 8, 10}, Lineups: lineups, OutputProfiles: a.profileOptions(ctx)}
 	if data.TranscodeNote, err = a.transcodeNote(ctx); err != nil {
 		return accountsData{}, err
 	}

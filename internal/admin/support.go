@@ -550,6 +550,16 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 	}
 	fmt.Fprintf(&b, "Output profiles that transcode live channels: accounts: %d; devices of their own: %d\n",
 		profileAccounts, profileDevices)
+	tc, err := a.store.TranscodeCounts(ctx)
+	if err != nil {
+		return "", err
+	}
+	live, err := a.store.LiveTranscode(ctx)
+	if err != nil {
+		return "", err
+	}
+	fmt.Fprintf(&b, "Transcoding (D147): profiles made: %d; live TV: %s; groups always: %d, never: %d; channels always: %d, never: %d\n",
+		tc.Profiles, live.Mode(), tc.GroupsAlways, tc.GroupsNever, tc.ChannelsAlways, tc.ChannelsNever)
 	fmt.Fprintf(&b, "Outputs for players: on: %v; anywhere: %v; playlists on: %d; Xtream logins on: %d\n",
 		outputsOn, anywhere, playlists, xtreams)
 	fmt.Fprintf(&b, "Profiles: %d, %d with a PIN to switch to them\n", len(profiles), withPIN)

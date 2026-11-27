@@ -249,7 +249,7 @@ func (h *Hub) link(deviceID int64, entry store.PlayableEntry, shift bool) (strin
 	// starts, so its links are continuous, which the relay makes of HLS.
 	ext := ".ts"
 	if !h.source(entry.SourceID).Resolves && hlsAddress(entry.StreamURL) && !h.relaysToRepair(entry) &&
-		!h.transcodesLive(deviceID) {
+		!h.transcodesLive(deviceID, entry) {
 		ext = ".m3u8"
 	}
 	c.shift = shift && ext == ".ts" && h.shiftDir != ""
@@ -364,6 +364,13 @@ type Stream struct {
 	// Details says what a live channel's stream holds, such as "1080i
 	// H.264, AC-3", once the hub has read it (D138); "" until then.
 	Details string
+	// Profile names the profile that a live channel is transcoded with,
+	// "" if it is not; Speed is how fast ffmpeg went lately, as seconds
+	// of video a second, 0 until known; Behind says that it fell behind
+	// its stream, which stutters on the screen (D147).
+	Profile string
+	Speed   float64
+	Behind  bool
 }
 
 // Who transcodes a stream's video (Stream.TranscodedBy).
@@ -408,6 +415,10 @@ func (h *Hub) Streams() []Stream {
 			st.Transcoded, st.TranscodedBy = true, TranscodedBySource
 		case s.encoding.Load() > 0:
 			st.Transcoded, st.TranscodedBy = true, TranscodedByOverscan
+			if s.kind == kindEntry {
+				st.Profile = s.profile.Name
+				st.Speed, st.Behind = math.Float64frombits(s.speed.Load()), s.behind.Load()
+			}
 		}
 		switch s.kind {
 		case kindEntry:
@@ -561,8 +572,15 @@ type session struct {
 	detected  bool
 	repairing atomic.Int32 // its requests going through ffmpeg now
 	// profile is, for a live channel, the output profile that its device
-	// or player gets it through (D110).
-	profile streamprofile.Profile
+	// or player gets it through (D110), or that its channel, group or live
+	// TV transcodes it with (D147), as profileBy says.
+	profile   streamprofile.Profile
+	profileBy string
+	// speed is, for a live channel that the hub transcodes, how fast
+	// ffmpeg went lately, as float64 bits, 0 until known; behind says that
+	// it fell behind its stream (D147).
+	speed  atomic.Uint64
+	behind atomic.Bool
 
 	// mu: Hub.mu
 	lastActive time.Time

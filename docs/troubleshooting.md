@@ -54,6 +54,10 @@ What to check when something goes wrong, by what you see. [guide.md](guide.md) s
 
 **A channel stutters, skips or jumps back.** Set it to be repaired on *Live TV* (D57): its stream then goes through ffmpeg, which the log's start lines say it found.
 
+**A transcoded channel stutters, or the *Overview* says *Falls behind*.** This server's processor cannot make the stream as fast as it comes. The log says `ffmpeg transcodes a live stream more slowly than it comes`, with how fast it went. On *Settings* → *Transcoding*, a profile with a smaller size, at most 30 pictures a second, or H.264 rather than HEVC takes less of it; so does transcoding fewer channels at once. A channel that a device plays as it is can be set never to be transcoded (D147).
+
+**A channel is not transcoded, though its profile says so.** The log says why when the stream starts: transcoding is off on *Settings*, the number at a time is reached, the server's ffmpeg lacks the encoder that the profile needs (`needs=libx265` for HEVC), or the channel, its group or live TV says never (`it is never transcoded`, with `set_by`). A recording, and a stream through the debug playlist, are never transcoded.
+
 **A film does not play, or plays without sound or picture.** The box's *Settings* → *Playback Check* learns what the box plays, and the admin's *Settings* → *Converting and transcoding* says what may go through ffmpeg. The log says whether ffmpeg and ffprobe were found as the server started. *The server is transcoding as many films as it may at once.* means that the number set there is reached.
 
 ## Players
