@@ -65,6 +65,13 @@ log:
 # "off" turns repair and conversion off.
 ffmpeg: ffmpeg
 
+# The graphics that ffmpeg transcodes on, through VA-API (D148): "auto" for
+# the first render device in /dev/dri that Overscan can open, a device such
+# as /dev/dri/renderD129, or "off". Overscan tests at start what they can
+# do, with pictures that ffmpeg makes, and transcodes the rest in software.
+# The service must be given the device: see docs/transcoding.md.
+gpu: auto
+
 # Sources of channels are added and changed in the admin, which keeps their
 # addresses encrypted (D46). A source declared here is imported into the
 # database at the next start, once, by name; from then on the admin manages

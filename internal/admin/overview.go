@@ -524,6 +524,8 @@ type apiStream struct {
 	Profile string  `json:"profile,omitempty"`
 	Speed   float64 `json:"speed,omitempty"`
 	Behind  bool    `json:"behind,omitempty"`
+	// Graphics says that the server's graphics transcode it (D148).
+	Graphics bool `json:"graphics,omitempty"`
 }
 
 func (a *Admin) apiStreams(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
@@ -537,7 +539,7 @@ func (a *Admin) apiStreams(w http.ResponseWriter, r *http.Request, _ store.Admin
 			Channel: s.Channel, SourceID: s.SourceID, Source: s.Source, StartedAt: s.Started.UTC().Truncate(time.Second),
 			Bytes: s.Bytes, HLS: s.HLS, Repaired: s.Repaired, Converted: s.Converted, Transcoded: s.Transcoded,
 			TranscodedBy: s.TranscodedBy, Playing: s.Playing, Timeshift: s.Timeshift, Shared: s.Shared, Programme: s.Programme,
-			Profile: s.Profile, Speed: s.Speed, Behind: s.Behind}
+			Profile: s.Profile, Speed: s.Speed, Behind: s.Behind, Graphics: s.Graphics}
 		if !s.Aired.IsZero() {
 			aired := s.Aired.UTC()
 			out[i].AiredAt = &aired

@@ -336,3 +336,24 @@ func TestTranscodeInLineupFiles(t *testing.T) {
 		}
 	}
 }
+
+func TestGPUTranscodes(t *testing.T) {
+	st := openTest(t, newPath(t))
+	ctx := context.Background()
+	if n, err := st.GPUTranscodes(ctx); err != nil || n != DefaultGPUTranscodes {
+		t.Fatalf("GPUTranscodes() = %d, %v; want %d", n, err, DefaultGPUTranscodes)
+	}
+	for _, n := range []int{0, MaxGPUTranscodes, 1} {
+		if err := st.SetGPUTranscodes(ctx, n); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := st.GPUTranscodes(ctx); err != nil || got != n {
+			t.Errorf("after %d: %d, %v", n, got, err)
+		}
+	}
+	for _, n := range []int{-1, MaxGPUTranscodes + 1} {
+		if err := st.SetGPUTranscodes(ctx, n); err == nil {
+			t.Errorf("SetGPUTranscodes(%d) took it", n)
+		}
+	}
+}

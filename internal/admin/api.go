@@ -135,6 +135,8 @@ func (a *Admin) apiRoutes() []apiRoute {
 		{method: "POST", path: "sources/{id}/test", fn: a.apiTestSource},
 		{method: "GET", path: "sources/{id}/moves", fn: a.apiMovePlan},
 		{method: "POST", path: "sources/{id}/moves", fn: a.apiMoves},
+		{method: "GET", path: "graphics", fn: a.apiGraphics},
+		{method: "POST", path: "graphics/test", fn: a.apiTestGraphics},
 		{method: "GET", path: "transcode-profiles", fn: a.apiTranscodeProfiles},
 		{method: "POST", path: "transcode-profiles", fn: a.apiAddTranscodeProfile},
 		{method: "GET", path: "transcode-profiles/{name}", fn: a.apiTranscodeProfileOne},

@@ -208,6 +208,31 @@ func TestFFmpeg(t *testing.T) {
 	}
 }
 
+func TestGPU(t *testing.T) {
+	absent := filepath.Join(t.TempDir(), "absent.yaml")
+	if cfg, _, err := Load(absent, false, env(nil)); err != nil || cfg.GPU != GPUAuto {
+		t.Fatalf("default: %q, %v", cfg.GPU, err)
+	}
+	for content, want := range map[string]string{
+		"gpu: /dev/dri/renderD129\n": "/dev/dri/renderD129",
+		"gpu: \"off\"\n":             GPUOff,
+		"gpu: auto\n":                GPUAuto,
+	} {
+		if cfg, _, err := Load(writeFile(t, content), true, env(nil)); err != nil || cfg.GPU != want {
+			t.Errorf("%q: %q, %v", content, cfg.GPU, err)
+		}
+	}
+	if cfg, _, err := Load(absent, false, env(map[string]string{"OVERSCAN_GPU": "off"})); err != nil || cfg.GPU != GPUOff {
+		t.Fatalf("from the environment: %q, %v", cfg.GPU, err)
+	}
+	for _, bad := range []string{"", "renderD128", "/dev/dri/card0", "/dev/dri/renderD128 -y", "/tmp/renderD128"} {
+		_, _, err := Load(absent, false, env(map[string]string{"OVERSCAN_GPU": bad}))
+		if err == nil || !strings.Contains(err.Error(), "gpu") {
+			t.Errorf("%q: %v", bad, err)
+		}
+	}
+}
+
 func TestTrustedProxies(t *testing.T) {
 	absent := filepath.Join(t.TempDir(), "absent.yaml")
 	if cfg, _, err := Load(absent, false, env(nil)); err != nil || cfg.TrustedProxies != nil {

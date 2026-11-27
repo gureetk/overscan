@@ -172,6 +172,7 @@ func New(cfg config.Config, log *slog.Logger, version string, svc Services) *Ser
 	}
 	if svc.Hub != nil {
 		a.UseStreams(svc.Hub)
+		a.UseGraphics(svc.Hub)
 	}
 	if svc.Recorder != nil {
 		a.UseRecorder(svc.Recorder)

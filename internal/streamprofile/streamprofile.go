@@ -217,17 +217,7 @@ func Check(p Profile) (Profile, error) {
 
 // width returns the width that fits a 16:9 picture of the profile's
 // largest size.
-func (p Profile) width() int {
-	switch p.MaxLines {
-	case 1080:
-		return 1920
-	case 720:
-		return 1280
-	case 576:
-		return 1024
-	}
-	return 0
-}
+func (p Profile) width() int { return widthOf(p.MaxLines) }
 
 // Describe says what a profile makes, such as "HEVC, up to 1080p, high
 // quality, at most 8 Mbit/s, at most 30 pictures a second, AAC in stereo".
@@ -315,10 +305,10 @@ func (p Profile) Args() []string {
 	}
 }
 
-// halfFast is the fps filter's rate that keeps a rate of up to 30 pictures
+// HalfFast is the fps filter's rate that keeps a rate of up to 30 pictures
 // a second and halves a faster one, so that 50 becomes 25 and 59.94
 // becomes 29.97: every second picture, evenly.
-const halfFast = "fps=fps='if(gt(source_fps,30),source_fps/2,source_fps)'"
+const HalfFast = "fps=fps='if(gt(source_fps,30),source_fps/2,source_fps)'"
 
 // VideoFilter returns the filters that a profile that the administrator
 // made runs on the pictures in software: deinterlacing, a picture of each
@@ -335,7 +325,7 @@ func (p Profile) VideoFilter() string {
 		f = append(f, "bwdif=mode="+mode+":deint=interlaced")
 	}
 	if p.FrameRate == RateAtMost {
-		f = append(f, halfFast)
+		f = append(f, HalfFast)
 	}
 	if w := p.width(); w > 0 {
 		f = append(f, "scale=w='min("+strconv.Itoa(w)+",iw)':h='min("+strconv.Itoa(p.MaxLines)+",ih)'"+
@@ -375,13 +365,5 @@ func (p Profile) madeArgs() []string {
 		args = append(args, "-maxrate", strconv.Itoa(p.MaxKbps)+"k", "-bufsize", strconv.Itoa(2*p.MaxKbps)+"k")
 	}
 	args = append(args, "-force_key_frames", "expr:gte(t,n_forced*2)")
-	switch p.Sound {
-	case SoundCopy:
-		args = append(args, "-c:a", "copy")
-	case SoundAC3:
-		args = append(args, "-c:a", "ac3", "-b:a", "384k")
-	default:
-		args = append(args, "-c:a", "aac", "-b:a", "128k", "-ac", "2")
-	}
-	return append(args, "-max_interleave_delta", "2000000", "-f", "mpegts", "pipe:1")
+	return append(args, p.soundArgs()...)
 }

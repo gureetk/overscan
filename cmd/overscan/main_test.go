@@ -263,6 +263,8 @@ func TestHelp(t *testing.T) {
 		{[]string{"-config", missing, "admin", "password", "-h"}, "overscan admin password"},
 		{[]string{"-config", missing, "debug", "channel", "-help"}, "overscan debug channel"},
 		{[]string{"-config", missing, "backup", "-h"}, "overscan backup [FILE]"},
+		{[]string{"-config", missing, "gpu", "-h"}, "Tests what the server's graphics can do for ffmpeg"},
+		{[]string{"help", "gpu"}, "overscan gpu"},
 	} {
 		var stdout, stderr bytes.Buffer
 		code := run(context.Background(), tc.args, nil, &stdout, &stderr, noEnv)

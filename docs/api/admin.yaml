@@ -88,7 +88,10 @@ tags:
       The profiles that live channels can be transcoded with: Overscan's own
       fixed ones (D110) and those that the administrator makes (D147). What
       is transcoded is set on live TV as a whole (`live_transcode` in the
-      settings), on each group and on each channel (`transcode`).
+      settings), on each group and on each channel (`transcode`). Where the
+      server's graphics make a profile's codec, they transcode it, up to
+      `gpu_transcodes` streams at a time (D148); `graphics` says what the
+      test at start found.
   - name: guides
     description: >-
       Guides of the household's own (D139): XMLTV guides at an address, or
@@ -2741,6 +2744,13 @@ paths:
                     many of their source's titles share take TMDB's (D143).
                 live_transcode:
                   $ref: "#/components/schemas/Transcode"
+                gpu_transcodes:
+                  type: integer
+                  minimum: 0
+                  maximum: 4
+                  description: >-
+                    How many streams at once the server's graphics may
+                    transcode, 0 for none (D148).
       responses:
         "200":
           $ref: "#/components/responses/Settings"
@@ -3157,6 +3167,51 @@ paths:
           $ref: "#/components/responses/NotFound"
         "415":
           $ref: "#/components/responses/NotJSON"
+
+  /graphics:
+    get:
+      tags: [transcoding]
+      operationId: getGraphics
+      summary: What the server's graphics can do for ffmpeg
+      description: >-
+        What the last test found (D148). The server tests its graphics when
+        it starts, with pictures that ffmpeg makes and never a channel:
+        which render device ffmpeg opens through VA-API, which codecs the
+        graphics make and decode, and whether they deinterlace, scale, halve
+        a frame rate and map HDR10 to SDR. `steps` says what each part of the
+        test did, with ffmpeg's last words where it failed.
+      responses:
+        "200":
+          $ref: "#/components/responses/Graphics"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+
+  /graphics/test:
+    post:
+      tags: [transcoding]
+      operationId: testGraphics
+      summary: Test the graphics again
+      description: >-
+        Starts a test in the background, unless one runs already, and answers
+        at once with `testing` true. `GET /graphics` says what it found once
+        `testing` is false. A test forgets the channels whose streams the
+        graphics failed to decode.
+      security:
+        - session: []
+          csrf: []
+      responses:
+        "202":
+          $ref: "#/components/responses/Graphics"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/CSRF"
+        "409":
+          description: This server cannot test graphics (`no_graphics`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /transcode-profiles:
     get:
@@ -4482,10 +4537,12 @@ components:
         source sends them; `h264-720p` and `h264-1080p` made H.264, at up to
         1280×720 or 1920×1080, with AAC sound in stereo, by this server's
         ffmpeg; or the name of a profile that the administrator made
-        (D147, `transcode-profiles`). A profile that transcodes does so
-        while transcoding is on (`transcode_video` in the settings, each such
-        stream counting against its number at a time), and sends streams as
-        their sources send them otherwise. Unknown names are refused
+        (D147, `transcode-profiles`). A profile that transcodes does so on
+        the server's graphics where they make its codec, up to their number
+        at a time (`gpu_transcodes`, D148), and otherwise while transcoding
+        is on (`transcode_video` in the settings, each such stream counting
+        against its number at a time); it sends streams as their sources
+        send them where neither can. Unknown names are refused
         (`bad_output_profile`).
     Transcode:
       type: object
@@ -4504,6 +4561,102 @@ components:
           enum: [as_needed, always, never]
         profile:
           type: [string, "null"]
+    Graphics:
+      type: object
+      required: [tested, testing, usable, off, encodes, decodes, decode_untested, deinterlace, scale, frame_rate, hdr_to_sdr, hdr_to_sdr_untested, steps, took_ms, at_once]
+      description: >-
+        What the server's graphics can do for ffmpeg through VA-API, as the
+        last test found (D148). Where they make a profile's codec, they
+        transcode it; where they also deinterlace and scale, the pictures go
+        through those filters on them; and where they also decode a stream's
+        codec, the pictures stay on them from decoding to encoding.
+      properties:
+        tested:
+          type: boolean
+          description: A test has run since the server started.
+        testing:
+          type: boolean
+          description: A test runs now.
+        usable:
+          type: boolean
+          description: The graphics make H.264 or HEVC, so streams are transcoded on them.
+        off:
+          type: boolean
+          description: The configuration file turns the graphics off (`gpu`).
+        device:
+          type: string
+          description: The render device that ffmpeg opened, such as /dev/dri/renderD128.
+        driver:
+          type: string
+          description: The VA-API driver, as it names itself.
+        why:
+          type: string
+          description: Why there are no graphics to transcode on.
+        encodes:
+          type: array
+          description: The codecs that the graphics make.
+          items:
+            type: object
+            required: [codec, low_power, icq, vbr]
+            properties:
+              codec:
+                type: string
+                enum: [h264, hevc]
+              low_power:
+                type: boolean
+                description: They make it only in low-power mode.
+              icq:
+                type: boolean
+                description: They keep a constant quality (ICQ); otherwise a constant quantiser (CQP).
+              vbr:
+                type: boolean
+                description: They keep to a bit rate (VBR), so that a profile's highest bit rate holds.
+        decodes:
+          type: array
+          description: The codecs that the graphics decode, of those that the test tries.
+          items:
+            type: string
+            enum: [h264, hevc, hevc10, mpeg2, av1, vp9]
+        decode_untested:
+          type: array
+          description: The codecs that ffmpeg could not make a clip of, to test.
+          items:
+            type: string
+        deinterlace:
+          type: boolean
+        scale:
+          type: boolean
+        frame_rate:
+          type: boolean
+          description: ffmpeg's fps filter halves a frame rate on pictures on the graphics.
+        hdr_to_sdr:
+          type: boolean
+          description: The graphics map an HDR10 picture to SDR.
+        hdr_to_sdr_untested:
+          type: boolean
+          description: ffmpeg could not make an HDR10 clip to test it.
+        steps:
+          type: array
+          description: What each part of the test did.
+          items:
+            type: object
+            required: [name, ok]
+            properties:
+              name:
+                type: string
+              ok:
+                type: boolean
+              note:
+                type: string
+                description: ffmpeg's last words, where it failed.
+        tested_at:
+          type: string
+          format: date-time
+        took_ms:
+          type: integer
+        at_once:
+          type: integer
+          description: How many streams at once the graphics may transcode (`gpu_transcodes` in the settings).
     TranscodeProfile:
       type: object
       required: [name, fixed, label, describes, codec, max_lines, quality, max_kbps, frame_rate, deinterlace, hdr_to_sdr, sound, uses]
@@ -5898,6 +6051,11 @@ components:
           description: >-
             The transcode fell behind its stream, which stutters on the
             screen (D147); left out when it keeps up.
+        graphics:
+          type: boolean
+          description: >-
+            The server's graphics transcode it (D148); left out when the
+            processor does, or nothing does.
     ChannelHealth:
       type: object
       required: [failed_at, failures, played_at, hidden_until_played, stream]
@@ -6306,7 +6464,7 @@ components:
         application/json:
           schema:
             type: object
-            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes, adult_marks, radio_apart, tmdb_key_set, tmdb_language, recordings_cap, recordings_until, recordings_max_hours, timeshift_minutes, shared_tuner, outputs, outputs_anywhere, guide_placeholders, tmdb_pictures, live_transcode]
+            required: [repair_default, repair_hls, transcode_video, convert_sound, server_transcodes, adult_marks, radio_apart, tmdb_key_set, tmdb_language, recordings_cap, recordings_until, recordings_max_hours, timeshift_minutes, shared_tuner, outputs, outputs_anywhere, guide_placeholders, tmdb_pictures, live_transcode, gpu_transcodes]
             properties:
               repair_default:
                 type: boolean
@@ -6429,6 +6587,20 @@ components:
                 description: >-
                   What is transcoded of live TV as a whole (D147), below what
                   each group and channel says. As needed at first.
+              gpu_transcodes:
+                type: integer
+                minimum: 0
+                maximum: 4
+                description: >-
+                  How many streams at once the server's graphics may transcode
+                  (D148), apart from the number in software
+                  (`transcode_video`); 0 for none. 2 at first.
+    Graphics:
+      description: What the server's graphics can do for ffmpeg, as the last test found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Graphics"
     NoRecorder:
       description: This server cannot record (`no_recorder`).
       content:

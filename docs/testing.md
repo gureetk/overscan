@@ -151,6 +151,10 @@ It walks through M9's *Done when* too, in `TestGuidesDoneWhen`: with two guides 
 
 Every migration from 43 on also has a test of its own in `internal/store`, `TestMigrationNNNN…`, which makes a database with the schema before it, holding what a household sets up, applies the migration and checks that nothing was lost or changed: `TestNewMigrationsHaveUpgradeTests` fails without one. `TestMigrationsAreUnchanged` holds every migration to its SHA-256 in `internal/store/testdata/migrations.sha256`, since a migration that a release holds is never edited.
 
+## Graphics
+
+CI has no graphics, so the transcodes on them (D148) are tested in two halves. The test at start runs against a stand-in for ffmpeg that answers as graphics would, or fails a step as they might (`internal/gpu`): which mode each codec encodes in, which rate controls hold, which decodes pass, and why a server has none to use; and against the real ffmpeg on a server without graphics. The hub's tests run a stand-in ffmpeg that notes how it was asked to transcode, on the graphics decoding there, on the graphics decoding in software, or in software, and fails as told (`TestGraphicsFallBack`): every fallback, the graphics' own number at a time, and the arguments that each way gets. The arguments themselves are checked word by word in `internal/streamprofile`. What only real graphics can tell, that ffmpeg takes those arguments and that a transcode keeps up, is checked on a server with Intel graphics before each release of M10, with `overscan gpu` and a channel on each profile.
+
 Before 1.0, each release was tried by hand as an upgrade of the one before: the previous release read a source and got an approved device, and the new release, started on the same data directory, had to give a Stalker client the same channels, with the same numbers. For v0.1.0 this was done from v0.0.9 and from v0.0.17, and for v0.4.0 and v0.5.0 from each pre-release before them and from the full release before.
 
 ## On the box

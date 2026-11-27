@@ -49,7 +49,7 @@ func TestRepairInTheAPI(t *testing.T) {
 	settings := func(rec *httptest.ResponseRecorder) (bool, bool) {
 		var got map[string]any
 		err := json.Unmarshal(rec.Body.Bytes(), &got)
-		return got["repair_default"] == true, err == nil && rec.Code == http.StatusOK && len(got) == 19 &&
+		return got["repair_default"] == true, err == nil && rec.Code == http.StatusOK && len(got) == 20 && got["gpu_transcodes"] == 2.0 &&
 			got["outputs"] == false && fmt.Sprint(got["live_transcode"]) == "map[mode:as_needed profile:<nil>]" && got["outputs_anywhere"] == false && got["guide_placeholders"] == 0.0 &&
 			got["tmdb_pictures"] == false &&
 			got["repair_hls"] == false && got["transcode_video"] == 0.0 && got["convert_sound"] == true &&

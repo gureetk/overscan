@@ -52,6 +52,7 @@ type apiSettings struct {
 	Placeholders     int          `json:"guide_placeholders"`
 	TMDBPictures     bool         `json:"tmdb_pictures"`
 	LiveTranscode    apiTranscode `json:"live_transcode"`
+	GPUTranscodes    int          `json:"gpu_transcodes"`
 }
 
 func (a *Admin) apiSettings(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
@@ -94,7 +95,9 @@ func (a *Admin) apiSettings(w http.ResponseWriter, r *http.Request, _ store.Admi
 				if block, err = a.store.Placeholders(ctx); err == nil {
 					if v.TMDBPictures, err = a.store.TMDBPictures(ctx); err == nil {
 						var live store.Transcode
-						live, err = a.store.LiveTranscode(ctx)
+						if live, err = a.store.LiveTranscode(ctx); err == nil {
+							v.GPUTranscodes, err = a.store.GPUTranscodes(ctx)
+						}
 						v.LiveTranscode = transcodeBody(live)
 					}
 				}
@@ -121,6 +124,15 @@ func (a *Admin) apiChangeSettings(w http.ResponseWriter, r *http.Request, _ stor
 				return
 			}
 			if a.editAnswer(w, a.setLiveTranscode(r.Context(), t)) {
+				return
+			}
+		case "gpu_transcodes":
+			var n int
+			if json.Unmarshal(v, &n) != nil || n < 0 || n > store.MaxGPUTranscodes {
+				apiError(w, http.StatusBadRequest, "bad_json", fmt.Sprintf("gpu_transcodes is a whole number from 0 to %d.", store.MaxGPUTranscodes))
+				return
+			}
+			if a.editAnswer(w, a.setGPUTranscodes(r.Context(), n)) {
 				return
 			}
 		case "repair_default":

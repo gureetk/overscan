@@ -124,11 +124,11 @@ func (h *Hub) sink(ctx context.Context, w http.ResponseWriter, s *session, conti
 	if continuous {
 		// A stream that fills a buffer is transcoded as it leaves it
 		// (shiftSink), not as it goes in.
-		if job, ok := h.transcodeJob(ctx, s); ok && s.shift == nil {
-			return &repairSink{h: h, s: s, ctx: ctx, w: w, rc: rc, job: job}
+		if jobs := h.transcodeJobs(ctx, s); len(jobs) > 0 && s.shift == nil {
+			return newRepairSink(h, s, ctx, w, rc, jobs)
 		}
 		if h.repairs(s) {
-			return &repairSink{h: h, s: s, ctx: ctx, w: w, rc: rc, job: h.repairJob(s)}
+			return newRepairSink(h, s, ctx, w, rc, []ffmpegJob{h.repairJob(s)})
 		}
 	}
 	return directSink{w: w, rc: rc}
@@ -140,19 +140,32 @@ func (h *Hub) sink(ctx context.Context, w http.ResponseWriter, s *session, conti
 // already, if it was to be.
 func (h *Hub) shiftSink(ctx context.Context, w http.ResponseWriter, s *session) sink {
 	rc := http.NewResponseController(w)
-	if job, ok := h.transcodeJob(ctx, s); ok {
-		return &repairSink{h: h, s: s, ctx: ctx, w: w, rc: rc, job: job}
+	if jobs := h.transcodeJobs(ctx, s); len(jobs) > 0 {
+		return newRepairSink(h, s, ctx, w, rc, jobs)
 	}
 	return directSink{w: w, rc: rc}
 }
 
 // ffmpegJob is what a sink's ffmpeg does to a stream: repair it (D57) or
-// transcode it to an output profile (D110).
+// transcode it to an output profile (D110), in software or on the
+// graphics (D148).
 type ffmpegJob struct {
 	args  []string
 	doing string // "repairing" or "transcoding", for the log
 	does  string // "repair" or "transcode", for the log
+	how   string // "in software" or "on the graphics", for the log; "" for a repair
 	about []any  // more for the log
+	// instead says, for the log, what the job does when it takes over from
+	// the one before it, such as "it is transcoded in software".
+	instead string
+	// gpu says that it transcodes on the graphics.
+	gpu bool
+	// failed, if not nil, is told that ffmpeg could not do the job before
+	// sending anything.
+	failed func()
+	// retry, if not nil, returns the job that takes over, once, when
+	// ffmpeg stops part way: on the graphics, decoding in software.
+	retry func() (ffmpegJob, bool)
 	// watch says that the hub follows how fast ffmpeg goes, and says when
 	// it falls behind the stream (D147).
 	watch bool
@@ -220,6 +233,8 @@ type repairSink struct {
 	sniffed []byte // the stream's first bytes, until they tell
 
 	job      ffmpegJob
+	jobs     []ffmpegJob // the ones to try after job, in order
+	retried  bool        // job took over part way, from one that stopped
 	cmd      *exec.Cmd
 	stop     context.CancelFunc // stops ffmpeg
 	stdin    io.WriteCloser
@@ -240,6 +255,12 @@ type repairSink struct {
 	output  chan error  // the copy to the player's end: nil, or why
 	outErr  error
 	outDone bool
+}
+
+// newRepairSink returns a sink that sends a stream through ffmpeg, with
+// the first of jobs, or the next where one cannot be done.
+func newRepairSink(h *Hub, s *session, ctx context.Context, w io.Writer, rc *http.ResponseController, jobs []ffmpegJob) *repairSink {
+	return &repairSink{h: h, s: s, ctx: ctx, w: w, rc: rc, job: jobs[0], jobs: jobs[1:]}
 }
 
 // Write takes in the next piece of the stream.
@@ -293,6 +314,10 @@ func (r *repairSink) finish() {
 		_, _ = r.w.Write(r.sniffed)
 		r.sniffed = nil
 	case repairRunning:
+		if r.cmd == nil {
+			// Its ffmpeg stopped, and none took over.
+			break
+		}
 		r.stdin.Close()
 		stop := time.AfterFunc(repairDrain, r.stop)
 		err := r.wait()
@@ -309,15 +334,24 @@ func (r *repairSink) finish() {
 }
 
 // close stops ffmpeg, if it still runs, and gives back its slot.
-func (r *repairSink) close() {
+func (r *repairSink) close() { r.end() }
+
+// end stops the job's ffmpeg, if it still runs, and gives back its slot,
+// so that another job can take over.
+func (r *repairSink) end() {
 	if r.cmd != nil {
 		r.stop()
 		r.stdin.Close()
 		r.wait()
 		if r.watch != nil {
-			r.watchEnded()
+			// A run that sent nothing has had its failure logged.
+			if r.sent.Load() {
+				r.watchEnded()
+			}
 			r.progressIn.Close()
 		}
+		r.cmd, r.stdin, r.watch, r.progressIn = nil, nil, nil, nil
+		r.output, r.outErr, r.outDone = nil, nil, false
 	}
 	if r.slot {
 		r.slot = false
@@ -325,17 +359,55 @@ func (r *repairSink) close() {
 	}
 }
 
+// instead says, for the log, what happens to the stream when the job
+// cannot be done: the next job, or it plays as it is.
+func (r *repairSink) instead() string {
+	if len(r.jobs) > 0 {
+		return r.jobs[0].instead
+	}
+	return "it plays as it is"
+}
+
+// next makes the next job the one to do; it reports false if there is
+// none.
+func (r *repairSink) next() bool {
+	if len(r.jobs) == 0 {
+		return false
+	}
+	r.job, r.jobs = r.jobs[0], r.jobs[1:]
+	return true
+}
+
 // about returns the attributes that name the stream in the log.
 func (r *repairSink) about() []any {
 	return append([]any{"channel", r.s.channel, "source", r.h.source(r.s.sourceID).Name, "device", r.s.deviceID}, r.job.about...)
 }
 
-// start starts ffmpeg, if a slot is free. It reports false if the stream
-// must go to the player as it is.
+// start starts ffmpeg with the first job that has a slot free and starts,
+// trying the next where one cannot. It reports false if the stream must go
+// to the player as it is.
 func (r *repairSink) start() bool {
-	if !r.job.take(r.about()) {
-		return false
+	for {
+		if r.job.take(r.about()) {
+			if r.run() {
+				return true
+			}
+		} else if r.job.gpu {
+			// The graphics are full: so they are for the job that
+			// decodes in software.
+			for len(r.jobs) > 0 && r.jobs[0].gpu {
+				r.jobs = r.jobs[1:]
+			}
+		}
+		if !r.next() {
+			return false
+		}
 	}
+}
+
+// run starts ffmpeg with the job, which holds a slot. It reports false,
+// having given the slot back, if ffmpeg did not start.
+func (r *repairSink) run() bool {
 	args := r.job.args
 	// ffmpeg says how far a transcode has got, every second, so that the
 	// hub can tell whether it keeps up (D147).
@@ -344,7 +416,7 @@ func (r *repairSink) start() bool {
 		var err error
 		if progressIn, progressOut, err = os.Pipe(); err != nil {
 			r.job.give()
-			r.h.log.Warn("cannot start ffmpeg to "+r.job.does+" a stream; it plays as it is", append(r.about(), "error", err)...)
+			r.h.log.Warn("cannot start ffmpeg to "+r.job.does+" a stream; "+r.instead(), append(r.about(), "error", err)...)
 			return false
 		}
 		args = append([]string{"-progress", progressFD, "-stats_period", "1"}, args...)
@@ -377,10 +449,10 @@ func (r *repairSink) start() bool {
 		}
 		stop()
 		r.job.give()
-		r.h.log.Warn("cannot start ffmpeg to "+r.job.does+" a stream; it plays as it is", append(r.about(), "error", err)...)
+		r.h.log.Warn("cannot start ffmpeg to "+r.job.does+" a stream; "+r.instead(), append(r.about(), "error", err)...)
 		return false
 	}
-	r.cmd, r.stop, r.stdin, r.slot, r.keeping = cmd, stop, stdin, true, true
+	r.cmd, r.stop, r.stdin, r.slot, r.keeping = cmd, stop, stdin, true, !r.retried
 	if progressIn != nil {
 		r.progressIn = progressIn
 		r.watch = newLiveWatch(followProgress(progressIn), time.Now())
@@ -489,18 +561,58 @@ func (r *repairSink) watchEnded() {
 }
 
 // stopped deals with ffmpeg having stopped while the stream goes on. If it
-// sent nothing, the player gets the stream as it is; otherwise the stream
-// ends here, and the player asks for it again.
+// sent nothing, the next job takes over, given what ffmpeg was given, or
+// else the player gets the stream as it is. If it sent something, a job
+// that can be retried is, once, from where the stream is now; otherwise
+// the stream ends here, and the player asks for it again.
 func (r *repairSink) stopped() error {
 	err := r.wait()
 	if r.ctx.Err() != nil {
 		return r.ctx.Err()
 	}
-	if r.sent.Load() || !r.keeping {
-		r.h.log.Warn("ffmpeg stopped "+r.job.doing+" a stream", append(r.about(), "error", err, "ffmpeg", r.messages.String())...)
-		return errRepairStopped
+	if !r.sent.Load() && r.keeping {
+		if len(r.jobs) > 0 {
+			return r.fallBack(err)
+		}
+		return r.bypass(err)
 	}
-	return r.bypass(err)
+	if r.job.retry != nil && !r.retried {
+		if next, ok := r.job.retry(); ok {
+			r.h.log.Warn("ffmpeg stopped "+r.job.doing+" a stream "+r.job.how+"; it starts again, decoding the stream in software",
+				append(r.about(), "error", err, "ffmpeg", r.messages.String())...)
+			r.end()
+			r.job, r.jobs, r.retried = next, nil, true
+			if r.start() {
+				return nil
+			}
+			return errRepairStopped
+		}
+	}
+	r.h.log.Warn("ffmpeg stopped "+r.job.doing+" a stream", append(r.about(), "error", err, "ffmpeg", r.messages.String())...)
+	return errRepairStopped
+}
+
+// fallBack hands the stream to the next job, after ffmpeg failed to do
+// the job before sending anything: the next one gets what ffmpeg was
+// given, then the rest of the stream. Where none starts, the player gets
+// the stream as it is.
+func (r *repairSink) fallBack(err error) error {
+	r.h.log.Warn("ffmpeg could not "+r.job.does+" a stream "+r.job.how+"; "+r.instead(),
+		append(r.about(), "error", err, "ffmpeg", r.messages.String())...)
+	if r.job.failed != nil {
+		r.job.failed()
+	}
+	kept := r.kept
+	r.kept, r.keeping = nil, false
+	r.end()
+	r.next()
+	if !r.start() {
+		r.state = repairBypassing
+		_, werr := r.w.Write(kept)
+		_ = r.rc.Flush()
+		return werr
+	}
+	return r.feed(kept)
 }
 
 // bypass sends the player what ffmpeg was given, which ffmpeg failed to

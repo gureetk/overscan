@@ -89,30 +89,48 @@ func (h *Hub) noteNever(ctx context.Context, deviceID int64, entry store.Playabl
 	}
 }
 
-// transcodeJob returns the job of transcoding s's stream to its profile,
-// and whether there is one: the profile transcodes, the hub's ffmpeg has
-// the encoder that it needs, and the administrator lets the hub transcode.
-// When the profile transcodes and the hub may not, the log says why, and
-// the stream plays as its source sends it.
-func (h *Hub) transcodeJob(ctx context.Context, s *session) (ffmpegJob, bool) {
+// transcodeJobs returns the jobs that transcode s's stream to its profile,
+// in the order to try them: on the graphics, where they make its codec
+// (D148), then in software, where the hub's ffmpeg has the encoder that it
+// needs and the administrator lets the hub transcode. None if the profile
+// does not transcode; when it does and there is no way to, the log says
+// why, and the stream plays as its source sends it.
+func (h *Hub) transcodeJobs(ctx context.Context, s *session) []ffmpegJob {
 	if !s.profile.Transcodes() {
-		return ffmpegJob{}, false
+		return nil
 	}
 	about := []any{"channel", s.channel, "source", h.source(s.sourceID).Name, "device", s.deviceID, "profile", s.profile.Name}
 	if s.profileBy != "" {
 		about = append(about, "set_by", s.profileBy)
 	}
+	soft, why, whyAbout := h.softwareJob(ctx, s, about)
+	instead := "this one plays as its source sends it"
+	if why == "" {
+		instead = "this one is transcoded in software"
+	}
+	jobs := h.gpuJobs(ctx, s, about, instead)
+	if why == "" {
+		return append(jobs, soft)
+	}
+	if len(jobs) == 0 {
+		h.log.Warn(why, append(about, whyAbout...)...)
+	}
+	return jobs
+}
+
+// softwareJob returns the job of transcoding s's stream in software, or
+// why there is none, with more about it, for the log.
+func (h *Hub) softwareJob(ctx context.Context, s *session, about []any) (ffmpegJob, string, []any) {
 	if h.ffmpeg == "" || !h.encoder.Has(s.profile.Encoder()) {
-		h.log.Warn("a stream's output profile transcodes it, but this server's ffmpeg lacks the encoder that it needs; it plays as its source sends it",
-			append(about, "needs", s.profile.Encoder())...)
-		return ffmpegJob{}, false
+		return ffmpegJob{}, "a stream's output profile transcodes it, but this server's ffmpeg lacks the encoder that it needs; it plays as its source sends it",
+			[]any{"needs", s.profile.Encoder()}
 	}
 	limit := h.transcodeCap(ctx)
 	if limit == 0 {
-		h.log.Warn("a stream's output profile transcodes it, but transcoding is off; it plays as its source sends it", about...)
-		return ffmpegJob{}, false
+		return ffmpegJob{}, "a stream's output profile transcodes it, but transcoding is off; it plays as its source sends it", nil
 	}
-	return ffmpegJob{args: s.profile.Args(), doing: "transcoding", does: "transcode", about: about[6:], watch: true,
+	return ffmpegJob{args: s.profile.Args(), doing: "transcoding", does: "transcode", how: "in software",
+		instead: "it is transcoded in software", about: about[6:], watch: true,
 		take: func(about []any) bool {
 			if !h.takeEncode(s.deviceID, limit) {
 				h.log.Warn("the server transcodes as many streams as it may; this one plays as its source sends it",
@@ -126,7 +144,7 @@ func (h *Hub) transcodeJob(ctx context.Context, s *session) (ffmpegJob, bool) {
 			h.endEncode(s.deviceID)
 			s.encoding.Add(-1)
 		},
-	}, true
+	}, "", nil
 }
 
 // transcodesLive reports whether the hub transcodes a device's or player's
@@ -135,5 +153,8 @@ func (h *Hub) transcodeJob(ctx context.Context, s *session) (ffmpegJob, bool) {
 func (h *Hub) transcodesLive(deviceID int64, entry store.PlayableEntry) bool {
 	ctx := context.Background()
 	p, _ := h.streamProfile(ctx, deviceID, entry)
-	return h.ffmpeg != "" && h.encoder.Has(p.Encoder()) && p.Transcodes() && h.transcodeCap(ctx) > 0
+	if !p.Transcodes() || h.ffmpeg == "" {
+		return false
+	}
+	return (h.encoder.Has(p.Encoder()) && h.transcodeCap(ctx) > 0) || h.gpuTranscodes(ctx, p)
 }

@@ -587,6 +587,7 @@ A household chooses what Overscan transcodes and how, for live TV and for films 
   - Overscan uses the GPU for what passed, and a switch on the Settings page stops it. Hardware transcodes have a number at a time of their own, 2 at first.
   - **Fallbacks.** A stream that finds the GPU full, or whose transcode fails to start on it, is transcoded in software where D73's number allows, and is otherwise sent as its source sends it; the log says why. A stream whose decoding fails on the GPU part way starts again, once, with software decoding and the GPU's encoder.
   - NVIDIA comes later (section 22).
+  - **In place:** the test runs in the background at start, with ffmpeg's test pattern and clips that ffmpeg makes in software, and again on *Test again*, `POST /graphics/test` or `overscan gpu`; the *Graphics* card on the *Transcoding* page, `GET /graphics`, the support bundle's `graphics.txt` and the log say what it found, step by step; `gpu` in the configuration file chooses the render device, `auto` at first, or `off`; the card's number at a time is `gpu_transcodes` in the settings, 0 for none. Profiles are made on the graphics as far as they go: decoded there where they decode the codec that the channel last showed, filtered there where they deinterlace and scale, a live HDR10 picture mapped to SDR where they can, and kept to a bit rate where they can, or else at a constant quality. The *Overview* marks a transcode on them (D148).
 - Packaging: a choice that lets the service reach the GPU, which the unit's sandbox hides (`PrivateDevices`).
   - An `install.sh` option, and a documented step for the Debian package, add a drop-in that gives the service the render device and its group.
   - Debian's VA drivers are suggestions of the package, never dependencies.
@@ -620,7 +621,7 @@ A household chooses what Overscan transcodes and how, for live TV and for films 
 - memory stays within section 15's budgets, with each kind of transcode's ffmpeg measured and written down;
 - and an upgrade changes nothing.
 
-*Status:* planned in detail (D146). Its first phase, profiles and what is transcoded for live TV in software, is in place (v1.3.0-alpha.1).
+*Status:* planned in detail (D146). Its first phase, profiles and what is transcoded for live TV in software, is in place (v1.3.0-alpha.1), and so is its second, the graphics through VA-API (v1.3.0-alpha.2).
 
 ### M11: HLS output (M)
 Planned in detail once M10 ends. HLS from the hub for players that ask for it: films and episodes that ffmpeg makes, so that players that seek by byte ranges can seek in them, and live channels as HLS. It replaces D110's line that HLS output waits in the backlog.
@@ -811,6 +812,7 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 - The *Guides* page lists each source's own guide first, with what it fills and *Read now* (D145).
 - M10 transcodes live TV as a whole, a group or a channel, and films and series as a whole, a shelf or a title, *as needed*, *always* with a profile the administrator makes, or *never*; the narrowest setting wins, *never* over every device's profile; VA-API graphics do the work where the server has them, with software as the fallback (D146).
 - Profiles that the administrator makes, of a codec, a largest size, a quality, a highest bit rate, a frame rate, deinterlacing, HDR made SDR and the sound, beside the fixed ones; live TV, a group and a channel are transcoded as needed, always with one, or never; every live transcode's speed is watched (D147).
+- The server tests at start what its graphics do through VA-API, with pictures that ffmpeg makes, and transcodes on them what passed, up to a number at a time of their own; a stream that finds them busy or failing goes to software, then as its source sends it (D148).
 - The reference client reads Overscan through the Xtream output, without a source type of Overscan's own (open question 2).
 - HDHomeRun emulation waits in the backlog (open question 6).
 

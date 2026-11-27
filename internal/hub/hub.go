@@ -38,6 +38,7 @@ import (
 	"time"
 
 	"overscan.gureet.ca/internal/catchup"
+	"overscan.gureet.ca/internal/gpu"
 	"overscan.gureet.ca/internal/media"
 	"overscan.gureet.ca/internal/store"
 	"overscan.gureet.ca/internal/streaminfo"
@@ -140,6 +141,19 @@ type Hub struct {
 	encodeMu sync.Mutex
 	encodes  map[int64]int
 
+	// gpu is what the server's graphics can do, as the test found (D148);
+	// nil until it has run. gpuEncodes counts their transcodes running,
+	// by device, and gpuDecodeFailed the channels whose streams the
+	// graphics failed to decode, until the next test; both under
+	// encodeMu.
+	gpu             atomic.Pointer[gpu.Found]
+	gpuEncodes      map[int64]int
+	gpuDecodeFailed map[int64]bool
+	// gpuTest is how the graphics are tested; gpuTesting says that a test
+	// runs now.
+	gpuTest    gpu.Options
+	gpuTesting atomic.Bool
+
 	// shiftDir holds the timeshift buffers of boxes' live channels (D92);
 	// "" if there are none. tuners are the buffers' tuners that run.
 	shiftDir string
@@ -193,6 +207,7 @@ func New(st *store.Store, log *slog.Logger, version string, sources map[int64]So
 		sleep:      sleepContext,
 		sessions:   map[uint64]*session{},
 		encodes:    map[int64]int{},
+		gpuEncodes: map[int64]int{},
 
 		unrelayable: map[int64]time.Time{},
 		shared:      map[int64]*session{},
@@ -367,10 +382,12 @@ type Stream struct {
 	// Profile names the profile that a live channel is transcoded with,
 	// "" if it is not; Speed is how fast ffmpeg went lately, as seconds
 	// of video a second, 0 until known; Behind says that it fell behind
-	// its stream, which stutters on the screen (D147).
-	Profile string
-	Speed   float64
-	Behind  bool
+	// its stream, which stutters on the screen (D147). Graphics says that
+	// the server's graphics transcode it (D148).
+	Profile  string
+	Speed    float64
+	Behind   bool
+	Graphics bool
 }
 
 // Who transcodes a stream's video (Stream.TranscodedBy).
@@ -418,6 +435,7 @@ func (h *Hub) Streams() []Stream {
 			if s.kind == kindEntry {
 				st.Profile = s.profile.Name
 				st.Speed, st.Behind = math.Float64frombits(s.speed.Load()), s.behind.Load()
+				st.Graphics = s.graphics.Load() > 0
 			}
 		}
 		switch s.kind {
@@ -581,6 +599,8 @@ type session struct {
 	// it fell behind its stream (D147).
 	speed  atomic.Uint64
 	behind atomic.Bool
+	// graphics counts its transcodes on the server's graphics (D148).
+	graphics atomic.Int32
 
 	// mu: Hub.mu
 	lastActive time.Time

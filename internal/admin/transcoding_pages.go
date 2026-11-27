@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"overscan.gureet.ca/internal/gpu"
 	"overscan.gureet.ca/internal/store"
 	"overscan.gureet.ca/internal/streamprofile"
 )
@@ -118,6 +119,27 @@ type transcodingData struct {
 	Full         bool
 	Editing      bool
 	Form         transcodeProfileForm
+	Graphics     graphicsData
+}
+
+// Capacity says how many streams at a time this server transcodes, on its
+// graphics and with its processor, where it does both or the first.
+func (d transcodingData) Capacity() string {
+	streams := func(n int) string {
+		if n == 1 {
+			return "1 stream"
+		}
+		return strconv.Itoa(n) + " streams"
+	}
+	g := d.Graphics
+	switch {
+	case !g.On():
+		return ""
+	case d.CanTranscode && d.AtOnce > 0:
+		return "This server transcodes up to " + streams(g.AtOnce) + " at a time on its graphics, and " +
+			strconv.Itoa(d.AtOnce) + " more with its processor where its graphics are busy."
+	}
+	return "This server transcodes up to " + streams(g.AtOnce) + " at a time, on its graphics; transcoding with its processor is off on the Settings page."
 }
 
 // LiveValue is live TV's setting as its select names it.
@@ -126,12 +148,17 @@ func (d transcodingData) LiveValue() string { return transcodeValue(d.Live) }
 func (a *Admin) transcodingData(ctx context.Context, form transcodeProfileForm, editing bool) (transcodingData, error) {
 	can, _, missing := a.transcoder()
 	d := transcodingData{CanTranscode: can, Missing: missing, Form: form, Editing: editing}
-	if a.streams != nil {
-		d.HEVC = a.streams.Encoder().HEVC
-	}
 	var err error
 	if d.AtOnce, err = a.store.Transcodes(ctx); err != nil {
 		return d, err
+	}
+	if d.Graphics, err = a.graphicsData(ctx); err != nil {
+		return d, err
+	}
+	// Graphics that make HEVC make up for an ffmpeg without libx265.
+	d.HEVC = d.Graphics.On() && d.Graphics.Found.Encodes[gpu.HEVC].OK
+	if a.streams != nil {
+		d.HEVC = d.HEVC || a.streams.Encoder().HEVC
 	}
 	if d.Live, err = a.store.LiveTranscode(ctx); err != nil {
 		return d, err
