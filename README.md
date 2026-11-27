@@ -78,13 +78,15 @@ Since 0.5.0, players other than the boxes reach Overscan too. Accounts get a
 login, a limit on their streams and, where the administrator chooses, only some
 of the sources, and each can serve players an M3U playlist and XMLTV guide, or
 an Xtream-compatible login for players such as TiviMate, behind switches that
-start off, on the home network only. There can be several lineups, one for each
-account to choose, with rules that keep renaming, regrouping, numbering, hiding
-and fixing the guide of channels as sources change; a channel can have backups
-that play when its own stream cannot start, and a rule can merge the copies of
-a channel that sources list more than once; live channels can be made H.264 for
-a device that needs it; and the lineups export to one file, and import from
-it.
+start off, on the home network only. Where an account turns it on, its players
+can play live channels as HLS, which Overscan cuts from each channel's one
+stream, or from one transcode of it, and shares among them. There can be several
+lineups, one for each account to choose, with rules that keep renaming,
+regrouping, numbering, hiding and fixing the guide of channels as sources
+change; a channel can have backups that play when its own stream cannot start,
+and a rule can merge the copies of a channel that sources list more than once;
+live channels can be made H.264 for a device that needs it; and the lineups
+export to one file, and import from it.
 
 Since 1.1.0, Overscan can be a household's playlist manager. Each source can
 bring only the categories ticked; a lineup can be made of the household's own

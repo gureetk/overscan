@@ -14,10 +14,15 @@
 // channels stream pictures that ffmpeg makes as they are watched, live TV
 // is set to be transcoded always with the profile named (D147), and the
 // boxes watch only those channels; the server's ffmpegs are measured too.
+// With -hls, players beside the boxes sign in with the household's login
+// and watch channels as HLS (D153, D155), the first -pictures channels if
+// there are pictures, and the disk that the server's buffers take is
+// measured.
 //
 //	go run ./tools/soak -duration 10m -boxes 4
 //	go run ./tools/soak -own-guide 40000 -own-hours 168 -placeholders 60
 //	go run ./tools/soak -transcode small -boxes 3 -channels 2000
+//	go run ./tools/soak -transcode small -boxes 2 -hls 2 -channels 2000
 //
 // It prints a summary, writes the samples to a CSV file, and fails if the
 // server breaks the budgets given as flags. It reads the server's use from
@@ -84,6 +89,8 @@ type options struct {
 	pictures    int
 	pictureSize string
 	ffmpegMB    float64
+	// hls counts the players that watch channels as HLS beside the boxes.
+	hls int
 }
 
 func main() {
@@ -110,6 +117,7 @@ func main() {
 	flag.IntVar(&o.pictures, "pictures", 0, "how many channels, the first, stream pictures that ffmpeg makes as they are watched (default: as many as the boxes, with -transcode)")
 	flag.StringVar(&o.pictureSize, "picture-size", "1920x1080", "the size of those pictures")
 	flag.Float64Var(&o.ffmpegMB, "ffmpeg-mb", 0, "fail if one transcode's ffmpeg ever takes more resident memory than this, in MB (0: no limit)")
+	flag.IntVar(&o.hls, "hls", 0, "how many players watch channels as HLS beside the boxes, through the household's login (default: none)")
 	flag.Parse()
 	if o.transcode != "" && o.pictures == 0 {
 		o.pictures = o.boxes
@@ -215,6 +223,14 @@ func run(ctx context.Context, o options) error {
 			return err
 		}
 	}
+	var hlsIDs []int64
+	if o.hls > 0 {
+		if hlsIDs, err = srv.hlsPlayers(o.pictures); err != nil {
+			close(loaded)
+			loadWG.Wait()
+			return err
+		}
+	}
 
 	macs := make([]string, o.boxes)
 	for i := range macs {
@@ -237,11 +253,23 @@ func run(ctx context.Context, o options) error {
 		return err
 	}
 
-	fmt.Printf("running %d boxes for %s\n", o.boxes, o.duration)
+	fmt.Printf("running %d boxes and %d HLS players for %s\n", o.boxes, o.hls, o.duration)
 	var st stats
+	var hs hlsStats
 	runCtx, cancel := context.WithTimeout(ctx, o.duration)
 	defer cancel()
 	var wg sync.WaitGroup
+	client := &http.Client{Timeout: time.Minute}
+	for i := range o.hls {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			p := &hlsPlayer{base: srv.base, agent: fmt.Sprintf("SoakPlayer/%d", i+1), ids: hlsIDs, zap: o.zap,
+				rng: rand.New(rand.NewPCG(uint64(i), 2)), stats: &hs, client: client}
+			p.run(runCtx)
+		}()
+	}
+	buffers := filepath.Join(dir, "data", "timeshift")
 	for i, mac := range macs {
 		wg.Add(1)
 		go func() {
@@ -273,6 +301,9 @@ func run(ctx context.Context, o options) error {
 				tc.sample(m.pid, s.at)
 				tc.speeds(srv)
 			}
+			if o.hls > 0 {
+				hs.sampleDisk(buffers)
+			}
 		}
 	}
 	ticker.Stop()
@@ -289,7 +320,7 @@ func run(ctx context.Context, o options) error {
 	if err := writeCSV(o.out, samples); err != nil {
 		return err
 	}
-	return report(o, ready, idle, samples, &st, &tc)
+	return report(o, ready, idle, samples, &st, &tc, &hs)
 }
 
 // sleep waits for d, or until ctx is done.
@@ -1007,7 +1038,7 @@ func mb(kb int64) float64 { return float64(kb) / 1024 }
 // report prints the summary. ready is a sample taken once the sources
 // were read, before the guides of the household's own, and idle the one
 // before the boxes start.
-func report(o options, ready, idle sample, samples []sample, st *stats, tc *transcodes) error {
+func report(o options, ready, idle sample, samples []sample, st *stats, tc *transcodes, hs *hlsStats) error {
 	// The samples before idle are those taken while the server read its
 	// sources; CPU counts from idle on, under the boxes' load. The peaks
 	// are the kernel's high-water marks where it has them: the most
@@ -1046,6 +1077,9 @@ func report(o options, ready, idle sample, samples []sample, st *stats, tc *tran
 	if o.transcode != "" {
 		tc.report(o)
 	}
+	if o.hls > 0 {
+		hs.report(o.hls)
+	}
 	fmt.Printf("Samples: %s\n", o.out)
 
 	var broken []string
@@ -1063,6 +1097,9 @@ func report(o options, ready, idle sample, samples []sample, st *stats, tc *tran
 	}
 	if o.transcode != "" && tc.seen == 0 {
 		broken = append(broken, "no stream was transcoded")
+	}
+	if o.hls > 0 && (hs.failed.Load() > 0 || hs.segments.Load() == 0) {
+		broken = append(broken, "some HLS playlists or segments failed, or none was read")
 	}
 	if o.ffmpegMB > 0 && mb(tc.peakKB) > o.ffmpegMB {
 		broken = append(broken, fmt.Sprintf("a transcode's ffmpeg took %.1f MB, over %.0f MB", mb(tc.peakKB), o.ffmpegMB))

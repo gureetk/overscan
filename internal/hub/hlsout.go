@@ -476,7 +476,7 @@ func (h *Hub) CutLink(playerID int64, entry store.PlayableEntry) string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if token, ok := h.cutLinks[key]; ok {
-		if c, ok := h.verify(token); ok {
+		if c, ok := h.verify(token); ok && !h.wasStopped(c.nonce, now) {
 			if s := h.sessions[c.nonce]; (s != nil && !s.ended) || now.Unix() <= c.expires {
 				return "/live/" + token + ".m3u8"
 			}
@@ -484,7 +484,7 @@ func (h *Hub) CutLink(playerID int64, entry store.PlayableEntry) string {
 	}
 	for k, token := range h.cutLinks {
 		c, ok := h.verify(token)
-		if s := h.sessions[c.nonce]; !ok || ((s == nil || s.ended) && now.Unix() > c.expires) {
+		if s := h.sessions[c.nonce]; !ok || h.wasStopped(c.nonce, now) || ((s == nil || s.ended) && now.Unix() > c.expires) {
 			delete(h.cutLinks, k)
 		}
 	}
@@ -502,6 +502,13 @@ func (h *Hub) serveCut(w http.ResponseWriter, r *http.Request, c claims, token, 
 	s := h.lookup(c.nonce)
 	if !isResource {
 		if s == nil {
+			h.mu.Lock()
+			stopped := h.wasStopped(c.nonce, h.now())
+			h.mu.Unlock()
+			if stopped {
+				http.Error(w, "this stream was stopped; ask for a new one", http.StatusForbidden)
+				return
+			}
 			if h.now().Unix() > c.expires {
 				http.Error(w, "this link has expired; ask for a new one", http.StatusForbidden)
 				return
@@ -645,7 +652,47 @@ func (h *Hub) StopCut(accountID int64, reason string) int {
 		}
 	}
 	for _, s := range stop {
+		h.stopCut(s.nonce)
 		h.end(s, reason)
 	}
+	h.stopCutLinks(func(p Player) bool { return p.AccountID == accountID })
 	return len(stop)
+}
+
+// stopCut remembers that the hub stopped the HLS of a player with the
+// token's nonce, so that the token, which the player holds, starts nothing
+// while it could. It needs h.mu.
+func (h *Hub) stopCut(nonce uint64) {
+	now := h.now()
+	for n, until := range h.stopped {
+		if now.After(until) {
+			delete(h.stopped, n)
+		}
+	}
+	h.stopped[nonce] = now.Add(linkTTL)
+}
+
+// stopCutLinks stops the tokens of HLS that CutLink gave the players that
+// match, whether or not they have started anything yet. It needs h.mu.
+func (h *Hub) stopCutLinks(match func(Player) bool) {
+	for k, token := range h.cutLinks {
+		p, ok := h.PlayerOf(k.player)
+		if !ok {
+			p = Player{ID: k.player}
+		}
+		if !match(p) {
+			continue
+		}
+		if c, ok := h.verify(token); ok {
+			h.stopCut(c.nonce)
+		}
+		delete(h.cutLinks, k)
+	}
+}
+
+// wasStopped reports whether the hub stopped the HLS with the token's
+// nonce, as stopCut says. It needs h.mu.
+func (h *Hub) wasStopped(nonce uint64, now time.Time) bool {
+	until, ok := h.stopped[nonce]
+	return ok && !now.After(until)
 }

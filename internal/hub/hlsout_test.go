@@ -580,6 +580,92 @@ func TestCutHLSTranscode(t *testing.T) {
 	}
 }
 
+// A player's HLS that the hub stops, as when its account's HLS for players
+// is turned off or its login changes, stays stopped: neither its token,
+// which the player holds, nor one that the output gave and the player has
+// not used yet starts it again while the token is valid, and the output's
+// next link is a new one. A token that is not the hub's, or one of another
+// form, opens no HLS (D153).
+func TestCutHLSStopped(t *testing.T) {
+	ffmpeg := realFFmpeg(t)
+	h, _ := cutHarness(t, 1, liveClip(t, ffmpeg, 30, 50))
+	entry := h.entries["clip"]
+	vlc := h.hub.Player(store.HouseholdAccount, "xtream", "192.0.2.10", "VLC/3.0.21 LibVLC/3.0.21")
+	link := h.hub.CutLink(vlc, entry)
+	uri, _ := master(t, get(t, h.front.URL+link))
+	readMedia(t, body(t, get(t, h.front.URL+uri)))
+	other := h.hub.Player(store.HouseholdAccount, "xtream", "192.0.2.11", "TiviMate/5.1.6")
+	unused := h.hub.CutLink(other, entry)
+
+	if n := h.hub.StopCut(store.HouseholdAccount, "the account's HLS for players was turned off"); n != 1 {
+		t.Fatalf("StopCut stopped %d sessions, want 1", n)
+	}
+	if resp := get(t, h.front.URL+uri); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("the stopped session's playlist: %s", resp.Status)
+	}
+	for name, l := range map[string]string{"the stopped link": link, "the unused link": unused} {
+		resp := get(t, h.front.URL+l)
+		if text := body(t, resp); resp.StatusCode != http.StatusForbidden || !strings.Contains(text, "stopped") {
+			t.Errorf("%s: %s: %s", name, resp.Status, text)
+		}
+	}
+	if len(h.hub.Streams()) != 0 {
+		t.Errorf("streams after the stop: %+v", h.hub.Streams())
+	}
+
+	// The output asks again, once the account's switch is on again: a new
+	// link, which plays.
+	again := h.hub.CutLink(vlc, entry)
+	if again == link || again == "" {
+		t.Fatalf("the link after the stop: %q", again)
+	}
+	uri2, _ := master(t, get(t, h.front.URL+again))
+	readMedia(t, body(t, get(t, h.front.URL+uri2)))
+
+	// Players stopped as other streams are, here as when the login changes.
+	if n := h.hub.StopPlayers(func(p Player) bool { return p.AccountID == store.HouseholdAccount }, "the account's login changed"); n != 1 {
+		t.Errorf("StopPlayers stopped %d sessions, want 1", n)
+	}
+	if resp := get(t, h.front.URL+again); resp.StatusCode != http.StatusForbidden {
+		t.Errorf("the link stopped with its player: %s", resp.Status)
+	}
+
+	// What the hub remembers of stopped tokens goes once they expire.
+	h.advance(linkTTL + time.Second)
+	h.hub.mu.Lock()
+	h.hub.stopCut(1)
+	left := len(h.hub.stopped)
+	h.hub.mu.Unlock()
+	if left != 1 {
+		t.Errorf("%d stopped tokens remembered, want 1", left)
+	}
+
+	// Tokens that are not the hub's, or are of another form.
+	fresh := h.hub.CutLink(vlc, entry)
+	token := strings.TrimSuffix(strings.TrimPrefix(fresh, "/live/"), ".m3u8")
+	flipped := []byte(token)
+	flipped[len(flipped)/2] ^= 1
+	box := strings.TrimSuffix(strings.TrimPrefix(h.hub.Link(vlc, entry), "/live/"), ".ts")
+	for _, path := range []string{
+		"/live/" + string(flipped) + ".m3u8",
+		"/live/" + string(flipped) + "/hls.m3u8",
+		"/live/" + string(flipped) + "/0.ts",
+		"/live/" + box + "/hls.m3u8",
+		"/live/" + box + "/0.ts",
+		"/live/" + token + "/hls.m3u8", // before its session starts
+		"/live/" + token + "/../hls.m3u8",
+		"/live/" + token + "/%2e%2e%2fhls.m3u8",
+	} {
+		resp := get(t, h.front.URL+path)
+		if text := body(t, resp); resp.StatusCode < 400 || resp.StatusCode >= 500 || strings.Contains(text, "#EXTM3U") {
+			t.Errorf("%s: %s: %.80s", path, resp.Status, text)
+		}
+	}
+	if len(h.hub.Streams()) != 0 {
+		t.Errorf("streams after the forged paths: %+v", h.hub.Streams())
+	}
+}
+
 // A player whose channel cannot be transcoded now, here with transcoding
 // off, gets its HLS as the source sends it, from the same feed as the
 // players of the channel as sent (D155).

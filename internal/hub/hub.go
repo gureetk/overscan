@@ -177,7 +177,10 @@ type Hub struct {
 	// cutLinks are the tokens of players' HLS of channels, so that a
 	// player that asks for a channel's playlist again goes on with its
 	// session (D153).
-	cutLinks    map[playerEntry]string
+	cutLinks map[playerEntry]string
+	// stopped are the nonces of players' HLS that the hub stopped, until
+	// their tokens, which the players hold, expire: they start nothing.
+	stopped     map[uint64]time.Time
 	unrelayable map[int64]time.Time // channels whose HLS the relay could not follow, by ID, until when (D61)
 	shared      map[int64]*session  // the shared tuners that run, by channel ID (D93)
 	failing     map[int64]time.Time // channels whose streams failed to start, by ID, until when (D109)
@@ -219,6 +222,7 @@ func New(st *store.Store, log *slog.Logger, version string, sources map[int64]So
 		unrelayable: map[int64]time.Time{},
 		playerLinks: map[playerTitle]string{},
 		cutLinks:    map[playerEntry]string{},
+		stopped:     map[uint64]time.Time{},
 		shared:      map[int64]*session{},
 		failing:     map[int64]time.Time{},
 		closing:     map[*session]struct{}{},

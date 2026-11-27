@@ -84,12 +84,15 @@ func (s *server) transcoding(o options) error {
 			return err
 		}
 	}
-	if err := a.call("PATCH", "settings", map[string]any{"transcode_video": min(o.boxes, 3),
+	// A channel's HLS players share one transcode (D155), beside each
+	// box's own; the server allows three at most.
+	limit := min(o.boxes+min(o.hls, o.pictures), 3)
+	if err := a.call("PATCH", "settings", map[string]any{"transcode_video": limit,
 		"live_transcode": map[string]any{"mode": "always", "profile": o.transcode}}, nil); err != nil {
 		return err
 	}
 	fmt.Printf("live TV transcoded always with %s, %d at a time; the first %d channels stream pictures of %s\n",
-		o.transcode, min(o.boxes, 3), o.pictures, o.pictureSize)
+		o.transcode, limit, o.pictures, o.pictureSize)
 	return nil
 }
 
