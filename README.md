@@ -60,7 +60,8 @@ The box and Stalker clients browse and play the films and series of Xtream
 servers, Stalker portals, Jellyfin and Plex servers and folders on the server,
 with seeking and resuming. Films whose sound the box cannot play go through
 ffmpeg; those whose picture it cannot play are transcoded by Jellyfin or, where
-the administrator lets it, by Overscan's own ffmpeg; subtitles beside a film or
+the administrator lets it, by Overscan's own ffmpeg, which can also transcode
+films, shelves or titles always with a profile; subtitles beside a film or
 in Jellyfin show on the box, and a playback check on each box measures what it
 plays. Past programmes play from the archives of the sources that keep them.
 Films and series can be locked with the parental PIN, as channels can; radio
