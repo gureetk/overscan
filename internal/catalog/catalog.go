@@ -74,8 +74,9 @@ type Refresher struct {
 	mu    sync.Mutex
 	locks map[int64]*sync.Mutex // by source: one refresh of a source at a time
 	// guides holds, by source, the lock that a read of its guide takes:
-	// one at a time.
-	guides map[int64]*sync.Mutex
+	// one at a time; reading, the sources whose guides are being read.
+	guides  map[int64]*sync.Mutex
+	reading map[int64]bool
 	// base is Run's context, under which a guide read that RefreshNow
 	// starts goes on; background counts those reads, which Run waits for.
 	base       context.Context
@@ -103,6 +104,7 @@ func NewRefresher(st *store.Store, log *slog.Logger, version string) *Refresher 
 		reload:     make(chan struct{}, 1),
 		locks:      map[int64]*sync.Mutex{},
 		guides:     map[int64]*sync.Mutex{},
+		reading:    map[int64]bool{},
 		maxBytes:   maxPlaylistBytes,
 		firstRetry: time.Minute,
 	}
@@ -303,6 +305,16 @@ func (r *Refresher) readGuide(ctx context.Context, src source.Settings, id int64
 	if r.guide == nil {
 		return
 	}
+	unlock := r.lockGuide(id)
+	defer unlock()
+	if read, _, err := r.guide.ReadIfDue(ctx, src, id); read && err == nil {
+		r.sourcesChanged()
+	}
+}
+
+// lockGuide takes the lock of a source's guide, and marks the guide as
+// being read until the function it returns unlocks it.
+func (r *Refresher) lockGuide(id int64) (unlock func()) {
 	r.mu.Lock()
 	l, ok := r.guides[id]
 	if !ok {
@@ -311,9 +323,71 @@ func (r *Refresher) readGuide(ctx context.Context, src source.Settings, id int64
 	}
 	r.mu.Unlock()
 	l.Lock()
-	defer l.Unlock()
-	if read, _, err := r.guide.ReadIfDue(ctx, src, id); read && err == nil {
-		r.sourcesChanged()
+	r.mu.Lock()
+	r.reading[id] = true
+	r.mu.Unlock()
+	return func() {
+		r.mu.Lock()
+		delete(r.reading, id)
+		r.mu.Unlock()
+		l.Unlock()
+	}
+}
+
+// GuideReading reports whether a source's guide is being read, or checked
+// for whether it is due.
+func (r *Refresher) GuideReading(id int64) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.reading[id]
+}
+
+// ErrNoGuideReads is ReadGuideNow's error when the refresher does not run,
+// or no longer does.
+var ErrNoGuideReads = errors.New("catalog: guides are not read now")
+
+// ReadGuideNow reads a source's guide now, due or not, once a read of it
+// under way ends. The read goes on under Run's context if ctx ends first:
+// ReadGuideNow returns ctx's error then, and the source's guide state says
+// how the read went once it ends.
+func (r *Refresher) ReadGuideNow(ctx context.Context, id int64) (guide.Result, error) {
+	settings, err := r.store.SourceSettings(ctx, id)
+	if err != nil {
+		return guide.Result{}, err
+	}
+	r.mu.Lock()
+	base := r.base
+	if r.guide == nil || base == nil || base.Err() != nil {
+		r.mu.Unlock()
+		return guide.Result{}, ErrNoGuideReads
+	}
+	r.background.Add(1)
+	r.mu.Unlock()
+	type outcome struct {
+		res guide.Result
+		err error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		defer r.background.Done()
+		var o outcome
+		func() {
+			unlock := r.lockGuide(id)
+			defer unlock()
+			o.res, o.err = r.guide.Read(base, settings, id)
+		}()
+		// The guide is no longer marked as being read by the time the
+		// caller hears how the read went.
+		if o.err == nil {
+			r.sourcesChanged()
+		}
+		done <- o
+	}()
+	select {
+	case o := <-done:
+		return o.res, o.err
+	case <-ctx.Done():
+		return guide.Result{}, ctx.Err()
 	}
 }
 

@@ -131,6 +131,7 @@ func (a *Admin) apiRoutes() []apiRoute {
 		{method: "PATCH", path: "sources/{id}", fn: a.apiChangeSource},
 		{method: "DELETE", path: "sources/{id}", fn: a.apiDeleteSource},
 		{method: "POST", path: "sources/{id}/refresh", fn: a.apiRefreshSource},
+		{method: "POST", path: "sources/{id}/guide/read", fn: a.apiReadSourceGuide},
 		{method: "POST", path: "sources/{id}/test", fn: a.apiTestSource},
 		{method: "GET", path: "sources/{id}/moves", fn: a.apiMovePlan},
 		{method: "POST", path: "sources/{id}/moves", fn: a.apiMoves},

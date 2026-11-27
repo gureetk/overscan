@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"overscan.gureet.ca/internal/catalog"
 	"overscan.gureet.ca/internal/guide"
 	"overscan.gureet.ca/internal/source"
 	"overscan.gureet.ca/internal/store"
@@ -155,7 +156,71 @@ func (a *Admin) readGuide(ctx context.Context, id int64) (res guide.OwnResult, r
 	return res, false, badEdit(http.StatusBadGateway, "guide_failed", "The guide could not be read: %s.", strings.TrimSuffix(err.Error(), "."))
 }
 
+// readSourceGuide reads a source's guide now, due or not, and waits for it
+// up to guideWait; reading says that it goes on.
+func (a *Admin) readSourceGuide(ctx context.Context, id int64) (res guide.Result, reading bool, err error) {
+	if a.sources == nil {
+		return res, false, errNoReader
+	}
+	src, err := a.store.Source(ctx, id)
+	if err != nil {
+		return res, false, sourceError(err)
+	}
+	row := sourceGuideRow{sourceRow: sourceRow{Source: src}}
+	switch {
+	case !src.Settings().HasChannels():
+		return res, false, badEdit(http.StatusConflict, "no_channels", "%s has no channels, so no guide.", src.Name)
+	case !row.HasGuide():
+		return res, false, badEdit(http.StatusConflict, "no_guide", "%s's playlist names no guide.", src.Name)
+	case !src.Enabled:
+		return res, false, badEdit(http.StatusConflict, "source_off", "%s is off: turn it on first.", src.Name)
+	}
+	wait, cancel := context.WithTimeout(ctx, guideWait)
+	defer cancel()
+	res, err = a.sources.ReadGuideNow(wait, id)
+	switch {
+	case err == nil:
+		a.log.Info("a source's guide read in the admin", "source", src.Name, "channels", res.Channels, "programmes", res.Programmes)
+		return res, false, nil
+	case errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil:
+		return res, true, nil
+	case errors.Is(err, catalog.ErrNoGuideReads):
+		return res, false, errNoReader
+	case errors.Is(err, context.Canceled):
+		return res, false, err
+	}
+	return res, false, badEdit(http.StatusBadGateway, "guide_failed", "The guide could not be read: %s.", strings.TrimSuffix(err.Error(), "."))
+}
+
 // The API.
+
+// apiReadSourceGuide reads a source's guide now.
+func (a *Admin) apiReadSourceGuide(w http.ResponseWriter, r *http.Request, _ store.AdminSession) {
+	id, err := pathID(r)
+	if a.editAnswer(w, err) {
+		return
+	}
+	res, reading, err := a.readSourceGuide(r.Context(), id)
+	if a.editAnswer(w, err) {
+		return
+	}
+	status := http.StatusOK
+	if reading {
+		status = http.StatusAccepted
+	}
+	writeJSON(w, status, apiSourceGuideRead{Reading: reading, Channels: res.Channels, ByName: res.ByName, Listed: res.Listed,
+		Programmes: res.Programmes, Skipped: res.Skipped})
+}
+
+// apiSourceGuideRead is what a read of a source's guide stored.
+type apiSourceGuideRead struct {
+	Reading    bool `json:"reading"` // it goes on: the source's guide says how it went once it ends
+	Channels   int  `json:"channels"`
+	ByName     int  `json:"by_name"`
+	Listed     int  `json:"listed"`
+	Programmes int  `json:"programmes"`
+	Skipped    int  `json:"skipped"`
+}
 
 // apiOwnGuide is a guide of the household's own as the API describes it,
 // without its address.
@@ -582,10 +647,79 @@ func (a *Admin) placeholdersForm(w http.ResponseWriter, r *http.Request, s store
 }
 
 // guidesData is what the guides page shows.
+// sourceGuideRow is a source's own guide, as the guides page shows it.
+type sourceGuideRow struct {
+	sourceRow
+	Reading bool
+	Fill    store.SourceGuideFill
+}
+
+// HasGuide reports whether the source has a guide to read: an Xtream
+// server and a Stalker portal always do, and a playlist if it names one.
+func (r sourceGuideRow) HasGuide() bool { return r.Type != source.TypeM3U || r.Guide.Listed }
+
+// Badge names where the guide comes from.
+func (r sourceGuideRow) Badge() string {
+	switch r.Type {
+	case source.TypeXtream:
+		return "Its Xtream server's guide"
+	case source.TypeStalker:
+		return "Its Stalker portal's guide"
+	}
+	return "Its playlist's guide"
+}
+
+// Unread reports whether no read of the guide stored programmes.
+func (r sourceGuideRow) Unread() bool {
+	return r.Guide.ReadAt.IsZero() || r.Guide.Error != "" && r.Guide.Programmes == 0
+}
+
+// FillsLine says how many of the source's channels the guide gives
+// programmes.
+func (r sourceGuideRow) FillsLine() string {
+	g := r.Guide
+	switch {
+	case !r.HasGuide():
+		return "None: its playlist names no guide"
+	case r.Unread():
+		return "None yet: it has not been read"
+	case r.Fill.Channels == 0 && g.Channels > 0:
+		return "None: its channels moved to other sources, or it no longer lists them"
+	case r.Fill.Filled == 0:
+		return "None of its channels"
+	}
+	return fmt.Sprintf("%s of its %s %s", count(r.Fill.Filled), count(r.Fill.Channels), plural(r.Fill.Channels, "channel"))
+}
+
+// ProgrammesLine says how many programmes the guide keeps.
+func (r sourceGuideRow) ProgrammesLine() string {
+	return fmt.Sprintf("%s %s", count(r.Guide.Programmes), plural(r.Guide.Programmes, "programme"))
+}
+
+// GuideRead says when the guide was last read.
+func (r sourceGuideRow) GuideRead() string { return ago(r.Guide.ReadAt, r.Now) }
+
+// ReadLine says when the guide is read.
+func (r sourceGuideRow) ReadLine() string {
+	interval := guide.DefaultInterval
+	if r.IsStalker() {
+		interval = min(interval, guide.StalkerInterval)
+	}
+	return "At its source's reads, once it is " + every(interval) + " old"
+}
+
+// LogosText says how the guide's icons are used as logos.
+func (r sourceGuideRow) LogosText() string { return logosText[r.GuideLogos] }
+
 type guidesData struct {
-	Guides  []guideRow
-	Form    guideForm
-	Editing bool // the page is a guide's own, to change it
+	// SourceGuides are the guides of the sources that have channels, and
+	// SourcesFill the channels to which those of enabled sources give
+	// programmes.
+	SourceGuides []sourceGuideRow
+	SourcesFill  int
+	Guides       []guideRow
+	Form         guideForm
+	Editing      bool // the page is a guide's own, to change it
 	// WithoutGuide counts the channels of enabled sources that have no
 	// programme of their own, nor a guide of the household's own.
 	WithoutGuide int
@@ -600,6 +734,14 @@ type guidesData struct {
 func (a *Admin) showGuides(w http.ResponseWriter, r *http.Request, s store.AdminSession, status int, form guideForm, editing bool, v view) {
 	data := guidesData{Form: form, Editing: editing, Now: a.now()}
 	gs, err := a.store.Guides(r.Context())
+	var srcs []store.Source
+	var fills map[int64]store.SourceGuideFill
+	if err == nil {
+		srcs, err = a.store.Sources(r.Context())
+	}
+	if err == nil {
+		fills, err = a.store.SourceGuideFills(r.Context())
+	}
 	if err == nil {
 		data.WithoutGuide, err = a.store.ChannelsWithoutGuide(r.Context())
 	}
@@ -612,6 +754,17 @@ func (a *Admin) showGuides(w http.ResponseWriter, r *http.Request, s store.Admin
 		a.log.Error("cannot show the guides", "error", err)
 		a.message(w, r, http.StatusInternalServerError, "Something went wrong", "The server's log says what.", &s)
 		return
+	}
+	for _, src := range srcs {
+		if !src.Settings().HasChannels() {
+			continue
+		}
+		row := sourceGuideRow{sourceRow: sourceRow{Source: src, Now: data.Now}, Fill: fills[src.ID]}
+		row.Reading = a.sources != nil && a.sources.GuideReading(src.ID)
+		data.SourceGuides = append(data.SourceGuides, row)
+		if src.Enabled {
+			data.SourcesFill += row.Fill.Filled
+		}
 	}
 	reading := a.guideReading()
 	for _, g := range gs {
@@ -647,6 +800,43 @@ func (a *Admin) guidePage(w http.ResponseWriter, r *http.Request, s store.AdminS
 	form := guideForm{ID: id, Settings: store.GuideSettings{Name: g.Name, UserAgent: g.UserAgent, PublicOnly: g.PublicOnly, Logos: g.Logos},
 		Host: g.Host, Address: g.Address}
 	a.showGuides(w, r, s, http.StatusOK, form, true, view{})
+}
+
+// sourceGuideAction reads a source's guide now, or sets how its icons are
+// used as logos, from the guides page.
+func (a *Admin) sourceGuideAction(w http.ResponseWriter, r *http.Request, s store.AdminSession) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		a.notFound(w, r)
+		return
+	}
+	ctx := r.Context()
+	src, err := a.store.Source(ctx, id)
+	if err != nil {
+		a.notFound(w, r)
+		return
+	}
+	var done string
+	switch r.PathValue("action") {
+	case "read":
+		var res guide.Result
+		var reading bool
+		if res, reading, err = a.readSourceGuide(ctx, id); err == nil {
+			done = fmt.Sprintf("Read %s's guide: it gives %s %s programmes.", src.Name, count(res.Channels), plural(res.Channels, "channel"))
+			if reading {
+				done = "Overscan is still reading " + src.Name + "'s guide. Its card says how the read went once it ends."
+			}
+		}
+	case "logos":
+		how := r.PostFormValue("guide_logos")
+		if err = a.setSourceGuideLogos(ctx, id, how); err == nil {
+			done = "The logos of " + src.Name + "'s guide: " + strings.ToLower(logosText[how][:1]) + logosText[how][1:] + "."
+		}
+	default:
+		a.notFound(w, r)
+		return
+	}
+	a.guideDone(w, r, s, err, done, guideForm{}, false)
 }
 
 // formGuide reads a guide's settings from the form.

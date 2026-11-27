@@ -446,3 +446,33 @@ func TestGuideReadAbort(t *testing.T) {
 		t.Errorf("the guide after a failed read: %+v", gd)
 	}
 }
+
+// TestSourceGuideFills counts, by source, the channels that its own guide
+// gives programmes, leaving out those that moved or that it no longer
+// lists.
+func TestSourceGuideFills(t *testing.T) {
+	s, src, at := lineupSetup(t)
+	ctx := context.Background()
+	apply(t, s, src, at, grouped("One/News", "Two/News", "Three/News", "Four/News"))
+	one, two, three := entryNamed(t, s, "One"), entryNamed(t, s, "Two"), entryNamed(t, s, "Three")
+	if fills, err := s.SourceGuideFills(ctx); err != nil || fills[src] != (SourceGuideFill{Channels: 4}) {
+		t.Fatalf("without a guide: %+v, %v", fills, err)
+	}
+	writeGuide(t, s, src, at, 0, []int64{one.ChannelID, two.ChannelID, three.ChannelID}, at.Add(time.Hour))
+	if fills, err := s.SourceGuideFills(ctx); err != nil || fills[src] != (SourceGuideFill{Channels: 4, Filled: 3}) {
+		t.Fatalf("with a guide: %+v, %v", fills, err)
+	}
+	// Three moves to another source's channel, and the source no longer
+	// lists Two.
+	other := addSources(t, s, testSource("other", 2, NumbersPlaylist))["other"]
+	apply(t, s, other, at, grouped("Three/News"))
+	if _, err := s.db.ExecContext(ctx, `UPDATE channels SET moved_to = (SELECT id FROM channels WHERE source_id = ?) WHERE id = ?`,
+		other, three.ChannelID); err != nil {
+		t.Fatal(err)
+	}
+	apply(t, s, src, at.Add(time.Minute), grouped("One/News", "Three/News", "Four/News"))
+	fills, err := s.SourceGuideFills(ctx)
+	if err != nil || fills[src] != (SourceGuideFill{Channels: 2, Filled: 1}) || fills[other] != (SourceGuideFill{Channels: 1}) {
+		t.Errorf("after a move and a channel gone: %+v, %v", fills, err)
+	}
+}

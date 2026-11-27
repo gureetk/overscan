@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"sync"
@@ -315,4 +316,134 @@ func TestGuidesAPI(t *testing.T) {
 	}
 	apiErrorOf(t, ta.apiDo("DELETE", path, "", c, h...), http.StatusNotFound, "not_found")
 	apiErrorOf(t, ta.apiDo("PATCH", fmt.Sprintf("guides/%d", added.ID), `{"enabled": false}`, c), http.StatusForbidden, "csrf")
+}
+
+// TestSourcesGuidesOnTheGuidesPage shows each source's own guide on the
+// guides page, before those of the household's own, with what it fills,
+// its Read now and its logos.
+func TestSourcesGuidesOnTheGuidesPage(t *testing.T) {
+	ta := newTestAdmin(t)
+	c, csrf, guides := ta.withGuides()
+	src := &fakeSources{}
+	ta.UseSources(src)
+	ctx := context.Background()
+	id := ta.sourceID("main")
+	main, err := ta.st.Source(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	card := fmt.Sprintf(`id="source-guide-%d"`, id)
+	readNow := fmt.Sprintf(`action="/admin/guides/sources/%d/read"`, id)
+	body := ta.do("GET", "/admin/guides", nil, c).Body.String()
+	mustContain(t, "a playlist without a guide", body, card, "Its playlist&#39;s guide", "Its playlist names none",
+		"<dd>None: its playlist names no guide</dd>", fmt.Sprintf(`href="/admin/sources#source-%d"`, id), "No guides of your own yet")
+	if strings.Contains(body, readNow) {
+		t.Error("Read now for a playlist that names no guide")
+	}
+	if strings.Index(body, card) > strings.Index(body, "No guides of your own yet") {
+		t.Error("the source's guide comes after the guides of the household's own")
+	}
+
+	if err := ta.st.SetListedGuide(ctx, id, secretGuide); err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, "named, not read", ta.do("GET", "/admin/guides", nil, c).Body.String(), "Not read yet", readNow,
+		"<dd>None yet: it has not been read</dd>", "<dd>At its source&#39;s reads, once it is 12 hours old</dd>",
+		"<dd>First, for its own channels</dd>")
+	gcs, err := ta.st.GuideChannels(ctx, id)
+	if err != nil || len(gcs) < 2 {
+		t.Fatalf("channels %+v, %v", gcs, err)
+	}
+	w, err := ta.st.BeginGuide(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ch := range gcs[:2] {
+		if err := w.Add(ctx, store.GuideProgramme{ChannelID: ch.ID, Start: ta.clock, Stop: ta.clock.Add(time.Hour), Title: "News"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Commit(ctx, ta.clock.Add(-2*time.Hour), "hash"); err != nil {
+		t.Fatal(err)
+	}
+	body = ta.do("GET", "/admin/guides", nil, c).Body.String()
+	mustContain(t, "read", body, "Read 2 hours ago", fmt.Sprintf("<dd>2 of its %s channels</dd>", count(main.Channels)),
+		"<dd>2 programmes</dd>", "Your sources' guides give 2 channels programmes.")
+	if strings.Contains(body, "s3cret") || strings.Contains(body, "guides.example") {
+		t.Error("the page shows the guide's address")
+	}
+	src.readingGuide = id
+	mustContain(t, "reading", ta.do("GET", "/admin/guides", nil, c).Body.String(), "Reading it now")
+	src.readingGuide = 0
+
+	// Read now.
+	hx := []string{"HX-Request", "true"}
+	act := func(action string, form url.Values) *httptest.ResponseRecorder {
+		t.Helper()
+		form.Set("csrf", csrf)
+		return ta.do("POST", fmt.Sprintf("/admin/guides/sources/%d/%s", id, action), form, c, hx...)
+	}
+	src.guideRes = guide.Result{Channels: 2, Programmes: 48}
+	mustContain(t, "read now", act("read", url.Values{}).Body.String(),
+		"Read main&#39;s guide: it gives 2 channels programmes.")
+	if len(src.guideReads) != 1 || src.guideReads[0] != id {
+		t.Errorf("reads %v", src.guideReads)
+	}
+	src.guideErr = errors.New("the guide's server answered 403 Forbidden")
+	rec := act("read", url.Values{})
+	if rec.Code != http.StatusBadGateway {
+		t.Errorf("a failed read: status %d", rec.Code)
+	}
+	mustContain(t, "a failed read", rec.Body.String(), "The guide could not be read: the guide&#39;s server answered 403 Forbidden.")
+	src.guideErr = nil
+	src.guideSlow = true
+	was := guideWait
+	guideWait = 50 * time.Millisecond
+	defer func() { guideWait = was }()
+	mustContain(t, "a slow read", act("read", url.Values{}).Body.String(), "Overscan is still reading main&#39;s guide.")
+	src.guideSlow = false
+
+	// Its logos, as on the source's card.
+	changes := guides.changed()
+	mustContain(t, "logos", act("logos", url.Values{"guide_logos": {"fill"}}).Body.String(),
+		"The logos of main&#39;s guide: where a channel&#39;s own is missing or does not load.", `<option value="fill" selected>`)
+	if s, _ := ta.st.Source(ctx, id); s.GuideLogos != store.GuideLogosFill || guides.changed() != changes+1 {
+		t.Errorf("logos %q, the guides told of %d changes", s.GuideLogos, guides.changed()-changes)
+	}
+	if rec := act("logos", url.Values{"guide_logos": {"all"}}); rec.Code != http.StatusBadRequest {
+		t.Errorf("bad logos: status %d", rec.Code)
+	}
+
+	// The API.
+	rec = ta.apiDo("POST", fmt.Sprintf("sources/%d/guide/read", id), "", c, csrfHeader, csrf)
+	var read apiSourceGuideRead
+	if err := json.Unmarshal(rec.Body.Bytes(), &read); err != nil || rec.Code != http.StatusOK || read.Channels != 2 || read.Programmes != 48 {
+		t.Errorf("the API: status %d, %s", rec.Code, rec.Body)
+	}
+	src.guideSlow = true
+	rec = ta.apiDo("POST", fmt.Sprintf("sources/%d/guide/read", id), "", c, csrfHeader, csrf)
+	if err := json.Unmarshal(rec.Body.Bytes(), &read); err != nil || rec.Code != http.StatusAccepted || !read.Reading {
+		t.Errorf("a slow read in the API: status %d, %s", rec.Code, rec.Body)
+	}
+	src.guideSlow = false
+	if rec := ta.apiDo("POST", "sources/9999/guide/read", "", c, csrfHeader, csrf); rec.Code != http.StatusNotFound {
+		t.Errorf("a source that is not there: status %d", rec.Code)
+	}
+
+	// A source that is off: its card says so, without Read now, and a read
+	// is refused.
+	if err := ta.st.SetSourceEnabled(ctx, id, false); err != nil {
+		t.Fatal(err)
+	}
+	body = ta.do("GET", "/admin/guides", nil, c).Body.String()
+	mustContain(t, "off", body, "Its source is off")
+	if strings.Contains(body, readNow) {
+		t.Error("Read now for a source that is off")
+	}
+	if rec := act("read", url.Values{}); rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "main is off: turn it on first.") {
+		t.Errorf("a read of a source that is off: status %d", rec.Code)
+	}
+	if strings.Contains(body, "Your sources' guides give") {
+		t.Error("a source that is off counts among what the guides fill")
+	}
 }

@@ -143,6 +143,18 @@ func TestGuidesDoneWhen(t *testing.T) {
 		}
 	}
 
+	// A source's own guide, read at once from the admin, as the Guides
+	// page's Read now does: main's guide gives its channels with guide IDs
+	// their programmes.
+	var sourceRead struct {
+		Reading              bool
+		Channels, Programmes int
+	}
+	call("POST", fmt.Sprintf("sources/%d/guide/read", sources["main"]), nil, &sourceRead)
+	if sourceRead.Reading || sourceRead.Channels == 0 || sourceRead.Programmes == 0 {
+		t.Errorf("main's guide, read now: %+v", sourceRead)
+	}
+
 	// A guide chosen by hand: Meadow Bulletin takes more's Meadow Bulletin
 	// Extra, which more then reads, and keeps it through a refresh of its
 	// source and a read of the guide.

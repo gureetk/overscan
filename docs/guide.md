@@ -28,6 +28,10 @@ The admin is at `http://<server>:8080/admin/`. Its pages are *Overview*, *Source
 
 Add the new source and let it be read. Then *Sources* → the old source's ⋯ → *Move its channels to other sources*: tick the new source, or several in the order that should win where two have a channel, and *Find matches*. Overscan matches each channel by its guide ID, then by its name, as it matches guides, and lists the matches, ticked, with the channels it found none for. Untick any that is wrong and *Move the ticked channels*: in every lineup they play from the new source, with their numbers, names, groups, logos, locks, favourites, recordings and backups, and the new source's own copies of them go. The old source stays, with the channels that did not move, until you delete it (D144).
 
+## See where programmes come from
+
+*Guides* lists first the guide of each of your sources: its Xtream server's or Stalker portal's, or the one that its playlist names. Each card says how many of the source's channels it gives programmes, when it was last read and when it is read next, and how its icons are used as logos; *Read now* reads it at once. A channel's own source's guide always comes first (D145).
+
 ## Add a guide of your own
 
 *Guides* → *Add a guide*: the address of an XMLTV guide, gzip or not, or the path of a guide's file on the server. Overscan reads it at once and then every 12 hours. It fills only the channels whose own sources give them no programme: by the guide ID that a channel's source gives it, then by its name. Where the guide has the name in two countries, a country tag in the channel's name or its group, such as *UK:* or *[UK]*, chooses; where nothing does, the channel stays without a guide rather than take the wrong one. The guide's card says how many channels it fills, and the top of the page how many still have no guide (D139).
@@ -44,7 +48,7 @@ A choice belongs to the channel at its source, so it holds in every lineup and s
 
 ## Logos
 
-A channel's logo is, in this order: one you set by hand, in its panel on *Live TV* → *Logo*, an address or *None*; a rule's; else its source's, if it loads; else its guide's, if it loads; else none, and devices show its name. Its guide's is the icon that a guide of yours gives the channel that fills it, or that its source's guide gives it. *Guides* → a guide's *Change* → *Its logos* says when a guide's icons are used: where a channel's own is missing or does not load, before it, or never. Each source's card has the same for its guide, *Its guide's logos*, not used until you choose. Overscan checks in the background, a logo at a time, whether the logos that channels choose between load, as soon as a guide has been read and every five minutes, so a box is never given one that does not; the panel says where each channel's logo comes from (D141).
+A channel's logo is, in this order: one you set by hand, in its panel on *Live TV* → *Logo*, an address or *None*; a rule's; else its source's, if it loads; else its guide's, if it loads; else none, and devices show its name. Its guide's is the icon that a guide of yours gives the channel that fills it, or that its source's guide gives it. *Guides* → a guide's *Change* → *Its logos* says when a guide's icons are used: where a channel's own is missing or does not load, before it, or never. Each source's card, and its guide's card on *Guides*, has the same for its guide, *Its guide's logos*, not used until you choose. Overscan checks in the background, a logo at a time, whether the logos that channels choose between load, as soon as a guide has been read and every five minutes, so a box is never given one that does not; the panel says where each channel's logo comes from (D141).
 
 ## Placeholder programmes
 

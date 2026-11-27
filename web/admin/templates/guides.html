@@ -15,20 +15,19 @@
 <div class="page-head">
   <div>
     <h1>Guides</h1>
-    <p class="lead">Guides of your own, for the channels whose sources give them none. Overscan reads each XMLTV guide on its schedule, and gives a channel without programmes from its own source those of the guide's channel with its guide ID, or else with its name. Where two of the guides' channels have the name, as the same channel in two countries can, a country tag in the channel's name or group chooses; where none does, the channel gets no guide rather than the wrong one. A guide's address can hold a login, so Overscan keeps it encrypted and shows only where it points.</p>
+    <p class="lead">Where your channels' programmes come from: first the guide of each channel's own source, then guides of your own, for the channels whose sources give them none. Overscan reads each XMLTV guide on its schedule, and gives a channel without programmes from its own source those of the guide's channel with its guide ID, or else with its name. Where two of the guides' channels have the name, as the same channel in two countries can, a country tag in the channel's name or group chooses; where none does, the channel gets no guide rather than the wrong one. A guide's address can hold a login, so Overscan keeps it encrypted and shows only where it points.</p>
   </div>
   {{- if not .Data.Full}}
   <a class="button primary" href="#add-guide">{{template "i-plus"}}Add a guide</a>
   {{- end}}
 </div>
 {{template "alerts" .}}
-{{- if .Data.Guides}}
 <p class="summary-line">
-  {{- if .Data.Filled}}The guides fill {{count .Data.Filled}} {{plural .Data.Filled "channel"}}. {{end}}
-  {{- if .Data.WithoutGuide}}{{count .Data.WithoutGuide}} {{plural .Data.WithoutGuide "channel"}} of your sources still {{if eq .Data.WithoutGuide 1}}has{{else}}have{{end}} no guide.{{else}}Every channel of your sources has a guide.{{end}}
-  <a href="/admin/guides/channels">Channels and their guides</a></p>
-{{- else}}
-<p class="summary-line"><a href="/admin/guides/channels">Channels and their guides</a>: choose a channel's guide by hand, such as another channel's.</p>
+  {{- if .Data.SourcesFill}}Your sources' guides give {{count .Data.SourcesFill}} {{plural .Data.SourcesFill "channel"}} programmes{{if .Data.Filled}}, and your own guides fill {{count .Data.Filled}} more{{end}}. {{else if .Data.Filled}}Your own guides fill {{count .Data.Filled}} {{plural .Data.Filled "channel"}}. {{end}}
+  {{- if .Data.WithoutGuide}}{{count .Data.WithoutGuide}} {{plural .Data.WithoutGuide "channel"}} of your sources still {{if eq .Data.WithoutGuide 1}}has{{else}}have{{end}} no guide.{{else if .Data.SourceGuides}}Every channel of your sources has a guide.{{end}}
+  <a href="/admin/guides/channels">Channels and their guides</a>{{if not .Data.Guides}}: choose a channel's guide by hand, such as another channel's.{{end}}</p>
+{{- range .Data.SourceGuides}}
+{{template "source-guide-card" (dict "G" . "CSRF" $.Session.CSRFToken)}}
 {{- end}}
 {{- range .Data.Guides}}
 {{template "guide-card" (dict "G" . "CSRF" $.Session.CSRFToken)}}
@@ -120,6 +119,60 @@
     <div><dt>Its logos</dt><dd>{{.G.LogosText}}</dd></div>
     {{- with .G.Order}}
     <div><dt>Order</dt><dd>{{.}}</dd></div>
+    {{- end}}
+  </dl>
+</section>
+{{end}}
+
+{{define "source-guide-card"}}
+<section class="card source{{if not .G.Enabled}} is-off{{end}}" id="source-guide-{{.G.ID}}" aria-labelledby="source-guide-{{.G.ID}}-name">
+  <div class="source-head">
+    <h2 id="source-guide-{{.G.ID}}-name">{{.G.Name}}</h2>
+    <span class="badge">{{.G.Badge}}</span>
+    {{- if not .G.Enabled}}
+    <span class="state-line"><i class="dot off" aria-hidden="true"></i>Its source is off</span>
+    {{- else if not .G.HasGuide}}
+    <span class="state-line"><i class="dot off" aria-hidden="true"></i>Its playlist names none</span>
+    {{- else if .G.Reading}}
+    <span class="state-line"><i class="dot" aria-hidden="true"></i>Reading it now</span>
+    {{- else if .G.Guide.Error}}
+    <span class="state-line bad"><i class="dot bad" aria-hidden="true"></i>Its last read failed</span>
+    {{- else if .G.Guide.ReadAt.IsZero}}
+    <span class="state-line"><i class="dot" aria-hidden="true"></i>Not read yet</span>
+    {{- else}}
+    <span class="state-line"><i class="dot ok" aria-hidden="true"></i>Read {{.G.GuideRead}}</span>
+    {{- end}}
+    <div class="source-actions">
+      {{- if and .G.Enabled .G.HasGuide}}
+      <form method="post" action="/admin/guides/sources/{{.G.ID}}/read" hx-post="/admin/guides/sources/{{.G.ID}}/read" hx-target="#guides-main" hx-select="#guides-main" hx-swap="outerHTML">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <button type="submit" class="small">{{template "i-refresh"}}Read now</button>
+      </form>
+      {{- end}}
+      <a class="button small" href="/admin/sources#source-{{.G.ID}}">Its source</a>
+    </div>
+  </div>
+  {{- if .G.Guide.Error}}
+  <p class="alert error">The last read failed: {{.G.Guide.Error}}</p>
+  {{- end}}
+  <dl class="facts">
+    <div><dt>Fills</dt><dd>{{.G.FillsLine}}</dd></div>
+    {{- if .G.HasGuide}}
+    <div><dt>Keeps</dt><dd>{{.G.ProgrammesLine}}</dd></div>
+    <div><dt>Last read</dt><dd>{{.G.GuideRead}}</dd></div>
+    <div><dt>Read</dt><dd>{{.G.ReadLine}}</dd></div>
+    <div class="wide"><dt>Its logos</dt><dd>
+      <form method="post" action="/admin/guides/sources/{{.G.ID}}/logos" hx-post="/admin/guides/sources/{{.G.ID}}/logos" hx-target="#guides-main" hx-select="#guides-main" hx-swap="outerHTML" class="inline-form">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <select name="guide_logos" aria-label="How the logos of {{.G.Name}}'s guide are used" data-autosubmit>
+          <option value="none"{{if eq .G.GuideLogos "none"}} selected{{end}}>Not used</option>
+          <option value="fill"{{if eq .G.GuideLogos "fill"}} selected{{end}}>Where a channel's own is missing or does not load</option>
+          <option value="first"{{if eq .G.GuideLogos "first"}} selected{{end}}>Before a channel's own</option>
+        </select>
+        <button type="submit" class="small js-hide">Save</button>
+      </form>
+    </dd></div>
+    <div><dt>Order</dt><dd>First, for its own channels</dd></div>
     {{- end}}
   </dl>
 </section>

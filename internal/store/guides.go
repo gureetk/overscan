@@ -636,6 +636,42 @@ func (s *Store) ChannelsWithoutGuide(ctx context.Context) (int, error) {
 	return n, nil
 }
 
+// SourceGuideFill is what a source's own guide gives its channels now.
+type SourceGuideFill struct {
+	Channels int // the source's channels that it still lists and that have not moved (D144)
+	Filled   int // of those, the ones that its guide gives programmes
+}
+
+// SourceGuideFills returns, by source, what its own guide gives its
+// channels now: the channels as ChannelsWithoutGuide counts them, and those
+// with programmes of the source's guide.
+func (s *Store) SourceGuideFills(ctx context.Context) (map[int64]SourceGuideFill, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT c.source_id, count(*), coalesce(sum(EXISTS (
+			SELECT 1 FROM programmes p JOIN source_guides sg ON sg.source_id = p.source_id AND sg.generation = p.generation
+			WHERE p.channel_id = c.id)), 0)
+		FROM channels c
+		WHERE c.missing_since IS NULL AND c.moved_to IS NULL
+		GROUP BY c.source_id`)
+	if err != nil {
+		return nil, fmt.Errorf("store: what sources' guides fill: %w", err)
+	}
+	defer rows.Close()
+	out := map[int64]SourceGuideFill{}
+	for rows.Next() {
+		var id int64
+		var f SourceGuideFill
+		if err := rows.Scan(&id, &f.Channels, &f.Filled); err != nil {
+			return nil, fmt.Errorf("store: what sources' guides fill: %w", err)
+		}
+		out[id] = f
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: what sources' guides fill: %w", err)
+	}
+	return out, nil
+}
+
 // GuideReader writes what a read of a guide of the household's own finds:
 // the channels that it lists, then a new generation of programmes. Make
 // one with BeginGuideRead, ListChannels, Add programmes, then Commit it or
