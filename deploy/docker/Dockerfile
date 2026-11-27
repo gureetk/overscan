@@ -11,10 +11,13 @@
 # at /etc/overscan/overscan.yaml.
 FROM debian:trixie-slim
 
-# ffmpeg repairs streams (D57); the certificates let Overscan fetch sources
-# over HTTPS.
+# ffmpeg repairs streams (D57) and transcodes them (D147); the certificates
+# let Overscan fetch sources over HTTPS. Debian's free VA-API drivers let
+# ffmpeg transcode on Intel and AMD graphics, where the container is given
+# them (D148, D149): Intel's driver is for amd64 alone.
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends ca-certificates ffmpeg \
+	&& apt-get install -y --no-install-recommends ca-certificates ffmpeg mesa-va-drivers \
+		$(if [ "$(dpkg --print-architecture)" = amd64 ]; then echo intel-media-va-driver; fi) \
 	&& rm -rf /var/lib/apt/lists/*
 
 RUN useradd --system --uid 10001 --user-group --home-dir /var/lib/overscan --no-create-home \

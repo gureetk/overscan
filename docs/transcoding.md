@@ -56,24 +56,24 @@ The graphics are the render device `/dev/dri/renderD128` (or `renderD129`, and s
 
 Overscan must be able to open it, and VA-API must have a driver for the graphics:
 
-1. **The driver.** On Debian and Ubuntu, `intel-media-va-driver` for Intel graphics from Broadwell on (`intel-media-va-driver-non-free` adds encoding on some older ones), or `mesa-va-drivers` for AMD graphics. On Intel graphics from Alder Lake on, encoding at a bit rate in low-power mode needs the GPU's HuC firmware, which the kernel loads from `firmware-misc-nonfree` (or the distribution's `linux-firmware`) where it is installed; without it, Overscan finds that the graphics keep no bit rate, and keeps a constant quality instead.
-2. **The group.** The user that runs Overscan must be in the group that owns the device, usually `render`: `sudo usermod -aG render overscan`.
-3. **The service's sandbox.** The systemd unit hides physical devices (`PrivateDevices=yes`). Until a later version installs it for you, a drop-in gives the service its graphics: `sudo systemctl edit overscan`, then add
+- **The driver.** On Debian and Ubuntu, `intel-media-va-driver` for Intel graphics from Broadwell on (`intel-media-va-driver-non-free` adds encoding on some older ones), or `mesa-va-drivers` for AMD graphics; the Debian package suggests them. On Intel graphics from Alder Lake on, encoding at a bit rate in low-power mode needs the GPU's HuC firmware, which the kernel loads from `firmware-misc-nonfree` (or the distribution's `linux-firmware`) where it is installed; without it, Overscan finds that the graphics keep no bit rate, and keeps a constant quality instead.
+- **The group.** The user that runs Overscan must be in the group that owns the device, usually `render`.
+- **The service's sandbox.** The systemd unit hides physical devices (`PrivateDevices=yes`). A drop-in, `overscan-gpu.conf`, gives the service the graphics' devices and the `render` group, and leaves every other device closed to it where systemd can filter devices (D149).
 
-   ```ini
-   [Service]
-   PrivateDevices=no
-   SupplementaryGroups=render
-   ```
+With the release archive, `./install.sh --gpu` does all three: it installs the drop-in as `/etc/systemd/system/overscan.service.d/gpu.conf`, adds the `overscan` user to `render`, and installs the driver for the render device's maker. Upgrades keep it; `./install.sh --no-gpu` removes it.
 
-   save, and `sudo systemctl restart overscan`. The log then says `graphics tested for ffmpeg to transcode on`, with what they do; `no graphics for ffmpeg to transcode on` says why not.
-4. **In a Proxmox container**, the host passes the device to it. On the host, with the container stopped, add to `/etc/pve/lxc/<id>.conf`
+With the Debian package, which holds the drop-in as `/usr/share/overscan/gpu.conf`:
 
-   ```
-   dev0: /dev/dri/renderD128,gid=<the render group's ID in the container>
-   ```
+    sudo apt install intel-media-va-driver     # or mesa-va-drivers, for AMD graphics
+    sudo usermod -aG render overscan
+    sudo install -D -m 0644 /usr/share/overscan/gpu.conf /etc/systemd/system/overscan.service.d/gpu.conf
+    sudo systemctl daemon-reload && sudo systemctl restart overscan
 
-   where the ID is what `getent group render` prints in the container. The driver goes in the container, and the firmware on the host.
+`apt purge overscan` removes it again.
+
+The log then says `graphics tested for ffmpeg to transcode on`, with what they do; `no graphics for ffmpeg to transcode on` says why not. `runuser -u overscan -- overscan gpu` tests them again and prints it.
+
+**In a Proxmox container**, the host passes the device to it first: [install-lxc.md](install-lxc.md#graphics) says how. **With Docker**, [install-docker.md](install-docker.md#graphics) does.
 
 ## When it goes wrong
 

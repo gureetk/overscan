@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# Usage: sudo ./install.sh [--no-ffmpeg]
+# Usage: sudo ./install.sh [--no-ffmpeg] [--gpu | --no-gpu]
 #        sudo ./install.sh --uninstall
 #
 # Installs Overscan from the unpacked release archive this script came in, or
@@ -15,31 +15,43 @@
 #   a box cannot play (D68), unless it is there already or --no-ffmpeg is
 #   given;
 # - /etc/overscan/overscan.yaml from the example, unless it exists already;
-# - the systemd unit, enabled and (re)started.
+# - the systemd unit, enabled and (re)started;
+# - with --gpu, a drop-in that lets the service reach the server's graphics
+#   (D148, D149), for ffmpeg to transcode on them, the overscan user in the
+#   group that owns them, and the VA-API driver for Intel or AMD graphics;
+#   --no-gpu removes the drop-in. Without either, an upgrade keeps what an
+#   earlier install chose.
 #
 # The data lives in /var/lib/overscan, which systemd creates for the service.
 #
-# --uninstall stops the service and removes it and the binary. It keeps the
-# configuration, the data and the user, which it names.
+# --uninstall stops the service and removes it, its drop-in and the binary.
+# It keeps the configuration, the data and the user, which it names.
 set -euo pipefail
 
 with_ffmpeg=yes
 uninstall=no
+gpu=keep
 for arg in "$@"; do
 	case "$arg" in
 	--no-ffmpeg) with_ffmpeg=no ;;
 	--uninstall) uninstall=yes ;;
+	--gpu) gpu=yes ;;
+	--no-gpu) gpu=no ;;
 	-h | --help)
-		echo "Usage: sudo ./install.sh [--no-ffmpeg]   install or upgrade Overscan as a service"
-		echo "       sudo ./install.sh --uninstall     remove the service and the binary, keeping the data"
+		echo "Usage: sudo ./install.sh [--no-ffmpeg] [--gpu | --no-gpu]"
+		echo "                                    install or upgrade Overscan as a service; --gpu lets it"
+		echo "                                    transcode on the server's graphics, --no-gpu stops that"
+		echo "       sudo ./install.sh --uninstall  remove the service and the binary, keeping the data"
 		exit 0
 		;;
 	*)
-		echo "install.sh: unknown option $arg; the options are --no-ffmpeg and --uninstall" >&2
+		echo "install.sh: unknown option $arg; the options are --no-ffmpeg, --gpu, --no-gpu and --uninstall" >&2
 		exit 2
 		;;
 	esac
 done
+dropin_dir=/etc/systemd/system/overscan.service.d
+dropin=$dropin_dir/gpu.conf
 
 if [ "$(id -u)" -ne 0 ]; then
 	echo "install.sh: run this as root, for example with sudo" >&2
@@ -59,15 +71,23 @@ fi
 
 if [ "$uninstall" = yes ]; then
 	systemctl disable --now --quiet overscan 2>/dev/null || true
-	rm -f /etc/systemd/system/overscan.service /usr/local/bin/overscan
+	rm -f /etc/systemd/system/overscan.service /usr/local/bin/overscan "$dropin"
+	rmdir "$dropin_dir" 2>/dev/null || true
 	systemctl daemon-reload
 	echo "Stopped Overscan and removed the service and /usr/local/bin/overscan."
 	echo "Kept /etc/overscan, the data in /var/lib/overscan and the overscan user;"
 	echo "remove them yourself once you no longer need them."
 	exit 0
 fi
+# The graphics' render devices belong to the render group, which udev makes;
+# without it, --gpu changes nothing.
+if [ "$gpu" = yes ] && ! getent group render >/dev/null; then
+	echo "install.sh: there is no render group, which owns the graphics' render devices; udev makes it" >&2
+	echo "on a system with graphics. Add it (groupadd --system render), or leave out --gpu." >&2
+	exit 1
+fi
 here=$(dirname "$(readlink -f "$0")")
-for f in overscan overscan.example.yaml overscan.service; do
+for f in overscan overscan.example.yaml overscan.service overscan-gpu.conf; do
 	if [ ! -f "$here/$f" ]; then
 		echo "install.sh: $f is missing; run this from the unpacked release archive" >&2
 		exit 1
@@ -106,6 +126,47 @@ else
 fi
 
 install -m 0644 "$here/overscan.service" /etc/systemd/system/overscan.service
+
+# The graphics (D148, D149): the drop-in, the group and the driver.
+if [ "$gpu" = yes ]; then
+	usermod -aG render overscan
+	install -d -m 0755 "$dropin_dir"
+	install -m 0644 "$here/overscan-gpu.conf" "$dropin"
+	echo "Installed $dropin, which lets the service reach the graphics."
+	# The driver for the first render device's maker, where apt can install it.
+	vendor=""
+	for node in /sys/class/drm/renderD*/device/vendor; do
+		if [ -r "$node" ]; then
+			vendor=$(cat "$node")
+			break
+		fi
+	done
+	case "$vendor" in
+	0x8086) driver=intel-media-va-driver ;;
+	0x1002) driver=mesa-va-drivers ;;
+	*) driver="" ;;
+	esac
+	if [ -z "$driver" ]; then
+		echo "install.sh: no Intel or AMD render device found; install the VA-API driver for the graphics" >&2
+		echo "yourself, such as intel-media-va-driver or mesa-va-drivers." >&2
+	elif dpkg-query -W -f '${db:Status-Status}' "$driver" 2>/dev/null | grep -q '^installed$'; then
+		echo "Kept $driver, the VA-API driver for the graphics."
+	elif command -v apt-get >/dev/null; then
+		echo "Installing $driver, the VA-API driver for the graphics..."
+		if apt-get update -qq && DEBIAN_FRONTEND=noninteractive \
+			apt-get install -y -qq --no-install-recommends "$driver" >/dev/null; then
+			echo "Installed $driver."
+		else
+			echo "install.sh: $driver could not be installed; ffmpeg transcodes in software until it is" >&2
+		fi
+	else
+		echo "install.sh: install $driver with the system's package manager" >&2
+	fi
+elif [ "$gpu" = no ] && [ -e "$dropin" ]; then
+	rm -f "$dropin"
+	rmdir "$dropin_dir" 2>/dev/null || true
+	echo "Removed $dropin: the service no longer reaches the graphics."
+fi
 systemctl daemon-reload
 systemctl enable --quiet overscan
 systemctl restart overscan
@@ -114,6 +175,9 @@ sleep 2
 if systemctl is-active --quiet overscan; then
 	echo "Overscan is running. Its log: journalctl -u overscan"
 	echo "Manage it as its user, for example: runuser -u overscan -- overscan devices list"
+	if [ -e "$dropin" ]; then
+		echo "What the graphics can do: runuser -u overscan -- overscan gpu, or the admin's Transcoding page"
+	fi
 else
 	echo "install.sh: Overscan did not start. The end of its log:" >&2
 	journalctl -u overscan -n 20 --no-pager >&2 || true

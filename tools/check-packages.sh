@@ -9,12 +9,14 @@
 # - the amd64 Debian package installs, with the ffmpeg it depends on,
 #   starts the service and answers its health check; ffmpeg copies and
 #   encodes a stream in the service's sandbox, as the server has it do;
+#   with the drop-in for the graphics (D149), the service starts, tests
+#   them, and ffmpeg still encodes in its sandbox;
 #   the package installs again over itself, keeping a changed configuration
 #   file; is removed, keeping the configuration and the data; and is purged,
 #   keeping the data;
 # - the amd64 archive's install.sh installs and starts the service, runs
-#   again as an upgrade, and uninstalls, keeping the configuration and the
-#   data.
+#   again as an upgrade, with --gpu and --no-gpu, and uninstalls, keeping
+#   the configuration and the data.
 #
 # It needs Docker, and runs the containers privileged, as systemd needs.
 set -euo pipefail
@@ -105,6 +107,52 @@ test -s "$dir/check-copied.ts"
 test -s "$dir/check-encoded.ts"
 rm "$dir"/check-*.ts
 SCRIPT
+inside "giving the service the graphics" <<'SCRIPT'
+test -e /usr/share/overscan/gpu.conf
+# udev makes the render group on a system with graphics; this container
+# has no udev.
+getent group render || groupadd --system render
+install -D -m 0644 /usr/share/overscan/gpu.conf /etc/systemd/system/overscan.service.d/gpu.conf
+systemctl daemon-reload
+systemctl restart overscan
+systemctl is-active overscan
+[ "$(systemctl show overscan -p PrivateDevices --value)" = no ]
+[ "$(systemctl show overscan -p DevicePolicy --value)" = closed ]
+systemctl show overscan -p SupplementaryGroups --value | grep -w render
+for _ in $(seq 20); do curl -fsS http://127.0.0.1:8080/healthz && break; sleep 1; done
+curl -fsS http://127.0.0.1:8080/healthz
+# The test at start ends one way or the other, whether this machine has
+# graphics or not.
+for _ in $(seq 30); do
+	journalctl -u overscan --no-pager | grep -E 'graphics tested for ffmpeg|no graphics for ffmpeg' && break
+	sleep 1
+done
+journalctl -u overscan --no-pager | grep -E 'graphics tested for ffmpeg|no graphics for ffmpeg'
+# ffmpeg still encodes in the sandbox, with the drop-in's settings, and
+# the gpu command runs there.
+props=()
+while IFS= read -r line; do
+	case "$line" in
+	Type=* | ExecStart=* | Restart=* | RestartSec=*) ;;
+	*) props+=(-p "$line") ;;
+	esac
+done < <(cat /usr/lib/systemd/system/overscan.service /etc/systemd/system/overscan.service.d/gpu.conf |
+	sed -n '/^\[Service\]/,/^\[/{/^[A-Za-z]*=/p}')
+sandboxed() { systemd-run --quiet --wait --pipe --collect "${props[@]}" "$@" </dev/null; }
+dir=/var/lib/overscan
+sandboxed ffmpeg -nostdin -hide_banner -loglevel error -f lavfi -i testsrc=size=320x240:rate=25 -t 2 \
+	-c:v libx264 -preset veryfast -f mpegts -y "$dir/check-gpu.ts"
+test -s "$dir/check-gpu.ts"
+rm "$dir/check-gpu.ts"
+sandboxed overscan -config /etc/overscan/overscan.yaml gpu | grep -E '^(Device|No graphics to transcode on): ' || true
+sandboxed overscan -config /etc/overscan/overscan.yaml gpu >/dev/null || [ $? -eq 1 ]
+# Without it, the sandbox is as before.
+rm /etc/systemd/system/overscan.service.d/gpu.conf
+systemctl daemon-reload
+systemctl restart overscan
+[ "$(systemctl show overscan -p PrivateDevices --value)" = yes ]
+systemctl is-active overscan
+SCRIPT
 inside "installing it again" <<SCRIPT
 echo '# kept by an upgrade' >>/etc/overscan/overscan.yaml
 apt-get install -y --reinstall --no-install-recommends /dist/$deb
@@ -137,7 +185,26 @@ echo '# kept by an upgrade' >>/etc/overscan/overscan.yaml
 ./install.sh --no-ffmpeg
 grep -q '# kept by an upgrade' /etc/overscan/overscan.yaml
 systemctl is-active overscan
+# Without a render group, --gpu refuses; udev makes one on a system with
+# graphics, and this container has no udev.
+if getent group render; then groupdel render; fi
+if ./install.sh --no-ffmpeg --gpu; then exit 1; fi
+test ! -e /etc/systemd/system/overscan.service.d/gpu.conf
+groupadd --system render
+./install.sh --no-ffmpeg --gpu
+test -e /etc/systemd/system/overscan.service.d/gpu.conf
+id -nG overscan | grep -w render
+[ "\$(systemctl show overscan -p PrivateDevices --value)" = no ]
+systemctl is-active overscan
+./install.sh --no-ffmpeg
+test -e /etc/systemd/system/overscan.service.d/gpu.conf
+./install.sh --no-ffmpeg --no-gpu
+test ! -e /etc/systemd/system/overscan.service.d/gpu.conf
+[ "\$(systemctl show overscan -p PrivateDevices --value)" = yes ]
+systemctl is-active overscan
+./install.sh --no-ffmpeg --gpu
 ./install.sh --uninstall
+test ! -e /etc/systemd/system/overscan.service.d
 if systemctl is-active --quiet overscan; then exit 1; fi
 test ! -e /usr/local/bin/overscan
 test ! -e /etc/systemd/system/overscan.service
@@ -145,4 +212,4 @@ test -e /etc/overscan/overscan.yaml
 test -e /var/lib/overscan/overscan.db
 SCRIPT
 
-echo "check-packages: the package and the archive install, upgrade and uninstall cleanly"
+echo "check-packages: the package and the archive install, upgrade and uninstall cleanly, with and without the graphics"

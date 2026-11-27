@@ -594,6 +594,7 @@ A household chooses what Overscan transcodes and how, for live TV and for films 
   - The image holds Debian's free VA drivers, and `compose.yaml` and [`install-docker.md`](install-docker.md) show how to pass `/dev/dri` with the render group.
   - [`install-lxc.md`](install-lxc.md) passes `/dev/dri/renderD128` through to the container on Proxmox.
   - CI installs the choice and checks that the service starts with it and that ffmpeg runs in its sandbox, as it checks the sandbox without it (D126). A server without a GPU keeps today's sandbox.
+  - **In place:** the drop-in `overscan-gpu.conf` (`PrivateDevices=no`, `DevicePolicy=closed`, `DeviceAllow=char-drm rw`, `SupplementaryGroups=render`); `install.sh --gpu` and `--no-gpu`; the Debian package's `/usr/share/overscan/gpu.conf`, its suggested drivers, and the steps in [`transcoding.md`](transcoding.md); the image's drivers and `compose.yaml`'s lines; [`install-lxc.md`](install-lxc.md)'s *Graphics*; and CI's checks of each (D149).
 - Films and series through the same profiles and hardware. All films and series, a shelf and a title are each *as needed*, *always* with a profile, or *never*, and the narrowest setting wins:
   - *As needed* is D73's plan from the box's playback check, with the GPU where the server has one.
   - *Always* transcodes a title that a box would play as it is.
@@ -621,7 +622,7 @@ A household chooses what Overscan transcodes and how, for live TV and for films 
 - memory stays within section 15's budgets, with each kind of transcode's ffmpeg measured and written down;
 - and an upgrade changes nothing.
 
-*Status:* planned in detail (D146). Its first phase, profiles and what is transcoded for live TV in software, is in place (v1.3.0-alpha.1), and so is its second, the graphics through VA-API (v1.3.0-alpha.2).
+*Status:* planned in detail (D146). Its first phase, profiles and what is transcoded for live TV in software, is in place (v1.3.0-alpha.1), and so are its second, the graphics through VA-API (v1.3.0-alpha.2), and its third, the packaging that lets the service reach them (v1.3.0-alpha.3).
 
 ### M11: HLS output (M)
 Planned in detail once M10 ends. HLS from the hub for players that ask for it: films and episodes that ffmpeg makes, so that players that seek by byte ranges can seek in them, and live channels as HLS. It replaces D110's line that HLS output waits in the backlog.
@@ -813,6 +814,7 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 - M10 transcodes live TV as a whole, a group or a channel, and films and series as a whole, a shelf or a title, *as needed*, *always* with a profile the administrator makes, or *never*; the narrowest setting wins, *never* over every device's profile; VA-API graphics do the work where the server has them, with software as the fallback (D146).
 - Profiles that the administrator makes, of a codec, a largest size, a quality, a highest bit rate, a frame rate, deinterlacing, HDR made SDR and the sound, beside the fixed ones; live TV, a group and a channel are transcoded as needed, always with one, or never; every live transcode's speed is watched (D147).
 - The server tests at start what its graphics do through VA-API, with pictures that ffmpeg makes, and transcodes on them what passed, up to a number at a time of their own; a stream that finds them busy or failing goes to software, then as its source sends it (D148).
+- The service reaches the graphics only where the administrator chooses it, through a drop-in that opens the DRM devices and the `render` group alone; the package suggests the VA-API drivers, and the image holds the free ones (D149).
 - The reference client reads Overscan through the Xtream output, without a source type of Overscan's own (open question 2).
 - HDHomeRun emulation waits in the backlog (open question 6).
 
