@@ -9,10 +9,12 @@ import (
 	"math"
 	mathrand "math/rand/v2"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"overscan.gureet.ca/internal/hlscut"
@@ -58,8 +60,10 @@ const (
 	hlsKeep = 2 * time.Minute
 	// hlsBehind is how far back in its tuner's buffer a feed starts, so
 	// that a player that joins a channel that plays already gets a full
-	// playlist at once.
-	hlsBehind = 30 * time.Second
+	// playlist at once. A transcode for players starts only hlsTranscodeBehind
+	// back, since it transcodes what it starts with faster than it plays.
+	hlsBehind          = 30 * time.Second
+	hlsTranscodeBehind = 2 * hlsMin
 )
 
 // hlsFirstWait is how long a player's first playlist waits for the
@@ -72,8 +76,13 @@ type playerEntry struct {
 	entry  int64
 }
 
-// hlsFeed cuts a shared tuner's buffer into segments and lists them.
+// hlsFeed cuts a stream into segments and lists them: a shared tuner's
+// buffer, as the source sends the channel, or the buffer of a transcode of
+// it with a profile, which the feed's own stand-in session x runs for every
+// player that gets that profile (D155).
 type hlsFeed struct {
+	key    string   // the profile's name, "" for as the source sends it
+	x      *session // the transcode's, nil for as the source sends it
 	b      *shift
 	cutter *hlscut.Cutter // used by run's goroutine alone
 
@@ -99,51 +108,208 @@ type hlsSegment struct {
 	discs int64
 }
 
-// feedOf returns t's feed, starting one for the shared tuner t if it has
-// none. It needs h.mu.
+// feedOf returns t's feed of the channel as its source sends it, starting
+// it if t has none. It needs h.mu.
 func (h *Hub) feedOf(t *session) *hlsFeed {
-	if t.feed != nil {
-		return t.feed
+	if f := t.feeds[""]; f != nil {
+		return f
 	}
-	f := &hlsFeed{b: t.shift}
-	f.cond = sync.NewCond(&f.mu)
-	f.cutter = hlscut.New(hlsMin, hlsMaxTarget, f.add)
-	t.feed = f
+	f := newFeed("", nil, t.shift)
+	if t.feeds == nil {
+		t.feeds = map[string]*hlsFeed{}
+	}
+	t.feeds[""] = f
 	t.shift.keepAtLeast(hlsKeep)
 	h.log.Info("a channel is cut into HLS segments for players, from its shared tuner", "channel", t.channel,
 		"source", h.source(t.sourceID).Name)
-	h.tuners.Go(func() { h.runFeed(t, f) })
+	h.tuners.Go(func() { h.runFeed(t.ctx, f) })
 	return f
 }
 
-// runFeed feeds the tuner's buffer to the cutter while the tuner lasts,
-// from hlsBehind before its end, or its start. When the buffer stalls, as
-// when the source broke off and the tuner asks again, it goes on from where
-// it was.
-func (h *Hub) runFeed(t *session, f *hlsFeed) {
-	defer f.end()
+// newFeed returns a feed of b.
+func newFeed(key string, x *session, b *shift) *hlsFeed {
+	f := &hlsFeed{key: key, x: x, b: b}
+	f.cond = sync.NewCond(&f.mu)
+	f.cutter = hlscut.New(hlsMin, hlsMaxTarget, f.add)
+	return f
+}
+
+// hlsFeedDevices numbers the stand-in sessions of transcodes for players,
+// below every device's and recording's ID, so that each counts against
+// the numbers of transcodes at a time on its own (D155).
+var hlsFeedDevices atomic.Int64
+
+const hlsFeedDeviceBase int64 = -(1 << 41)
+
+// cutFeed returns the feed that a player's HLS session plays: the one that
+// it has played, or, the first time, the feed of its profile on its
+// tuner, which it starts if none runs. A profile that this server cannot
+// transcode with now gives the channel as its source sends it, as the log
+// says (D155).
+func (h *Hub) cutFeed(ctx context.Context, s *session) *hlsFeed {
+	h.mu.Lock()
+	t := s.tuner
+	if f := s.cutTo; f != nil {
+		h.mu.Unlock()
+		return f
+	}
+	key := ""
+	if s.profile.Transcodes() {
+		key = s.profile.Name
+	}
+	if f := t.feeds[key]; f != nil {
+		s.cutTo = f
+		h.mu.Unlock()
+		return f
+	}
+	h.mu.Unlock()
+
+	var x *session
+	var jobs []ffmpegJob
+	if key != "" {
+		x = &session{nonce: mathrand.Uint64(), kind: kindEntry, deviceID: hlsFeedDeviceBase - hlsFeedDevices.Add(1),
+			channelID: t.channelID, sourceID: t.sourceID, channel: t.channel, profile: s.profile, profileBy: s.profileBy}
+		// What the stream holds, for whether the graphics decode it.
+		x.details.Store(t.details.Load())
+		if jobs = h.transcodeJobs(ctx, x); len(jobs) == 0 {
+			key, x = "", nil
+		}
+	}
+	var b *shift
+	if x != nil {
+		var err error
+		if b, err = newShift(filepath.Join(h.shiftDir, strconv.FormatUint(x.nonce, 16)), hlsKeep, h.now); err != nil {
+			h.log.Warn("cannot make a buffer for a channel's transcode for HLS players, so they get it as its source sends it",
+				"channel", t.channel, "profile", s.profile.Name, "error", err)
+			key, x, b = "", nil, nil
+		}
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if s.cutTo != nil {
+		// Another request of the session found it meanwhile.
+		if b != nil {
+			b.close()
+		}
+		return s.cutTo
+	}
+	if f := t.feeds[key]; f != nil || key == "" {
+		if b != nil {
+			b.close()
+		}
+		if f == nil {
+			f = h.feedOf(t)
+		}
+		s.cutTo = f
+		return f
+	}
+	f := newFeed(key, x, b)
+	x.ctx, x.cancel = context.WithCancel(t.ctx)
+	x.started, x.lastActive = h.now(), h.now()
+	if t.feeds == nil {
+		t.feeds = map[string]*hlsFeed{}
+	}
+	t.feeds[key] = f
+	s.cutTo = f
+	t.shift.keepAtLeast(hlsKeep)
+	h.log.Info("a channel is transcoded once for its HLS players, which share it", "channel", t.channel,
+		"source", h.source(t.sourceID).Name, "profile", x.profile.Name, "set_by", x.profileBy)
+	h.tuners.Go(func() { h.runCutTranscode(t, f, jobs) })
+	h.tuners.Go(func() { h.runFeed(x.ctx, f) })
+	return f
+}
+
+// dropFeed stops a feed that transcodes for players once no screen of its
+// tuner plays it any more, which gives back its transcode's slot; the feed
+// of the channel as its source sends it lasts as long as the tuner. It
+// needs h.mu.
+func (h *Hub) dropFeed(t *session, f *hlsFeed) {
+	if f == nil || f.x == nil || t.feeds[f.key] != f {
+		return
+	}
+	for _, v := range t.screens {
+		if v.cutTo == f {
+			return
+		}
+	}
+	delete(t.feeds, f.key)
+	f.x.cancel()
+	h.log.Info("a channel's transcode for HLS players ended", "channel", t.channel, "source", h.source(t.sourceID).Name,
+		"profile", f.key, "reason", "no player plays it any more")
+}
+
+// runCutTranscode transcodes the tuner's stream into the feed's own
+// buffer while the feed lasts, with the first of jobs that can, through
+// ffmpeg as a screen's transcode goes (D147, D148), from a little before
+// the tuner's end. When ffmpeg stops, or the stream stalls, it starts
+// again where it was, with the jobs that the hub would give now; with
+// none, the stream goes into the buffer as its source sends it.
+func (h *Hub) runCutTranscode(t *session, f *hlsFeed, jobs []ffmpegJob) {
+	x := f.x
+	defer f.b.close()
 	off := int64(-1)
-	for t.ctx.Err() == nil {
+	for x.ctx.Err() == nil {
 		if off < 0 {
-			status, _, at := f.b.start(t.ctx, hlsBehind)
+			status, _, at := t.shift.start(x.ctx, hlsTranscodeBehind)
 			if status != http.StatusOK {
-				if t.ctx.Err() != nil || status == http.StatusServiceUnavailable {
+				if x.ctx.Err() != nil || status == http.StatusServiceUnavailable {
 					return
 				}
 				f.refused(status)
-				if sleepContext(t.ctx, shiftRetry) != nil {
+				if sleepContext(x.ctx, shiftRetry) != nil {
 					return
 				}
 				continue
 			}
 			off = at
 		}
-		f.b.follow(t.ctx, off, func(at int64, p []byte) error {
+		var dst sink = directSink{w: f.b, rc: http.NewResponseController(f.b)}
+		if len(jobs) > 0 {
+			dst = newRepairSink(h, x, x.ctx, f.b, http.NewResponseController(f.b), jobs)
+		}
+		t.shift.follow(x.ctx, off, func(at int64, p []byte) error {
+			off = at + int64(len(p))
+			_, err := dst.Write(p)
+			return err
+		})
+		dst.finish()
+		dst.close()
+		if sleepContext(x.ctx, shiftRetry) != nil {
+			return
+		}
+		jobs = h.transcodeJobs(x.ctx, x)
+	}
+}
+
+// runFeed feeds the feed's buffer to the cutter until ctx ends, from
+// hlsBehind before its end, or its start. When the buffer stalls, as when
+// the source broke off and the tuner asks again, it goes on from where it
+// was.
+func (h *Hub) runFeed(ctx context.Context, f *hlsFeed) {
+	defer f.end()
+	off := int64(-1)
+	for ctx.Err() == nil {
+		if off < 0 {
+			status, _, at := f.b.start(ctx, hlsBehind)
+			if status != http.StatusOK {
+				if ctx.Err() != nil || status == http.StatusServiceUnavailable {
+					return
+				}
+				f.refused(status)
+				if sleepContext(ctx, shiftRetry) != nil {
+					return
+				}
+				continue
+			}
+			off = at
+		}
+		f.b.follow(ctx, off, func(at int64, p []byte) error {
 			f.cutter.Write(at, p)
 			off = at + int64(len(p))
 			return nil
 		})
-		if sleepContext(t.ctx, shiftRetry) != nil {
+		if sleepContext(ctx, shiftRetry) != nil {
 			return
 		}
 	}
@@ -297,11 +463,12 @@ func (f *hlsFeed) segment(seq int64) (hlsSegment, bool) {
 // CutLink returns the path of a link that plays a lineup entry for a player
 // as HLS that the hub cuts (D153): the same one while the player's session
 // of it lasts, so that a player that asks for the channel's playlist again
-// goes on with it. It returns "" for a channel that the hub cannot cut for
-// the player: a radio station, one whose source sends HLS, which the shared
-// tuner does not carry, or one that the hub transcodes for the player.
+// goes on with it. It returns "" for a channel that the hub cannot cut: a
+// radio station, or one whose source sends HLS, which the shared tuner does
+// not carry. A channel that the hub transcodes for the player is cut from
+// the transcode (D155).
 func (h *Hub) CutLink(playerID int64, entry store.PlayableEntry) string {
-	if !h.sharable(entry) || h.transcodesLive(playerID, entry) {
+	if !h.sharable(entry) {
 		return ""
 	}
 	key := playerEntry{playerID, entry.EntryID}
@@ -353,7 +520,7 @@ func (h *Hub) serveCut(w http.ResponseWriter, r *http.Request, c claims, token, 
 				return
 			}
 		}
-		f := h.cutFeed(s)
+		f := h.cutFeed(r.Context(), s)
 		h.begin(s)
 		defer h.finish(s)
 		if !h.cutReady(w, r, s, f) {
@@ -367,7 +534,7 @@ func (h *Hub) serveCut(w http.ResponseWriter, r *http.Request, c claims, token, 
 		http.Error(w, "this stream has ended", http.StatusNotFound)
 		return
 	}
-	f := h.cutFeed(s)
+	f := h.cutFeed(r.Context(), s)
 	h.begin(s)
 	defer h.finish(s)
 	if resource == "hls.m3u8" {
@@ -404,13 +571,6 @@ func (h *Hub) serveCut(w http.ResponseWriter, r *http.Request, c claims, token, 
 	s.played.Store(true)
 }
 
-// cutFeed returns the feed of a player's HLS session's tuner.
-func (h *Hub) cutFeed(s *session) *hlsFeed {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.feedOf(s.tuner)
-}
-
 // cutReady waits until the feed lists its first segments, and reports
 // whether it does; if not, it answers why.
 func (h *Hub) cutReady(w http.ResponseWriter, r *http.Request, s *session, f *hlsFeed) bool {
@@ -442,10 +602,19 @@ func (h *Hub) openCut(w http.ResponseWriter, r *http.Request, c claims, token st
 		return nil
 	}
 	for i, try := range tries {
+		// Each stream's own channel says what is transcoded of it (D147).
+		profile, profileBy := h.streamProfile(r.Context(), c.deviceID, try)
+		h.noteNever(r.Context(), c.deviceID, try)
 		s, err := h.openShared(r.Context(), c, token, try)
 		if err == nil {
-			h.log.Info("a player plays a channel as HLS that the hub cuts from its shared tuner", "channel", entry.Name,
-				"source", h.source(try.SourceID).Name, "device", c.deviceID)
+			h.mu.Lock()
+			s.profile, s.profileBy = profile, profileBy
+			h.mu.Unlock()
+			about := []any{"channel", entry.Name, "source", h.source(try.SourceID).Name, "device", c.deviceID}
+			if profile.Transcodes() {
+				about = append(about, "profile", profile.Name, "set_by", profileBy)
+			}
+			h.log.Info("a player plays a channel as HLS that the hub cuts from its shared tuner", about...)
 			return s
 		}
 		if i < len(tries)-1 && !errors.Is(err, ErrAccountLimit) {

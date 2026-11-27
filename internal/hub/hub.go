@@ -439,15 +439,21 @@ func (h *Hub) Streams() []Stream {
 				st.Player = p.Describe()
 			}
 		}
+		// A player's HLS of a transcode shows the transcode that its feed
+		// runs for every player of it (D155).
+		enc := s
+		if s.cutTo != nil && s.cutTo.x != nil {
+			enc = s.cutTo.x
+		}
 		switch {
 		case s.transcoding.Load() > 0:
 			st.Transcoded, st.TranscodedBy = true, TranscodedBySource
-		case s.encoding.Load() > 0:
+		case enc.encoding.Load() > 0:
 			st.Transcoded, st.TranscodedBy = true, TranscodedByOverscan
 			if s.kind == kindEntry {
-				st.Profile = s.profile.Name
-				st.Speed, st.Behind = math.Float64frombits(s.speed.Load()), s.behind.Load()
-				st.Graphics = s.graphics.Load() > 0
+				st.Profile = enc.profile.Name
+				st.Speed, st.Behind = math.Float64frombits(enc.speed.Load()), enc.behind.Load()
+				st.Graphics = enc.graphics.Load() > 0
 			}
 		}
 		switch s.kind {
@@ -584,11 +590,14 @@ type session struct {
 	shared bool
 	// cut marks a player's session of a channel as HLS that the hub cuts
 	// (D153): a screen on the channel's shared tuner, active while the
-	// player asks for its playlist or its segments. feed is, for a shared
-	// tuner, what cuts its buffer into segments, once a player asks for
-	// HLS; nil otherwise. Hub.mu guards feed.
-	cut  bool
-	feed *hlsFeed
+	// player asks for its playlist or its segments; cutTo is the feed that
+	// it plays, once known. feeds are, for a shared tuner, what cut its
+	// stream into segments for players, by the name of the profile that
+	// transcodes it, "" for as the source sends it (D154, D155). Hub.mu
+	// guards cutTo and feeds.
+	cut   bool
+	cutTo *hlsFeed
+	feeds map[string]*hlsFeed
 
 	// account is the account that the device's streams count against,
 	// and accountLimit that account's limit of streams at once, 0 for
@@ -773,8 +782,10 @@ func (h *Hub) end(s *session, reason string) {
 	h.log.Info("stream ended", s.what(), s.channel, "source", h.source(s.sourceID).Name, "device", s.deviceID,
 		"reason", reason, "duration", h.now().Sub(s.started).Round(time.Second), "bytes", s.bytes.Load())
 	if t := s.tuner; t != nil {
-		// The tuner ends with its last screen.
+		// The tuner ends with its last screen, and a feed that transcodes
+		// for players with the last of them (D155).
 		t.screens = slices.DeleteFunc(t.screens, func(v *session) bool { return v == s })
+		h.dropFeed(t, s.cutTo)
 		if len(t.screens) == 0 && !t.ended {
 			h.end(t, "no screen plays it any more")
 		}

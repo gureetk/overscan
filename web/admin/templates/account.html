@@ -76,7 +76,7 @@
     <input class="switch" type="checkbox" id="hls" name="on" value="1"{{if $a.Outputs.HLS}} checked{{end}} aria-describedby="hls-text">
     <div>
       <label for="hls">HLS for players</label>
-      <p id="hls-text">{{if $a.Outputs.HLS}}Players that ask for HLS get its live channels as HLS: at a channel's .m3u8 address, or from a playlist read with <span class="mono">output=m3u8</span>. A channel's HLS players share its one connection to its source, even while the shared tuner is off. Channels that this server transcodes for them, and radio stations, still play as one stream.{{else}}Off: its players get each channel as one stream, as before. Boxes and Stalker apps get one stream either way.{{end}}</p>
+      <p id="hls-text">{{if $a.Outputs.HLS}}Players that ask for HLS get its live channels as HLS: at a channel's .m3u8 address, or from a playlist read with <span class="mono">output=m3u8</span>. A channel's HLS players share its one connection to its source, even while the shared tuner is off, and those of a channel that this server transcodes share one transcode. Radio stations still play as one stream.{{else}}Off: its players get each channel as one stream, as before. Boxes and Stalker apps get one stream either way.{{end}}</p>
       <noscript><button class="small" type="submit">Save</button></noscript>
     </div>
   </form>
