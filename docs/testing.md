@@ -50,12 +50,14 @@ They run with the other tests:
 3. With `-own-guide`, before it idles, it signs in to the admin and adds a guide of the household's own ([D139](decisions.md)), which the fake provider serves: the provider's guide then lists only the first half of the channels, and the household's lists the second half by their names under IDs of its own, then channels that fill nothing, as many as `-own-guide` says in all, each with an icon and `-own-hours` hours of programmes from a day back. It waits for the guide's read and prints its log line. With `-placeholders`, it turns on placeholder programmes ([D142](decisions.md)) and the household's playlist and guide, then reads that XMLTV guide once.
 4. It simulates four boxes for ten minutes, half through the Stalker API and half as the MAG page through the device API. Each signs in, loads the whole channel list, then watches random channels, switching every two minutes on average; the Stalker boxes also make the keep-alive call, and those of the MAG page open *Movies* and read a page of its shelf of films before each channel.
 5. Every five seconds, and every second until the boxes start, it reads the server's resident memory and CPU time from `/proc`, so it runs on Linux only. The peaks it reports are the kernel's high-water mark of the server's memory where that is higher than the samples, so a peak between two samples counts.
+6. With `-transcode`, the first channels, as many as `-pictures` says or as there are boxes, stream pictures that an ffmpeg of the soak's own makes as they are watched, at the pace that they play: ffmpeg's test pattern of `-picture-size` in H.264 at `-bitrate`, with AAC. Before it idles, the soak sets live TV to be transcoded always with the profile named ([D147](decisions.md)), and lets the server transcode as many streams at a time as there are boxes, up to 3; the boxes watch only those channels. At each sample it also reads the server's ffmpegs from `/proc`, the most memory one of them took and the processor that they took, and how fast each transcode goes, as the admin's list of streams says.
 
 Run it from the repository:
 
     go run ./tools/soak
     go run ./tools/soak -duration 24h -boxes 8
     go run ./tools/soak -own-guide 20000 -own-hours 168 -placeholders 60
+    go run ./tools/soak -transcode small -boxes 2 -channels 2000 -picture-size 1280x720
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
@@ -73,14 +75,30 @@ Run it from the repository:
 | `-out` | `soak.csv` | Where the samples go |
 | `-idle-mb`, `-peak-mb` | `60`, `150` | Memory budgets, in MB; 0 for none |
 | `-cpu` | `0` | A budget for average CPU use under load, in percent of one core; 0 for none |
+| `-transcode` | | Transcode live TV always with this profile: `h264-720p`, `h264-1080p`, or `small` (H.264 up to 576 lines, low quality) or `hevc-720p` (HEVC up to 720 lines, medium quality), which the soak makes; none at first |
+| `-pictures` | as many as the boxes, with `-transcode` | How many channels, the first, stream pictures that ffmpeg makes |
+| `-picture-size` | `1920x1080` | The size of those pictures |
+| `-ffmpeg-mb` | `0` | A budget for one transcode's ffmpeg, in MB; 0 for none |
 
 It prints a summary and writes the samples, and it fails if the server breaks a budget or if any stream or call fails. The memory budgets are the plan's: under about 60 MB idle, and under about 150 MB with a large catalog.
 
-The *Soak* workflow runs it with a guide of the household's own of 20,000 channels with a week of programmes each, and hour-long placeholders (`-own-guide 20000 -own-hours 168 -placeholders 60`): for ten minutes every Monday, and on demand from the repository's Actions tab for as long as asked, up to 330 minutes, since a job of GitHub's stops at six hours. It keeps the samples for 30 days. Hosted runners vary from run to run, so a run on the machine that Overscan will run on says more about it.
+The *Soak* workflow runs it with a guide of the household's own of 20,000 channels with a week of programmes each, and hour-long placeholders (`-own-guide 20000 -own-hours 168 -placeholders 60`): for ten minutes every Monday, and on demand from the repository's Actions tab for as long as asked, up to 330 minutes, since a job of GitHub's stops at six hours. It keeps the samples for 30 days. A second job of the workflow, at the same times, soaks transcodes in software at a small size: two boxes on channels of 720p pictures that live TV transcodes always with `small` (`-boxes 2 -channels 2000 -transcode small -picture-size 1280x720 -ffmpeg-mb 400`). Hosted runners vary from run to run, so a run on the machine that Overscan will run on says more about it.
 
 ### Baseline
 
 The budgets are the plan's, in its section 15: under about 60 MB of memory idle, under about 150 MB with a large catalogue, and a few percent of one core for a few streams.
+
+**For 1.3, its transcodes**, in November 2026, on a cloud machine with two cores of an Intel Xeon at 2.1 GHz, without graphics, with ffmpeg 6.1. Live: three runs of four minutes with one box on channels of 1080p pictures at 5 Mbit/s, live TV transcoded always with each profile in software (`-duration 4m -boxes 1 -channels 2000 -films 500 -series 20 -transcode …`), against the server of v1.3.0-alpha.4's code. Films: ffmpeg run with the arguments that the hub gives it, on a minute of a fictional film read over HTTP, as fast as it goes, for D73's transcode of what a box cannot play and for a film set always with a small profile. The processor is given as a share of one core while the stream plays at its pace; memory is ffmpeg's most, apart from the server's.
+
+| Transcode | Speed | Processor | ffmpeg's memory |
+| --- | --- | --- | --- |
+| Live, 1080p H.264 to *small* (H.264 up to 576 lines, low quality) | 1.00x, kept up | 27% of one core | 160 MB |
+| Live, 1080p H.264 to *h264-720p* | 1.00x, kept up | 37% | 194 MB |
+| Live, 1080p H.264 to *hevc-720p* (HEVC up to 720 lines, medium quality) | 1.00x, kept up | 102% | 264 MB |
+| Film, 1080p H.264 at 10 bits in HDR10 to H.264 1080p made SDR, with Dolby Digital 5.1 (D73) | 1.26x as fast as it plays, flat out | 139% | 430 MB |
+| Film, 1080p H.264 to *small*, with AAC | 5.5x, flat out | 33% | 172 MB |
+
+The server itself stayed under 51 MB under load in each run, and idled at 36 to 37 MB; its peak while reading, about 101 MB, takes in the administrator's sign-in. Transcoding takes the processor and memory of ffmpeg, not of the server: an HEVC transcode needs a core of its own here, and mapping HDR to SDR in software needs more than one, with most of its memory in the pictures that it maps. On the graphics, ffmpeg's share of the processor falls to a few percent; those measures come from a server with Intel graphics, in M10's box tests. CI's *Soak* workflow soaks transcodes in software each week, and the image check prints the image's size and that of its VA-API drivers.
 
 **For 1.2**, in November 2026: a run of 60 minutes with a guide of the household's own (`-duration 60m -own-guide 20000 -own-hours 168 -placeholders 60`, the other flags at their defaults), on a cloud machine with two cores of an Intel Xeon at 2.1 GHz, and, as a second check, 120 minutes with the same flags by the *Soak* workflow on a GitHub-hosted runner (`ubuntu-latest`, Ubuntu 26.04). Both ran the server of v1.2.0-rc.1's code; rc.2 changed only the admin's *Guides* page. The guide's 1.68 million programmes were read in 53 and 40 seconds, and the XMLTV guide, 490 MB with the placeholders, in 13 and 9 seconds. From this release on, the peaks are the kernel's high-water marks.
 
@@ -148,6 +166,8 @@ To run it on your machine, with the binaries of the releases to upgrade from:
 `tools/upgradetest` also walks through M8's *Done when* (the plan, section 14) with every `go test ./...`, in `TestPlaylistsDoneWhen`: with the same fictional provider and a third playlist, a source set to three of its categories keeps only their channels and their programmes; a lineup started empty, with a group that takes categories of three sources, holds exactly their channels, numbered from the group's first number, and a channel that a source adds appears after a refresh, numbered after the group's last; numbers stay unique; a merged channel plays the copy of the source put first, and then the best picture seen once two copies with real pictures have played; the lineup's page names the account and how it is reached; and its playlist and guide, its Xtream login, a box and a Stalker client show the same channels with the same numbers.
 
 It walks through M9's *Done when* too, in `TestGuidesDoneWhen`: with two guides of the household's own, one of them with traps, and a box, the guides fill the channels whose sources give none, by guide ID and by name, and fill nothing wrong (a name in two countries that nothing chooses between, a longer name, channels that their sources or a guide before fill); a guide chosen by hand holds through a refresh of its source and a read of the guide; logos follow their order, by hand, a rule, the channel's own if it loads, its guide's if it loads, none, and a guide can give its logos first; placeholders show only while they are set, and only where a channel has nothing; and a lineup moved from the source main to a new provider's two sources keeps its numbers, groups, names, favourites and logos, plays from the new sources, and keeps what moved off main at its next read. The line about TMDB's pictures is walked in the library's tests, `TestPicturesDoneWhen`, against a fake TMDB: titles whose posters are missing, do not load or are shared by ten take TMDB's, and the others keep their own.
+
+And M10's, in `TestTranscodingDoneWhen`, with ffmpeg's clips of 1080p pictures as two channels' streams, on a server without graphics: with nothing set, the account's playlist, its Xtream login, a box and a Stalker client each get the channel as its source sends it, through one connection to the source; a channel set always with a small profile reaches the playlist in 1024×576, through one connection, while an account whose own profile is *h264-720p* gets 1280×720; *never* reaches both as the source sends it; with live TV always and the group never, every output gets the source's stream, and with the channel always too, every output gets it transcoded; the server says that it has no graphics, in its log and its API; and with one transcode at a time, a second channel set always plays as its source sends it while the box plays the first. Films and series, each profile's arguments, the fallbacks of the graphics, and the packaging are walked in the tests that the walk's comment names.
 
 Every migration from 43 on also has a test of its own in `internal/store`, `TestMigrationNNNN…`, which makes a database with the schema before it, holding what a household sets up, applies the migration and checks that nothing was lost or changed: `TestNewMigrationsHaveUpgradeTests` fails without one. `TestMigrationsAreUnchanged` holds every migration to its SHA-256 in `internal/store/testdata/migrations.sha256`, since a migration that a release holds is never edited.
 

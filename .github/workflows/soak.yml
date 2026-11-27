@@ -5,10 +5,12 @@
 # of the household's own with a week of programmes for 20,000 channels,
 # hour-long placeholder programmes and a read of the XMLTV guide, and four
 # simulated boxes that watch channels, switch between them and browse the
-# films, checked against the memory budgets of the plan (section 15). It
-# runs for ten minutes every Monday, and on demand for as long as asked, up
-# to five and a half hours, since a job of GitHub's stops at six; not on
-# every pull request.
+# films, checked against the memory budgets of the plan (section 15); and,
+# in a job of its own, two boxes on channels of 720p pictures that live TV
+# transcodes always in software with a small profile (D147), measuring the
+# server's ffmpegs too. It runs for ten minutes every Monday, and on demand
+# for as long as asked, up to five and a half hours, since a job of
+# GitHub's stops at six; not on every pull request.
 name: Soak
 
 on:
@@ -68,5 +70,53 @@ jobs:
         with:
           name: soak-samples
           path: soak.csv
+          if-no-files-found: ignore
+          retention-days: 30
+
+  soak-transcode:
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 360 || 40 }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install ffmpeg
+        timeout-minutes: 15
+        run: |
+          if ! command -v ffmpeg >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq --no-install-recommends ffmpeg >/dev/null
+          fi
+          ffmpeg -hide_banner -version | head -n 1
+
+      - name: Soak test that transcodes
+        env:
+          DURATION: ${{ inputs.duration || '10m' }}
+        run: |
+          if ! [[ "$DURATION" =~ ^([0-9]+)([mh])$ ]]; then
+            echo "::error::'$DURATION' is not a duration such as 10m or 2h"
+            exit 1
+          fi
+          minutes=${BASH_REMATCH[1]}
+          if [ "${BASH_REMATCH[2]}" = h ]; then
+            minutes=$((minutes * 60))
+          fi
+          if [ "$minutes" -gt 330 ]; then
+            echo "::error::'$DURATION' is longer than 330 minutes, which a job of six hours cannot hold with the build and the setting up"
+            exit 1
+          fi
+          go run ./tools/soak -duration "$DURATION" -boxes 2 -channels 2000 -transcode small -picture-size 1280x720 -ffmpeg-mb 400 -out soak-transcode.csv
+
+      - name: Keep the samples
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: soak-transcode-samples
+          path: soak-transcode.csv
           if-no-files-found: ignore
           retention-days: 30

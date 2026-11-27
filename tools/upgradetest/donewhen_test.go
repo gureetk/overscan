@@ -346,6 +346,7 @@ type walk struct {
 	p          *provider
 	base, data string
 	bin, cfg   string
+	log        string // the server's log file
 	a          *admin
 	srv        *instance
 }
@@ -377,6 +378,7 @@ func startWalk(t *testing.T) *walk {
 	}
 	w.base = fmt.Sprintf("http://127.0.0.1:%d", port)
 	logPath := filepath.Join(dir, "overscan.log")
+	w.log = logPath
 	if err := writeConfig(w.cfg, fmt.Sprintf("127.0.0.1:%d", port), w.data, p); err != nil {
 		t.Fatal(err)
 	}

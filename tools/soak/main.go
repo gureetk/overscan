@@ -10,10 +10,14 @@
 // XMLTV guide of the household's own (D139) that fills the half of the
 // channels that the provider's guide leaves out, and with -placeholders,
 // it turns placeholder programmes on (D142) and reads the playlist's XMLTV
-// guide once, all before the server idles.
+// guide once, all before the server idles. With -transcode, the first
+// channels stream pictures that ffmpeg makes as they are watched, live TV
+// is set to be transcoded always with the profile named (D147), and the
+// boxes watch only those channels; the server's ffmpegs are measured too.
 //
 //	go run ./tools/soak -duration 10m -boxes 4
 //	go run ./tools/soak -own-guide 40000 -own-hours 168 -placeholders 60
+//	go run ./tools/soak -transcode small -boxes 3 -channels 2000
 //
 // It prints a summary, writes the samples to a CSV file, and fails if the
 // server breaks the budgets given as flags. It reads the server's use from
@@ -72,6 +76,14 @@ type options struct {
 	ownHours  int // hours of one-hour programmes for each of them
 	holders   int // the length of placeholder programmes, in minutes (0: none)
 	cpuBudget float64
+	// transcode names the profile that live TV is transcoded with, ""
+	// for none; pictures counts the channels that stream pictures that
+	// ffmpeg makes, of pictureSize; ffmpegMB is the budget of one
+	// transcode's ffmpeg.
+	transcode   string
+	pictures    int
+	pictureSize string
+	ffmpegMB    float64
 }
 
 func main() {
@@ -94,7 +106,14 @@ func main() {
 	flag.IntVar(&o.ownGuide, "own-guide", 0, "how many channels a guide of the household's own lists, filling the half of the lineup that the provider's guide leaves out (0: none)")
 	flag.IntVar(&o.ownHours, "own-hours", 168, "how many hours of one-hour programmes the guide of the household's own has for each channel")
 	flag.IntVar(&o.holders, "placeholders", 0, "turn placeholder programmes of this many minutes on, and read the XMLTV guide once (0: off)")
+	flag.StringVar(&o.transcode, "transcode", "", "transcode live TV always with this profile: h264-720p, h264-1080p, or small or hevc-720p, which the soak makes (default: none)")
+	flag.IntVar(&o.pictures, "pictures", 0, "how many channels, the first, stream pictures that ffmpeg makes as they are watched (default: as many as the boxes, with -transcode)")
+	flag.StringVar(&o.pictureSize, "picture-size", "1920x1080", "the size of those pictures")
+	flag.Float64Var(&o.ffmpegMB, "ffmpeg-mb", 0, "fail if one transcode's ffmpeg ever takes more resident memory than this, in MB (0: no limit)")
 	flag.Parse()
+	if o.transcode != "" && o.pictures == 0 {
+		o.pictures = o.boxes
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -122,7 +141,13 @@ func run(ctx context.Context, o options) error {
 		}
 	}
 
-	provider, err := startProvider(o.channels, o.guide, o.bitrate, o.ownGuide, o.ownHours)
+	pictures := pictureSource{n: o.pictures, size: o.pictureSize, bitrate: o.bitrate}
+	if o.pictures > 0 {
+		if pictures.ffmpeg, err = exec.LookPath("ffmpeg"); err != nil {
+			return fmt.Errorf("-pictures and -transcode need ffmpeg: %w", err)
+		}
+	}
+	provider, err := startProvider(o.channels, o.guide, o.bitrate, o.ownGuide, o.ownHours, pictures)
 	if err != nil {
 		return err
 	}
@@ -183,6 +208,13 @@ func run(ctx context.Context, o options) error {
 			return err
 		}
 	}
+	if o.transcode != "" {
+		if err := srv.transcoding(o); err != nil {
+			close(loaded)
+			loadWG.Wait()
+			return err
+		}
+	}
 
 	macs := make([]string, o.boxes)
 	for i := range macs {
@@ -214,7 +246,7 @@ func run(ctx context.Context, o options) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			b := &box{base: srv.base, mac: mac, zap: o.zap, stats: &st, rng: rand.New(rand.NewPCG(uint64(i), 1))}
+			b := &box{base: srv.base, mac: mac, zap: o.zap, stats: &st, rng: rand.New(rand.NewPCG(uint64(i), 1)), only: o.pictures}
 			if i%2 == 0 {
 				b.runStalker(runCtx)
 			} else {
@@ -225,6 +257,7 @@ func run(ctx context.Context, o options) error {
 
 	samples := append(loading, idle)
 	ticker := time.NewTicker(o.sample)
+	var tc transcodes
 	for runCtx.Err() == nil {
 		select {
 		case <-runCtx.Done():
@@ -236,6 +269,10 @@ func run(ctx context.Context, o options) error {
 				return fmt.Errorf("the server stopped: %w\n%s", err, srv.log.String())
 			}
 			samples = append(samples, s)
+			if o.transcode != "" {
+				tc.sample(m.pid, s.at)
+				tc.speeds(srv)
+			}
 		}
 	}
 	ticker.Stop()
@@ -252,7 +289,7 @@ func run(ctx context.Context, o options) error {
 	if err := writeCSV(o.out, samples); err != nil {
 		return err
 	}
-	return report(o, ready, idle, samples, &st)
+	return report(o, ready, idle, samples, &st, &tc)
 }
 
 // sleep waits for d, or until ctx is done.
@@ -271,7 +308,7 @@ func sleep(ctx context.Context, d time.Duration) error {
 // /playlist.m3u, each channel as an endless MPEG-TS stream at bitrate, and,
 // unless guideHours is 0, their guide at /guide.xml: a programme an hour,
 // from the hour before it was asked for.
-func startProvider(n, guideHours, bitrate, ownGuide, ownHours int) (*httpServer, error) {
+func startProvider(n, guideHours, bitrate, ownGuide, ownHours int, pictures pictureSource) (*httpServer, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /playlist.m3u", func(w http.ResponseWriter, r *http.Request) {
 		bw := bufio.NewWriter(w)
@@ -352,6 +389,10 @@ func startProvider(n, guideHours, bitrate, ownGuide, ownHours int) (*httpServer,
 	})
 	mux.HandleFunc("GET /live/{n}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "video/mp2t")
+		if k, err := strconv.Atoi(strings.TrimSuffix(r.PathValue("n"), ".ts")); err == nil && k <= pictures.n {
+			pictures.serve(w, r)
+			return
+		}
 		const tick = 50 * time.Millisecond
 		perTick := bitrate / 8 / int(time.Second/tick) / 188 * 188
 		chunk := bytes.Repeat(append([]byte{0x47}, bytes.Repeat([]byte{0xff}, 187)...), max(perTick/188, 1))
@@ -428,6 +469,27 @@ type server struct {
 	cmd               *exec.Cmd
 	exited            chan struct{}
 	log               *syncBuffer
+	admin             *adminClient // once signed in
+}
+
+// signIn sets the administrator's password and signs in to the admin,
+// once.
+func (s *server) signIn() (*adminClient, error) {
+	if s.admin != nil {
+		return s.admin, nil
+	}
+	const password = "soak-test-password"
+	cmd := exec.Command(s.bin, "-config", s.config, "admin", "password")
+	cmd.Stdin = strings.NewReader(password + "\n")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("overscan admin password: %w\n%s", err, out)
+	}
+	a, err := newAdminClient(s.base, "admin", password)
+	if err != nil {
+		return nil, err
+	}
+	s.admin = a
+	return a, nil
 }
 
 // startServer starts Overscan with the provider's playlist and the folder
@@ -491,13 +553,7 @@ func (s *server) stop() {
 // its read, and turns placeholder programmes on and reads the playlist's
 // XMLTV guide once, as the options say.
 func (s *server) guides(ctx context.Context, provider string, o options) error {
-	const password = "soak-test-password"
-	cmd := exec.Command(s.bin, "-config", s.config, "admin", "password")
-	cmd.Stdin = strings.NewReader(password + "\n")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("overscan admin password: %w\n%s", err, out)
-	}
-	a, err := newAdminClient(s.base, "admin", password)
+	a, err := s.signIn()
 	if err != nil {
 		return err
 	}
@@ -677,6 +733,7 @@ type box struct {
 	stats     *stats
 	rng       *rand.Rand
 	token     string
+	only      int // watch only the channels numbered up to this, 0 for any
 }
 
 // runStalker acts as a Stalker client: it signs in, loads every channel,
@@ -692,7 +749,7 @@ func (b *box) runStalker(ctx context.Context) {
 		}
 		b.token = hs.Token
 		var all struct {
-			Data []struct{ Cmd string }
+			Data []struct{ Cmd, Number string }
 		}
 		if b.stalker(ctx, &struct{ ID string }{}, "stb", "get_profile", "stb_type", "MAG250") != nil ||
 			b.stalker(ctx, &all, "itv", "get_all_channels") != nil {
@@ -701,7 +758,9 @@ func (b *box) runStalker(ctx context.Context) {
 		}
 		b.stats.listings.Add(1)
 		for _, c := range all.Data {
-			cmds = append(cmds, c.Cmd)
+			if n, _ := strconv.Atoi(c.Number); b.only == 0 || n <= b.only {
+				cmds = append(cmds, c.Cmd)
+			}
 		}
 	}
 	go func() {
@@ -733,7 +792,7 @@ func (b *box) runDevice(ctx context.Context) {
 		}
 		b.token = s.Token
 		var lineup struct {
-			Channels []struct{ ID int64 }
+			Channels []struct{ ID, Number int64 }
 		}
 		if b.device(ctx, &lineup, "GET", "channels", "") != nil {
 			b.pause(ctx)
@@ -741,7 +800,9 @@ func (b *box) runDevice(ctx context.Context) {
 		}
 		b.stats.listings.Add(1)
 		for _, c := range lineup.Channels {
-			ids = append(ids, c.ID)
+			if b.only == 0 || c.Number <= int64(b.only) {
+				ids = append(ids, c.ID)
+			}
 		}
 	}
 	for ctx.Err() == nil {
@@ -946,7 +1007,7 @@ func mb(kb int64) float64 { return float64(kb) / 1024 }
 // report prints the summary. ready is a sample taken once the sources
 // were read, before the guides of the household's own, and idle the one
 // before the boxes start.
-func report(o options, ready, idle sample, samples []sample, st *stats) error {
+func report(o options, ready, idle sample, samples []sample, st *stats, tc *transcodes) error {
 	// The samples before idle are those taken while the server read its
 	// sources; CPU counts from idle on, under the boxes' load. The peaks
 	// are the kernel's high-water marks where it has them: the most
@@ -982,6 +1043,9 @@ func report(o options, ready, idle sample, samples []sample, st *stats) error {
 	fmt.Printf("Streams: %d played, %d failed, %.2f GB proxied; channel lists loaded: %d; shelves of films read: %d\n",
 		st.streams.Load(), st.failedStreams.Load(), float64(st.bytes.Load())/1e9, st.listings.Load(), st.shelves.Load())
 	fmt.Printf("API calls: %d, %d failed\n", st.requests.Load(), st.failedRequests.Load())
+	if o.transcode != "" {
+		tc.report(o)
+	}
 	fmt.Printf("Samples: %s\n", o.out)
 
 	var broken []string
@@ -996,6 +1060,12 @@ func report(o options, ready, idle sample, samples []sample, st *stats) error {
 	}
 	if st.failedStreams.Load() > 0 || st.failedRequests.Load() > 0 {
 		broken = append(broken, "some streams or calls failed")
+	}
+	if o.transcode != "" && tc.seen == 0 {
+		broken = append(broken, "no stream was transcoded")
+	}
+	if o.ffmpegMB > 0 && mb(tc.peakKB) > o.ffmpegMB {
+		broken = append(broken, fmt.Sprintf("a transcode's ffmpeg took %.1f MB, over %.0f MB", mb(tc.peakKB), o.ffmpegMB))
 	}
 	if len(broken) > 0 {
 		return errors.New("over budget: " + strings.Join(broken, "; "))

@@ -608,6 +608,8 @@ A household chooses what Overscan transcodes and how, for live TV and for films 
   - a test that walks the *Done when*;
   - a soak that transcodes: in software at a small size in CI, and with the GPU on a machine that has one. Each kind of transcode's memory, processor and speed is measured and written in [`testing.md`](testing.md).
 
+  **In place:** [`security.md`](security.md)'s *The review in M10*; `TestTranscodingDoneWhen`, which walks the *Done when* with ffmpeg's clips through every output, and names the tests that walk the rest; the upgrade test's household with every M10 setting; the soak's `-transcode`, with ffmpeg's own memory and processor measured, as a weekly job of the *Soak* workflow; the measures of each kind of transcode in software in [`testing.md`](testing.md), *Baseline*; and the image's size, as the image check prints it. The measures on the graphics come from the maintainer's server with Intel graphics.
+
   Then v1.3.0-rc.N, and v1.3.0 on the maintainer's word.
 
 *Done when*, with fictional sources and clips that ffmpeg makes:
@@ -623,7 +625,7 @@ A household chooses what Overscan transcodes and how, for live TV and for films 
 - memory stays within section 15's budgets, with each kind of transcode's ffmpeg measured and written down;
 - and an upgrade changes nothing.
 
-*Status:* planned in detail (D146). Its first phase, profiles and what is transcoded for live TV in software, is in place (v1.3.0-alpha.1), and so are its second, the graphics through VA-API (v1.3.0-alpha.2), its third, the packaging that lets the service reach them (v1.3.0-alpha.3), and its fourth, films and series (v1.3.0-alpha.4).
+*Status:* planned in detail (D146). Its first phase, profiles and what is transcoded for live TV in software, is in place (v1.3.0-alpha.1), and so are its second, the graphics through VA-API (v1.3.0-alpha.2), its third, the packaging that lets the service reach them (v1.3.0-alpha.3), its fourth, films and series (v1.3.0-alpha.4), and its hardening, in the candidate v1.3.0-rc.1.
 
 ### M11: HLS output (M)
 Planned in detail once M10 ends. HLS from the hub for players that ask for it: films and episodes that ffmpeg makes, so that players that seek by byte ranges can seek in them, and live channels as HLS. It replaces D110's line that HLS output waits in the backlog.
