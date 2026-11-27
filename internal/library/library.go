@@ -27,6 +27,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -88,8 +89,12 @@ type Library struct {
 	running sync.WaitGroup
 	gates   map[int64]chan struct{} // one request at a time to each source
 	lists   map[listKey]*pending    // reads of lists under way
-	details map[int64]*pending      // reads of titles' details under way, by title
-	pages   map[pageKey]*pending    // reads of pages of portals' categories under way
+	// ended counts the reads of each list that have ended, so that a read
+	// that ended after the database was read is not taken for one still
+	// due.
+	ended   map[listKey]uint64
+	details map[int64]*pending   // reads of titles' details under way, by title
+	pages   map[pageKey]*pending // reads of pages of portals' categories under way
 	// detailed holds when a read of a title's details last ended well, for
 	// a minute: a device that looked at the title just before then has a
 	// copy without them, and needs no read of its own.
@@ -135,6 +140,7 @@ func New(st *store.Store, log *slog.Logger, version string) *Library {
 		stop:      stop,
 		gates:     map[int64]chan struct{}{},
 		lists:     map[listKey]*pending{},
+		ended:     map[listKey]uint64{},
 		details:   map[int64]*pending{},
 		pages:     map[pageKey]*pending{},
 		detailed:  map[int64]time.Time{},
@@ -206,6 +212,7 @@ func (l *Library) Want(ctx context.Context, kind string, wait time.Duration) (St
 // want starts the reads that are due, and returns the state and the reads
 // under way.
 func (l *Library) want(ctx context.Context, kind string) (State, []*pending, error) {
+	seen := l.endedReads()
 	sources, reads, err := l.load(ctx, kind)
 	if err != nil {
 		return State{}, nil, err
@@ -220,7 +227,7 @@ func (l *Library) want(ctx context.Context, kind string) (State, []*pending, err
 		}
 		due := r.ReadAt.IsZero() || now.Sub(r.ReadAt) >= ttl
 		failedLately := r.Error != "" && now.Sub(r.TriedAt) < retryAfter
-		if p := l.startList(src, kind, due && !failedLately); p != nil {
+		if p := l.startListSince(src, kind, due && !failedLately, seen[listKey{src.ID, kind}]); p != nil {
 			waits = append(waits, p)
 		}
 	}
@@ -289,9 +296,35 @@ func (l *Library) summarise(sources []store.Source, reads map[int64]store.Librar
 // startList returns the read of a source's list that is under way, starting
 // one if start says so, or nil if none is.
 func (l *Library) startList(src store.Source, kind string, start bool) *pending {
-	key := listKey{src.ID, kind}
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	return l.startListLocked(src, kind, start)
+}
+
+// endedReads returns how many reads of each list have ended, to give
+// startListSince.
+func (l *Library) endedReads() map[listKey]uint64 {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return maps.Clone(l.ended)
+}
+
+// startListSince is startList for a caller that found the read due in what
+// the database said after seen reads of the list had ended: if another
+// has ended since, what it found is out of date, and that read is the one
+// it wanted, so none starts.
+func (l *Library) startListSince(src store.Source, kind string, start bool, seen uint64) *pending {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.ended[listKey{src.ID, kind}] != seen {
+		start = false
+	}
+	return l.startListLocked(src, kind, start)
+}
+
+// startListLocked is startList for a caller that holds l.mu.
+func (l *Library) startListLocked(src store.Source, kind string, start bool) *pending {
+	key := listKey{src.ID, kind}
 	if p, ok := l.lists[key]; ok {
 		return p
 	}
@@ -306,6 +339,7 @@ func (l *Library) startList(src store.Source, kind string, start bool) *pending 
 		p.err = l.readList(src, kind)
 		l.mu.Lock()
 		delete(l.lists, key)
+		l.ended[key]++
 		l.mu.Unlock()
 		close(p.done)
 	}()
