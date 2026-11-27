@@ -26,6 +26,7 @@ import (
 	"overscan.gureet.ca/internal/artwork"
 	"overscan.gureet.ca/internal/catalog"
 	"overscan.gureet.ca/internal/config"
+	"overscan.gureet.ca/internal/gpu"
 	"overscan.gureet.ca/internal/guide"
 	"overscan.gureet.ca/internal/hub"
 	"overscan.gureet.ca/internal/library"
@@ -49,6 +50,7 @@ const usage = `Usage:
   overscan [-config FILE] debug COMMAND    check a channel, or print the debug playlist's address;
                                            "overscan debug -h" says how
   overscan [-config FILE] backup [FILE]    copy the database to FILE, or into the data directory's backups
+  overscan [-config FILE] gpu              test what the server's graphics can do for ffmpeg
   overscan -version                        print the version
   overscan help [COMMAND]                  print this help, or a command's
 
@@ -64,6 +66,7 @@ var commands = map[string]string{
 	"admin":   adminUsage,
 	"debug":   debugUsage,
 	"backup":  backupUsage,
+	"gpu":     gpuUsage,
 }
 
 // helpFor reports whether args, after the flags, ask for help, and which:
@@ -181,6 +184,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return debugCommand(ctx, cfg, command[1:], stdout, stderr)
 	case "backup":
 		return backupCommand(ctx, cfg, command[1:], stdout, stderr)
+	case "gpu":
+		return gpuCommand(ctx, cfg, command[1:], stdout, stderr)
 	}
 	return 2 // not reached: run checked the command against commands
 }
@@ -251,6 +256,11 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger, recent *log
 		log.Warn("cannot make the folder for timeshift buffers, so boxes cannot pause live TV", "error", err)
 	}
 	useEncoder(ctx, streams, ffmpegPath, ffprobePath, log)
+	// What the graphics can do for ffmpeg is tested in the background,
+	// with pictures that ffmpeg makes; until it ends, ffmpeg transcodes in
+	// software (D148).
+	streams.UseGPUTest(gpu.Options{FFmpeg: ffmpegPath, Device: cfg.GPU})
+	go streams.TestGPU(ctx)
 	refresher := catalog.NewRefresher(st, log, version)
 	refresher.AllowEmpty(cfg.RecordingsPath())
 	// Guides of the household's own fill the channels whose sources give

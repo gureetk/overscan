@@ -23,13 +23,16 @@
   {{- end}}
 </div>
 {{template "alerts" .}}
-{{- if not .Data.CanTranscode}}
+{{- if .Data.Capacity}}
+<p class="state-line"><i class="dot ok" aria-hidden="true"></i>{{.Data.Capacity}}</p>
+{{- else if not .Data.CanTranscode}}
 <p class="state-line warn"><i class="dot bad" aria-hidden="true"></i>This server cannot transcode: it lacks {{.Data.Missing}}, so every stream plays as its source sends it.</p>
 {{- else if not .Data.AtOnce}}
 <p class="state-line warn"><i class="dot bad" aria-hidden="true"></i>Transcoding is off on the <a href="/admin/settings">Settings</a> page, so every stream plays as its source sends it until it is on.</p>
 {{- else}}
 <p class="state-line"><i class="dot ok" aria-hidden="true"></i>This server transcodes up to {{.Data.AtOnce}} {{if eq .Data.AtOnce 1}}stream{{else}}streams{{end}} at a time, with its processor{{if not .Data.HEVC}}. Its ffmpeg has no libx265, so profiles that make HEVC send streams as their sources send them{{end}}.</p>
 {{- end}}
+{{template "graphics-card" .}}
 <section class="card" aria-labelledby="live-title">
   <h2 id="live-title">Live TV</h2>
   <form method="post" action="/admin/transcoding/live" hx-post="/admin/transcoding/live" hx-trigger="change" hx-target="#transcoding-main" hx-select="#transcoding-main" hx-swap="outerHTML" class="switch-row with-select">
@@ -85,6 +88,63 @@
 {{- end}}
 {{- end}}
 </div>
+{{end}}
+
+{{define "graphics-card"}}
+{{- $g := .Data.Graphics}}
+<section class="card" id="graphics" aria-labelledby="graphics-title"{{if $g.Testing}} hx-get="/admin/transcoding" hx-trigger="every 2s" hx-select="#graphics" hx-target="#graphics" hx-swap="outerHTML"{{end}}>
+  <h2 id="graphics-title">Graphics</h2>
+  {{- if $g.Testing}}
+  <p class="state-line"><i class="dot" aria-hidden="true"></i>Overscan is testing the graphics now, with pictures that ffmpeg makes.</p>
+  {{- else if not $g.Tested}}
+  <p class="state-line"><i class="dot" aria-hidden="true"></i>This server has not tested its graphics, so ffmpeg transcodes in software.</p>
+  {{- else if $g.Found.Off}}
+  <p class="state-line"><i class="dot" aria-hidden="true"></i>The configuration file turns the graphics off, so ffmpeg transcodes in software.</p>
+  {{- else if not $g.Usable}}
+  <p class="state-line warn"><i class="dot bad" aria-hidden="true"></i>No graphics to transcode on, so ffmpeg transcodes in software.</p>
+  <p class="hint">{{$g.Found.Why}} The documentation on transcoding says how to give Overscan the graphics, in a container and under systemd.</p>
+  {{- else}}
+  <p class="state-line"><i class="dot ok" aria-hidden="true"></i>{{if $g.Found.Driver}}{{$g.Found.Driver}}{{else}}The graphics{{end}}, at {{$g.Found.Device}}</p>
+  <dl class="facts-list">
+    <div><dt>They make</dt><dd>{{$g.Found.EncodedNames}}</dd></div>
+    <div><dt>They decode</dt><dd>{{with $g.Found.DecodedNames}}{{.}}{{else}}Nothing that the test tried: ffmpeg decodes in software{{end}}{{with $g.Untested}}; not tested: {{.}}{{end}}</dd></div>
+    <div><dt>They also</dt><dd>{{with $g.Filters}}{{.}}{{else}}Nothing: ffmpeg deinterlaces and scales in software{{end}}</dd></div>
+  </dl>
+  {{- with $g.Rates}}
+  <p class="hint">{{.}}</p>
+  {{- end}}
+  <form method="post" action="/admin/transcoding/graphics" hx-post="/admin/transcoding/graphics" hx-trigger="change" hx-target="#transcoding-main" hx-select="#transcoding-main" hx-swap="outerHTML" class="switch-row with-select">
+    <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+    <div>
+      <label for="gpu-at-once">Streams at a time on the graphics</label>
+      <p id="gpu-at-once-text">{{if $g.AtOnce}}Up to {{$g.AtOnce}} {{if eq $g.AtOnce 1}}stream is{{else}}streams are{{end}} transcoded on the graphics; more, and those the graphics cannot make, in software, where the Settings page lets it.{{else}}Off: streams are transcoded in software, where the Settings page lets it.{{end}}</p>
+      <noscript><button class="small" type="submit">Save</button></noscript>
+    </div>
+    <select id="gpu-at-once" name="at_once" aria-describedby="gpu-at-once-text">
+      {{- range $g.AtOnceOptions}}
+      <option value="{{.}}"{{if eq . $g.AtOnce}} selected{{end}}>{{if eq . 0}}Off{{else}}{{.}} at a time{{end}}</option>
+      {{- end}}
+    </select>
+  </form>
+  {{- end}}
+  {{- if and $g.Tested $g.Found.Steps (not $g.Testing)}}
+  <details class="unmatched test-steps">
+    <summary>What the test tried, {{$g.When}}</summary>
+    <ul>
+      {{- range $g.Found.Steps}}
+      <li class="{{if .OK}}ok{{else}}bad{{end}}"><span class="badge{{if not .OK}} warn{{end}}">{{if .OK}}Works{{else}}Fails{{end}}</span> {{.Name}}{{with .Note}}<code>{{.}}</code>{{end}}</li>
+      {{- end}}
+    </ul>
+    <p class="hint">It took {{$g.Took}}, and opened no channel.</p>
+  </details>
+  {{- end}}
+  {{- if not $g.Testing}}
+  <form method="post" action="/admin/transcoding/graphics/test" hx-post="/admin/transcoding/graphics/test" hx-target="#transcoding-main" hx-select="#transcoding-main" hx-swap="outerHTML" class="card-actions">
+    <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+    <button type="submit" class="small">Test again</button>
+  </form>
+  {{- end}}
+</section>
 {{end}}
 
 {{define "profile-form"}}
@@ -154,7 +214,7 @@
     <div class="field wide">
       <label class="check"><input type="checkbox" name="deinterlace" value="1"{{if $p.Deinterlace}} checked{{end}}> Deinterlace an interlaced picture</label>
       <label class="check"><input type="checkbox" name="hdr_to_sdr" value="1"{{if $p.ToneMap}} checked{{end}}> Make an HDR picture SDR</label>
-      <p class="hint">Players on most devices show interlaced pictures with combed edges, and HDR on an SDR screen washed out. This server makes live HDR SDR only with graphics, which come in a later version; until then, a live HDR picture keeps its dynamic range.</p>
+      <p class="hint">Players on most devices show interlaced pictures with combed edges, and HDR on an SDR screen washed out. Graphics that map HDR10 to SDR, as the Graphics card says, make a live HDR10 picture SDR once its channel has shown it is HDR10; otherwise, and in software, a live HDR picture keeps its dynamic range.</p>
     </div>
   </div>
   <div class="form-buttons">

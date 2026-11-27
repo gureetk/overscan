@@ -40,7 +40,10 @@ type Admin struct {
 	sources Sources           // reads sources; nil if this server cannot
 	guides  Guides            // reads the guides of the household's own (D139); nil if this server cannot
 	streams Streams           // lists what is playing; nil if none
-	support Support           // what the support bundle needs from outside the admin
+	// graphics tests what the server's graphics do for ffmpeg (D148); nil
+	// if this server cannot.
+	graphics Graphics
+	support  Support // what the support bundle needs from outside the admin
 	// tmdbBase is TMDB's address, which a test changes (D88).
 	tmdbBase string
 	recorder Recorder // records programmes; nil if this server cannot (D89)
@@ -124,6 +127,8 @@ func (a *Admin) Handler() http.Handler {
 	mux.Handle("GET /admin/transcoding", a.page(a.transcodingPage))
 	mux.Handle("POST /admin/transcoding", a.page(a.addTranscodeProfileForm))
 	mux.Handle("POST /admin/transcoding/live", a.page(a.liveTranscodeForm))
+	mux.Handle("POST /admin/transcoding/graphics", a.page(a.gpuTranscodesForm))
+	mux.Handle("POST /admin/transcoding/graphics/test", a.page(a.testGraphicsForm))
 	mux.Handle("GET /admin/transcoding/profiles/{name}", a.page(a.transcodeProfilePage))
 	mux.Handle("POST /admin/transcoding/profiles/{name}", a.page(a.saveTranscodeProfileForm))
 	mux.Handle("POST /admin/transcoding/profiles/{name}/{action}", a.page(a.transcodeProfileAction))

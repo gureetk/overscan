@@ -15,6 +15,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -54,6 +55,11 @@ type Config struct {
 	// path, or a name to look for in PATH. "ffmpeg" if not set; "off" turns
 	// repair and conversion off.
 	FFmpeg string `yaml:"ffmpeg"`
+	// GPU is the render device of the graphics that ffmpeg transcodes on,
+	// through VA-API (D148): "auto", the default, for the first that
+	// Overscan can open in /dev/dri; a device's path, such as
+	// /dev/dri/renderD129; or "off" for none.
+	GPU string `yaml:"gpu"`
 	// TrustedProxies are the reverse proxies whose X-Forwarded-For and
 	// X-Forwarded-Proto headers say whom a request is for and whether it
 	// came over HTTPS (D119): addresses or ranges, each on the server's own
@@ -138,6 +144,15 @@ const (
 	DefaultMaxConnections = source.DefaultMaxConnections
 )
 
+// The gpu settings beside a render device's path (D148).
+const (
+	GPUAuto = "auto"
+	GPUOff  = "off"
+)
+
+// gpuDeviceRE is what a render device's path must look like.
+var gpuDeviceRE = regexp.MustCompile(`^/dev/dri/renderD[0-9]{1,4}$`)
+
 // FFmpegOff is the ffmpeg setting that turns stream repair and conversion
 // off.
 const FFmpegOff = "off"
@@ -215,6 +230,7 @@ func Default() Config {
 		DataDir: "/var/lib/overscan",
 		Log:     Log{Level: "info", Format: "text"},
 		FFmpeg:  "ffmpeg",
+		GPU:     GPUAuto,
 	}
 }
 
@@ -231,6 +247,7 @@ var envVars = []struct {
 	{"OVERSCAN_LOG_LEVEL", func(c *Config, v string) error { c.Log.Level = v; return nil }},
 	{"OVERSCAN_LOG_FORMAT", func(c *Config, v string) error { c.Log.Format = v; return nil }},
 	{"OVERSCAN_FFMPEG", func(c *Config, v string) error { c.FFmpeg = v; return nil }},
+	{"OVERSCAN_GPU", func(c *Config, v string) error { c.GPU = v; return nil }},
 	// A list, its entries split by commas or spaces.
 	{"OVERSCAN_TRUSTED_PROXIES", func(c *Config, v string) error {
 		c.TrustedProxies = strings.FieldsFunc(v, func(r rune) bool { return r == ',' || unicode.IsSpace(r) })
@@ -328,6 +345,9 @@ func (c Config) validate() error {
 	}
 	if strings.ContainsRune(c.FFmpeg, '/') && !filepath.IsAbs(c.FFmpeg) {
 		return errors.New("ffmpeg must be an absolute path, or a name to look for in PATH")
+	}
+	if c.GPU != GPUAuto && c.GPU != GPUOff && !gpuDeviceRE.MatchString(c.GPU) {
+		return errors.New(`gpu must be "auto", "off", or a render device such as /dev/dri/renderD128`)
 	}
 	if _, err := clientaddr.Parse(c.TrustedProxies); err != nil {
 		return fmt.Errorf("trusted_proxies: %w", err)

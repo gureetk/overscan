@@ -54,7 +54,20 @@ What to check when something goes wrong, by what you see. [guide.md](guide.md) s
 
 **A channel stutters, skips or jumps back.** Set it to be repaired on *Live TV* (D57): its stream then goes through ffmpeg, which the log's start lines say it found.
 
-**A transcoded channel stutters, or the *Overview* says *Falls behind*.** This server's processor cannot make the stream as fast as it comes. The log says `ffmpeg transcodes a live stream more slowly than it comes`, with how fast it went. On *Settings* → *Transcoding*, a profile with a smaller size, at most 30 pictures a second, or H.264 rather than HEVC takes less of it; so does transcoding fewer channels at once. A channel that a device plays as it is can be set never to be transcoded (D147).
+**A transcoded channel stutters, or the *Overview* says *Falls behind*.** This server's processor cannot make the stream as fast as it comes. The log says `ffmpeg transcodes a live stream more slowly than it comes`, with how fast it went. On *Settings* → *Transcoding*, a profile with a smaller size, at most 30 pictures a second, or H.264 rather than HEVC takes less of it; so do transcoding fewer channels at once, and the server's graphics (D148). A channel that a device plays as it is can be set never to be transcoded (D147).
+
+**The *Graphics* card says there are no graphics to transcode on.** It says why, as the log's `no graphics for ffmpeg to transcode on` line does (D148):
+
+- *Overscan sees no graphics: /dev/dri is not there*, or *sees no render device*: the service, its container or its sandbox has not been given the device. [transcoding.md](transcoding.md) says how, for systemd and for a Proxmox container.
+- *cannot open /dev/dri/renderD128: permission denied*: the user that runs Overscan is not in the device's group, usually `render`; in a container, the group's ID must be the one in the container.
+- *no VA-API driver works with these graphics*: install the driver, `intel-media-va-driver` for Intel graphics or `mesa-va-drivers` for AMD graphics, then *Test again*.
+- *the graphics encode neither H.264 nor HEVC*: the driver or the graphics cannot; the steps under *What the test tried* say what ffmpeg answered.
+
+`overscan gpu`, run as the user that runs Overscan, tests the same way and prints it.
+
+**A transcode is in software, though the graphics make its codec.** The log says why as it starts: the graphics transcode as many streams as they may (`most=`), or ffmpeg could not transcode it on them, with its last words. The *Graphics* card's number at a time may be *Off*. A channel that the graphics failed to decode part way is decoded in software until *Test again*.
+
+**A profile's highest bit rate does not hold on the graphics.** Some graphics keep to a bit rate only with their firmware loaded, as Intel's do in low-power mode; the card then says that they keep none, and they keep a constant quality instead. [transcoding.md](transcoding.md) names the firmware.
 
 **A channel is not transcoded, though its profile says so.** The log says why when the stream starts: transcoding is off on *Settings*, the number at a time is reached, the server's ffmpeg lacks the encoder that the profile needs (`needs=libx265` for HEVC), or the channel, its group or live TV says never (`it is never transcoded`, with `set_by`). A recording, and a stream through the debug playlist, are never transcoded.
 

@@ -154,10 +154,10 @@ func TestMadeArgs(t *testing.T) {
 			[]string{"-map 0:a:0?", "-vf bwdif=mode=send_field:deint=interlaced,scale=w='min(1280,iw)':h='min(720,ih)'",
 				"-c:v libx264 -preset veryfast -crf 20 -profile:v high", "-c:a aac -b:a 128k -ac 2"}},
 		{Profile{Name: "b", Codec: HEVC, MaxLines: 1080, Quality: Low, MaxKbps: 8000, FrameRate: RateAtMost, Deinterlace: true, Sound: SoundAC3},
-			[]string{"-vf bwdif=mode=send_frame:deint=interlaced," + halfFast + ",scale=w='min(1920,iw)':h='min(1080,ih)'",
+			[]string{"-vf bwdif=mode=send_frame:deint=interlaced," + HalfFast + ",scale=w='min(1920,iw)':h='min(1080,ih)'",
 				"-c:v libx265 -preset veryfast -crf 31 -profile:v main", "-maxrate 8000k -bufsize 16000k", "-c:a ac3 -b:a 384k"}},
 		{Profile{Name: "c", Codec: H264, Quality: Medium, FrameRate: RateAtMost, Sound: SoundCopy},
-			[]string{"-map 0:a?", "-vf " + halfFast + ",format=yuv420p ", "-crf 23", "-c:a copy"}},
+			[]string{"-map 0:a?", "-vf " + HalfFast + ",format=yuv420p ", "-crf 23", "-c:a copy"}},
 		{Profile{Name: "d", Codec: H264, Quality: Medium, Sound: SoundAAC},
 			[]string{"-vf format=yuv420p "}},
 	} {

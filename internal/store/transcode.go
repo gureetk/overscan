@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -426,4 +427,38 @@ func (s *Store) TranscodeCounts(ctx context.Context) (TranscodeCounts, error) {
 		return TranscodeCounts{}, fmt.Errorf("store: transcoding's counts: %w", err)
 	}
 	return c, nil
+}
+
+// settingGPUTranscodes is how many streams at once the server's graphics
+// may transcode (D148): "0" to "4"; DefaultGPUTranscodes until it is set.
+const settingGPUTranscodes = "gpu_transcodes"
+
+// Limits on how many streams at once the graphics may transcode (D148).
+const (
+	DefaultGPUTranscodes = 2
+	MaxGPUTranscodes     = 4
+)
+
+// GPUTranscodes returns how many streams at once the server's graphics may
+// transcode: from 0, for none, to MaxGPUTranscodes; DefaultGPUTranscodes
+// until it is set (D148).
+func (s *Store) GPUTranscodes(ctx context.Context) (int, error) {
+	v, set, err := s.setting(ctx, settingGPUTranscodes)
+	if err != nil || !set {
+		return DefaultGPUTranscodes, err
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 || n > MaxGPUTranscodes {
+		return DefaultGPUTranscodes, nil
+	}
+	return n, nil
+}
+
+// SetGPUTranscodes sets how many streams at once the server's graphics may
+// transcode, from 0 for none to MaxGPUTranscodes.
+func (s *Store) SetGPUTranscodes(ctx context.Context, n int) error {
+	if n < 0 || n > MaxGPUTranscodes {
+		return fmt.Errorf("store: streams at once on the graphics: %d is not between 0 and %d", n, MaxGPUTranscodes)
+	}
+	return s.setSetting(ctx, settingGPUTranscodes, strconv.Itoa(n))
 }

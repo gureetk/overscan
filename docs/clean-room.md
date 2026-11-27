@@ -61,6 +61,7 @@ Transcoding (D73, D110, D146) is written from public documentation only:
 - Debian's packages and their descriptions, for which packages hold the drivers;
 - the systemd.exec manual page, for the unit's sandbox and its devices;
 - Proxmox VE's manual of `pct.conf`, for passing a device to a container.
+- x265's documentation of its options, for the HDR10 metadata of the clip with which the test at start tries tone mapping on the graphics (D148).
 
 Other sources, such as Mesa's documentation for AMD graphics, are added here before they are used. No other project's transcoding code is read: no media server's, stream proxy's or transcoding tool's. How Overscan chooses what to transcode, its profiles and their mapping to ffmpeg's options are its own.
 

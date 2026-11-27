@@ -43,8 +43,9 @@ type features struct {
 	guides, handGuides, logos, placeholders, pictures, moves bool
 	// transcoding is v1.3.0's, from its first pre-release on: profiles of
 	// the administrator's, and what is transcoded of live TV, a group and
-	// a channel.
-	transcoding bool
+	// a channel; graphics, from its second, how many streams the graphics
+	// transcode at a time.
+	transcoding, graphics bool
 }
 
 func featuresOf(version string) features {
@@ -71,7 +72,8 @@ func featuresOf(version string) features {
 		return from(1, 3) && !(major == 1 && minor == 3 && strings.HasPrefix(pre, "alpha.") && alpha < n)
 	}
 	return features{households: at(4), hub: at(5), playlists: from(1, 1), guides: from(1, 2), handGuides: since(2), logos: since(3),
-		placeholders: since(4), pictures: since(5), moves: since(6), transcoding: since13(1)}
+		placeholders: since(4), pictures: since(5), moves: since(6), transcoding: since13(1),
+		graphics: since13(2)}
 }
 
 // household holds what the setup made, by name, so that the probes can
@@ -287,6 +289,12 @@ func (h *household) setUpTranscoding(a *admin) error {
 	} {
 		if err := a.call(c.method, c.path, c.body, nil); err != nil {
 			return fmt.Errorf("%s %s: %w", c.method, c.path, err)
+		}
+	}
+	if h.f.graphics {
+		// One stream at a time on the graphics, rather than the default.
+		if err := a.call("PATCH", "settings", map[string]any{"gpu_transcodes": 1}, nil); err != nil {
+			return fmt.Errorf("PATCH settings: %w", err)
 		}
 	}
 	return nil

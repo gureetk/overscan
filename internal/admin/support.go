@@ -74,6 +74,7 @@ func (a *Admin) bundle(ctx context.Context) ([]byte, error) {
 		{"sources.txt", a.bundleSources},
 		{"guides.txt", a.bundleGuides},
 		{"lineup.txt", a.bundleLineup},
+		{"graphics.txt", a.bundleGraphics},
 		{"devices.txt", a.bundleDevices},
 		{"playing.txt", a.bundlePlaying},
 		{"capture.txt", a.bundleCapture},
