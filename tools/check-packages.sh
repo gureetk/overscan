@@ -109,7 +109,9 @@ rm "$dir"/check-*.ts
 SCRIPT
 inside "giving the service the graphics" <<'SCRIPT'
 test -e /usr/share/overscan/gpu.conf
-getent group render
+# udev makes the render group on a system with graphics; this container
+# has no udev.
+getent group render || groupadd --system render
 install -D -m 0644 /usr/share/overscan/gpu.conf /etc/systemd/system/overscan.service.d/gpu.conf
 systemctl daemon-reload
 systemctl restart overscan
@@ -183,6 +185,12 @@ echo '# kept by an upgrade' >>/etc/overscan/overscan.yaml
 ./install.sh --no-ffmpeg
 grep -q '# kept by an upgrade' /etc/overscan/overscan.yaml
 systemctl is-active overscan
+# Without a render group, --gpu refuses; udev makes one on a system with
+# graphics, and this container has no udev.
+if getent group render; then groupdel render; fi
+if ./install.sh --no-ffmpeg --gpu; then exit 1; fi
+test ! -e /etc/systemd/system/overscan.service.d/gpu.conf
+groupadd --system render
 ./install.sh --no-ffmpeg --gpu
 test -e /etc/systemd/system/overscan.service.d/gpu.conf
 id -nG overscan | grep -w render

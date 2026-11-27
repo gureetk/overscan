@@ -79,6 +79,13 @@ if [ "$uninstall" = yes ]; then
 	echo "remove them yourself once you no longer need them."
 	exit 0
 fi
+# The graphics' render devices belong to the render group, which udev makes;
+# without it, --gpu changes nothing.
+if [ "$gpu" = yes ] && ! getent group render >/dev/null; then
+	echo "install.sh: there is no render group, which owns the graphics' render devices; udev makes it" >&2
+	echo "on a system with graphics. Add it (groupadd --system render), or leave out --gpu." >&2
+	exit 1
+fi
 here=$(dirname "$(readlink -f "$0")")
 for f in overscan overscan.example.yaml overscan.service overscan-gpu.conf; do
 	if [ ! -f "$here/$f" ]; then
@@ -122,11 +129,6 @@ install -m 0644 "$here/overscan.service" /etc/systemd/system/overscan.service
 
 # The graphics (D148, D149): the drop-in, the group and the driver.
 if [ "$gpu" = yes ]; then
-	if ! getent group render >/dev/null; then
-		echo "install.sh: there is no render group, which owns the graphics' render devices; without" >&2
-		echo "udev or systemd's sysusers there may be none. Add it, or leave out --gpu." >&2
-		exit 1
-	fi
 	usermod -aG render overscan
 	install -d -m 0755 "$dropin_dir"
 	install -m 0644 "$here/overscan-gpu.conf" "$dropin"
