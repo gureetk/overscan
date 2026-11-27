@@ -82,18 +82,18 @@ The *Soak* workflow runs it with a guide of the household's own of 20,000 channe
 
 The budgets are the plan's, in its section 15: under about 60 MB of memory idle, under about 150 MB with a large catalogue, and a few percent of one core for a few streams.
 
-**For 1.2**, in November 2026: a run of 60 minutes with a guide of the household's own (`-duration 60m -own-guide 20000 -own-hours 168 -placeholders 60`, the other flags at their defaults), on a cloud machine with two cores of an Intel Xeon at 2.1 GHz, against the server of v1.2.0-rc.1's code. The guide's 1.68 million programmes were read in 53 seconds, and the XMLTV guide, 490 MB with the placeholders, in 13 seconds. From this release on, the peaks are the kernel's high-water marks.
+**For 1.2**, in November 2026: a run of 60 minutes with a guide of the household's own (`-duration 60m -own-guide 20000 -own-hours 168 -placeholders 60`, the other flags at their defaults), on a cloud machine with two cores of an Intel Xeon at 2.1 GHz, and, as a second check, 120 minutes with the same flags by the *Soak* workflow on a GitHub-hosted runner (`ubuntu-latest`, Ubuntu 26.04). Both ran the server of v1.2.0-rc.1's code; rc.2 changed only the admin's *Guides* page. The guide's 1.68 million programmes were read in 53 and 40 seconds, and the XMLTV guide, 490 MB with the placeholders, in 13 and 9 seconds. From this release on, the peaks are the kernel's high-water marks.
 
-| Measure | 60 minutes, two cores | Budget |
-| --- | --- | --- |
-| Resident memory at the peak while reading the sources, the guide of the household's own and the XMLTV guide | 105.5 MB; 82.2 MB before the guide | 150 MB |
-| Resident memory, idle with all of it loaded | 53.0 MB | 60 MB |
-| Resident memory at the peak under load | 141.2 MB; the samples, at most 79.1 MB | 150 MB |
-| Resident memory at the end | 69.1 MB | |
-| CPU, average under load: four streams, 20 Mbit/s in all | 2.5% of one core | A few percent |
-| CPU at the peak, over five seconds | 43.8% of one core | |
-| Streams | 136 played, none failed, 9.0 GB proxied | |
-| Calls | 358, none failed; 62 shelves of films read | |
+| Measure | 60 minutes, two cores | 120 minutes, CI | Budget |
+| --- | --- | --- | --- |
+| Resident memory at the peak while reading the sources, the guide of the household's own and the XMLTV guide | 105.5 MB; 82.2 MB before the guide | 106.4 MB; 77.1 MB before the guide | 150 MB |
+| Resident memory, idle with all of it loaded | 53.0 MB | 51.8 MB | 60 MB |
+| Resident memory at the peak under load | 141.2 MB; the samples, at most 79.1 MB | 134.2 MB | 150 MB |
+| Resident memory at the end | 69.1 MB | 65.6 MB | |
+| CPU, average under load: four streams, 20 Mbit/s in all | 2.5% of one core | 1.7% | A few percent |
+| CPU at the peak, over five seconds | 43.8% of one core | 43.6% | |
+| Streams | 136 played, none failed, 9.0 GB proxied | 257, none failed, 18.0 GB | |
+| Calls | 358, none failed; 62 shelves of films read | 693, none failed; 124 shelves | |
 
 The budgets hold. The peak while reading takes in the administrator's sign-in, whose password hash takes 64 MiB for a moment; the server gives that back at once, and the memory of a written XMLTV guide too. The peak under load comes in the seconds when the four boxes load the whole lineup at once, each answer built in memory, as it has since the first run: the high-water mark sees it, where samples five seconds apart did not. Under load, the samples' means over the run's thirds were 60.4, 62.7 and 65.0 MB, and a second run of 35 minutes found 58.3, 59.1 and 58.9 MB.
 

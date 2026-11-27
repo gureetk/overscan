@@ -37,8 +37,8 @@ you are entitled to use.
 
 ## Status
 
-**Version 1.1.0 is the newest release.** It ends the eighth milestone,
-playlists, described below. Since 1.0, Overscan promises that what is there is
+**Version 1.2.0 is the newest release.** It ends the ninth milestone, guides
+and pictures, described below. Since 1.0, Overscan promises that what is there is
 safe, documented, installable and kept across upgrades: the security review is
 written up in [docs/security.md](docs/security.md), and an upgrade keeps what a
 household set up, which CI checks with every change from every full release
@@ -92,7 +92,17 @@ seen. Channels that fail to start as people watch can be
 hidden until they play again, the admin shows what each stream holds, and the
 *Overview* can stop a stream. Overscan never opens a channel just to test it.
 
-Much of what the third to eighth milestones added has been tested against test
+Since 1.2.0, a household can add XMLTV guides of its own for the channels
+whose sources give none, matched by guide ID and then by name, and choose a
+channel's guide by hand; the *Guides* page shows every guide, the sources'
+first, and what each fills. A channel's logo can be set by hand or by a rule,
+and Overscan uses a guide's icon where a channel's own logo does not load.
+Placeholder programmes can fill a guide's gaps; films and series of Xtream
+servers and Stalker portals can take TMDB's pictures where theirs are missing,
+do not load or are placeholders; and a source's channels can move to another
+provider's sources, keeping their numbers, groups and favourites.
+
+Much of what the third to ninth milestones added has been tested against test
 servers and in a desktop browser, but not yet on a MAG box or with real
 providers, media servers and players, so it may not yet work with yours:
 [docs/compatibility.md](docs/compatibility.md) lists what has been tried.
