@@ -43,15 +43,20 @@ answers() {
 answers || fail "the server does not answer /healthz"
 echo "The server answers."
 
-# The image's size, and what Debian's VA-API drivers and the libraries that
-# come with them take of it (D149), for docs/testing.md.
+# The image's size, with and without Debian's VA-API drivers (D149), for
+# docs/testing.md: the second is built from the same Dockerfile without
+# them, and removed.
 if image=$(docker inspect --format '{{.Image}}' "$("${compose[@]}" ps -q overscan)") &&
 	size=$(docker image inspect --format '{{.Size}}' "$image"); then
-	echo "The image: $((size / 1000000)) MB."
+	sed -e 's/ mesa-va-drivers//' -e 's/echo intel-media-va-driver/true/' Dockerfile >"$work/Dockerfile.plain"
+	if plain=$(docker build --quiet --file "$work/Dockerfile.plain" .) &&
+		plainSize=$(docker image inspect --format '{{.Size}}' "$plain"); then
+		echo "The image: $((size / 1000000)) MB; without the VA-API drivers, $((plainSize / 1000000)) MB."
+		docker image rm "$plain" >/dev/null 2>&1 || true
+	else
+		echo "The image: $((size / 1000000)) MB."
+	fi
 fi
-"${compose[@]}" exec -T overscan dpkg-query -W -f '${Installed-Size}\t${Package}\n' 2>/dev/null |
-	grep -E '\t(mesa-va-drivers|intel-media-va-driver|libgallium[^\t]*|libllvm[^\t]*|libigdgmm[^\t]*|libva[^\t]*|libdrm[^\t]*|ffmpeg|libavcodec[^\t]*)$' |
-	sort -rn | awk -F '\t' '{printf "  %6.1f MB  %s\n", $1 / 1024, $2}' || true
 
 # grep reads the whole log rather than stopping at the match (-q): that would
 # cut the logs command off with SIGPIPE, which pipefail takes for a failure.
