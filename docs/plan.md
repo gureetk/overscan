@@ -656,6 +656,7 @@ Players that ask for HLS get it from the hub, for live channels as their sources
   - Its segments are 4 s, since a transcode starts a picture every 2 s.
   - A transcode that cannot start gives the channel's players its HLS as its source sends it, as MPEG-TS screens get the stream as sent.
   - One rendition for each stream: an adaptive ladder of several transcodes of a channel stays in the backlog.
+  - **In place:** a player's HLS of a channel that the hub transcodes for it is cut from one transcode for each channel and profile, which runs as a session of its own from the shared tuner's buffer into a buffer of its own, counts once against the numbers at a time, and ends with its last player; a channel that cannot be transcoded now plays as HLS as sent; the *Overview* shows each such player's HLS as transcoded (D155).
 - The milestone's hardening:
   - the security checklist on what is new: the playlist's and the segments' addresses, tokens and sessions, and what a player can make the hub keep;
   - docs, upgrade tests with M11's settings, and a test that walks the *Done when*;
@@ -672,7 +673,7 @@ Players that ask for HLS get it from the hub, for live channels as their sources
 - memory stays within section 15's budgets, with the disk that segments take measured and written down;
 - and an upgrade changes nothing.
 
-*Status:* planned in detail (D153). Its first phase, live channels as HLS as their sources send them, is in place (v1.4.0-alpha.1).
+*Status:* planned in detail (D153). Its first phase, live channels as HLS as their sources send them, is in place (v1.4.0-alpha.1), and so is its second, HLS of live transcodes (v1.4.0-alpha.2).
 
 ---
 
@@ -867,6 +868,7 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 - v1.3.0 was not published; M10 is released with M11 in v1.4.0, whose pre-releases hold both (D152).
 - M11 gives players that ask HLS of live channels, as sent and as transcodes, cut by Overscan at keyframes from a channel's one stream into its buffer on disk; a channel's HLS players share one connection; an account's *HLS for players* starts off; films stay on D151's MPEG-TS (D153).
 - An account's *HLS for players* gives its players a playlist of one rendition for a channel's `.m3u8`, and `.m3u8` addresses in playlists asked for with `output=m3u8`; a player's HLS is a screen on the channel's shared tuner, active while it asks (D154).
+- A channel that the hub transcodes for its HLS players is cut from one transcode for each channel and profile, which they share and which ends with the last of them (D155).
 - The reference client reads Overscan through the Xtream output, without a source type of Overscan's own (open question 2).
 - HDHomeRun emulation waits in the backlog (open question 6).
 

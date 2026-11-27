@@ -15,15 +15,17 @@ import (
 	"testing"
 )
 
-// M11's Done when (the plan, section 14), as far as its first phase goes,
-// walked end to end with this tool's fictional provider, whose channel
+// M11's Done when (the plan, section 14), as far as its first two phases
+// go, walked end to end with this tool's fictional provider, whose channel
 // sends a clip that ffmpeg makes, through an account's Xtream login and its
 // playlist: an account whose HLS for players is off gets every stream as
 // before; with it on, a channel whose source sends MPEG-TS plays as HLS,
 // from segments that start with the PAT and the PMT, that ffprobe reads as
 // the channel's pictures; two players of the channel's HLS take one
-// connection to the source while the shared tuner is off; no address shows
-// the source; and turning it off puts everything back.
+// connection to the source while the shared tuner is off; set always with a
+// profile, the channel reaches two more players in the profile's size
+// through one transcode and the same connection; no address shows the
+// source; and turning it off puts everything back.
 //
 // The rest is walked elsewhere: the playlist's rules and the cutting in
 // internal/hub's TestCutPlaylistRules and internal/hlscut's tests; ffmpeg
@@ -177,6 +179,43 @@ func TestHLSDoneWhen(t *testing.T) {
 	}
 	if cut != 2 {
 		t.Errorf("the streams: %+v", streams)
+	}
+
+	// A channel set always with a profile reaches its HLS players in the
+	// profile's size, through one transcode for both of them and the
+	// tuner's one connection (D155).
+	call("PATCH", "settings", map[string]any{"transcode_video": 1}, nil)
+	call("POST", "transcode-profiles", map[string]any{"name": "small", "max_lines": 576, "quality": "low"}, nil)
+	call("PATCH", fmt.Sprintf("lineup/channels/%d", hn), map[string]any{"transcode": map[string]any{"mode": "always", "profile": "small"}}, nil)
+	before = len(p.asked())
+	for i, agent := range []string{"VLC/3.0.20 LibVLC/3.0.20", "TiviMate/5.1.7"} {
+		resp, master := fetch(agent, xtream+".m3u8")
+		lines := strings.Split(strings.TrimSpace(string(master)), "\n")
+		if resp.StatusCode != http.StatusOK || len(lines) != 4 {
+			t.Fatalf("player %d's playlist of renditions, transcoded: %s %q", i, resp.Status, master)
+		}
+		resp, media := fetch(agent, base+lines[3])
+		if resp.StatusCode != http.StatusOK || !strings.Contains(string(media), "#EXT-X-TARGETDURATION:4\n") {
+			t.Fatalf("player %d's media playlist, transcoded: %s %q", i, resp.Status, media)
+		}
+		resp, seg := fetch(agent, base+strings.TrimSuffix(lines[3], "hls.m3u8")+"0.ts")
+		path := filepath.Join(t.TempDir(), "0.ts")
+		if err := os.WriteFile(path, seg, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		out, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+			"stream=codec_name,width,height", "-of", "csv=p=0", path).Output()
+		if first, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n"); resp.StatusCode != http.StatusOK || err != nil ||
+			first != "h264,1024,576" {
+			t.Errorf("player %d's first segment, transcoded: %s, %q, %v", i, resp.Status, out, err)
+		}
+	}
+	if n := len(p.asked()) - before; n != 0 {
+		t.Errorf("the transcoded HLS took %d more connections to the source", n)
+	}
+	waitLog(t, w.log, "a channel is transcoded once for its HLS players, which share it", "profile=small set_by=channel")
+	if b, _ := os.ReadFile(w.log); strings.Count(string(b), "a channel is transcoded once for its HLS players") != 1 {
+		t.Errorf("the log shows more than one transcode for the HLS players")
 	}
 
 	// Off again: the players' HLS ends, and .m3u8 is as before.

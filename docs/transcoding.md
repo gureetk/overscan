@@ -27,6 +27,8 @@ The narrowest setting wins: a channel's over its group's, and a group's over liv
 
 Every transcode takes one of a number at a time, and a stream that finds none free plays as its source sends it; the log says so. In software, that number is *Settings* → *Transcode video on this server*, which films and series share. On graphics, it is the *Graphics* card's.
 
+Players that get a channel as HLS ([outputs.md](outputs.md), *HLS for players*) share its transcode: one for each channel and profile, however many of them watch, which takes one of the number at a time and ends with its last player. Each box and each player that gets one stream has a transcode of its own (D155).
+
 ## Films and series
 
 Films and series as a whole (*Settings* → *Transcoding* → *Films and series*), a shelf (its *Transcoding…* button on *Movies* or *Series*) and a title (tick it, then *Transcoding* in the bar) are each:

@@ -20,6 +20,7 @@ import (
 	"overscan.gureet.ca/internal/hlscut"
 	"overscan.gureet.ca/internal/mpegts"
 	"overscan.gureet.ca/internal/store"
+	"overscan.gureet.ca/internal/streamprofile"
 )
 
 // testFeed returns a feed that no tuner feeds, for its playlist alone.
@@ -145,11 +146,16 @@ func TestCutPlaylistRules(t *testing.T) {
 // gop pictures at 25 a second, and AAC sound, as MPEG-TS, as a channel's
 // source would send it.
 func liveClip(t *testing.T, ffmpeg string, seconds, gop int) []byte {
+	return liveClipOf(t, ffmpeg, "320x180", seconds, gop)
+}
+
+// liveClipOf makes a clip as liveClip does, of pictures of the given size.
+func liveClipOf(t *testing.T, ffmpeg, size string, seconds, gop int) []byte {
 	t.Helper()
 	length := strconv.Itoa(seconds)
 	path := filepath.Join(t.TempDir(), "clip.ts")
 	cmd := exec.Command(ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin",
-		"-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25:duration="+length,
+		"-f", "lavfi", "-i", "testsrc2=size="+size+":rate=25:duration="+length,
 		"-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration="+length,
 		"-c:v", "libx264", "-preset", "ultrafast", "-g", strconv.Itoa(gop), "-keyint_min", strconv.Itoa(gop),
 		"-sc_threshold", "0", "-bf", "2", "-c:a", "aac", "-ac", "2", "-f", "mpegts", path)
@@ -436,5 +442,175 @@ func TestCutHLSLimits(t *testing.T) {
 		if link := h.hub.CutLink(vlc, e); link != "" {
 			t.Errorf("%s gets a link: %s", name, link)
 		}
+	}
+}
+
+// segmentVideo fetches a segment of a session's HLS and says what its
+// video is, as ffprobe reads it, such as "h264 1024x576".
+func segmentVideo(t *testing.T, ffprobe, address string) string {
+	t.Helper()
+	resp := get(t, address)
+	data, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("%s: %s, %v", address, resp.Status, err)
+	}
+	path := filepath.Join(t.TempDir(), "segment.ts")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command(ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name,width,height",
+		"-of", "csv=p=0", path).Output()
+	if err != nil {
+		t.Fatalf("ffprobe: %v", err)
+	}
+	f := strings.Split(strings.Fields(string(out))[0], ",")
+	if len(f) != 3 {
+		return string(out)
+	}
+	return f[0] + " " + f[1] + "x" + f[2]
+}
+
+// HLS of a transcode (D155): a channel set always with a profile reaches
+// its HLS players in the profile's size, through one transcode and one
+// connection for both of them, in 4-second segments since the transcode
+// starts a picture every 2 s; the Overview shows each player's HLS as
+// transcoded; and once they stop asking, the transcode ends and gives its
+// slot back.
+func TestCutHLSTranscode(t *testing.T) {
+	ffmpeg, ffprobe := realFFmpeg(t), realFFprobe(t)
+	// Room for two connections: the HLS players' one, and a .ts player's
+	// below, which the shared tuner, off, does not share.
+	h, u := cutHarness(t, 2, liveClipOf(t, ffmpeg, "1280x720", 30, 75))
+	h.hub.UseFFmpeg(ffmpeg, RepairSet)
+	h.hub.UseEncoder(Encoder{H264: true})
+	ctx := context.Background()
+	st := h.hub.store
+	if err := st.SetTranscodes(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+	small, err := streamprofile.Check(streamprofile.Profile{Name: "small", MaxLines: 576, Quality: streamprofile.Low})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddTranscodeProfile(ctx, small); err != nil {
+		t.Fatal(err)
+	}
+	entry := h.entries["clip"]
+	if err := st.SetEntriesTranscode(ctx, entry.LineupID, []int64{entry.EntryID}, store.Transcode{Profile: "small"}); err != nil {
+		t.Fatal(err)
+	}
+	if entry, err = st.PlayableEntry(ctx, entry.EntryID); err != nil {
+		t.Fatal(err)
+	}
+
+	var renditions []string
+	for _, agent := range []string{"VLC/3.0.21 LibVLC/3.0.21", "TiviMate/5.1.6"} {
+		player := h.hub.Player(store.HouseholdAccount, "xtream", "192.0.2.10", agent)
+		link := h.hub.CutLink(player, entry)
+		if link == "" {
+			t.Fatal("a channel that the hub transcodes gets no HLS")
+		}
+		uri, _ := master(t, get(t, h.front.URL+link))
+		renditions = append(renditions, uri)
+	}
+	var p mediaOf
+	waitFor(t, "three segments", func() bool {
+		p = readMedia(t, body(t, get(t, h.front.URL+renditions[0])))
+		return len(p.names) >= 3
+	})
+	if p.target != 4 {
+		t.Errorf("target duration %d", p.target)
+	}
+	for i, l := range p.lengths[:len(p.lengths)-1] {
+		if l < 3.99 || l > 4.01 {
+			t.Errorf("segment %d lasts %vs", i, l)
+		}
+	}
+	for i, uri := range renditions {
+		base := h.front.URL + strings.TrimSuffix(uri, "hls.m3u8")
+		if got := segmentVideo(t, ffprobe, base+"0.ts"); got != "h264 1024x576" {
+			t.Errorf("player %d's segment: %s", i, got)
+		}
+	}
+	if reqs, _ := u.counts(); reqs != 1 {
+		t.Errorf("%d requests to the source", reqs)
+	}
+	logs := h.logs.String()
+	if n := strings.Count(logs, `msg="transcoding a stream with ffmpeg"`); n != 1 {
+		t.Errorf("%d transcodes in the log:\n%s", n, logs)
+	}
+	if !strings.Contains(logs, "a channel is transcoded once for its HLS players, which share it") ||
+		!strings.Contains(logs, "profile=small set_by=channel") {
+		t.Errorf("the log:\n%s", logs)
+	}
+	streams := h.hub.Streams()
+	if len(streams) != 2 {
+		t.Fatalf("streams %+v", streams)
+	}
+	for _, s := range streams {
+		if !s.Cut || !s.Transcoded || s.Profile != "small" || s.TranscodedBy != TranscodedByOverscan {
+			t.Errorf("stream %+v", s)
+		}
+	}
+
+	// A player of the same channel through its .ts address finds the one
+	// transcode at a time taken, and gets it as its source sends it.
+	box := h.hub.Player(store.HouseholdAccount, "m3u", "192.0.2.11", "Kodi/21.1")
+	resp := get(t, h.front.URL+h.hub.Link(box, entry))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("the .ts player: %s", resp.Status)
+	}
+	readPackets(t, resp.Body, 4)
+	resp.Body.Close()
+	waitFor(t, "the cap's line", func() bool {
+		return strings.Contains(h.logs.String(), "the server transcodes as many streams as it may; this one plays as its source sends it")
+	})
+
+	// The players stop asking: the transcode ends and gives back its slot.
+	h.advance(idleTimeout + time.Second)
+	h.hub.lookup(0)
+	waitFor(t, "the transcode to end", func() bool {
+		h.hub.encodeMu.Lock()
+		defer h.hub.encodeMu.Unlock()
+		return len(h.hub.encodes) == 0
+	})
+	if !strings.Contains(h.logs.String(), `msg="a channel's transcode for HLS players ended" channel=clip`) {
+		t.Errorf("the log:\n%s", h.logs.String())
+	}
+}
+
+// A player whose channel cannot be transcoded now, here with transcoding
+// off, gets its HLS as the source sends it, from the same feed as the
+// players of the channel as sent (D155).
+func TestCutHLSTranscodeOff(t *testing.T) {
+	ffmpeg := realFFmpeg(t)
+	h, _ := cutHarness(t, 1, liveClip(t, ffmpeg, 12, 50))
+	h.hub.UseFFmpeg(ffmpeg, RepairSet)
+	h.hub.UseEncoder(Encoder{H264: true})
+	ctx := context.Background()
+	st := h.hub.store
+	if err := st.SetAccountOutputProfile(ctx, store.HouseholdAccount, "h264-720p"); err != nil {
+		t.Fatal(err)
+	}
+	entry := h.entries["clip"]
+	player := h.hub.Player(store.HouseholdAccount, "xtream", "192.0.2.10", "VLC/3.0.21 LibVLC/3.0.21")
+	uri, _ := master(t, get(t, h.front.URL+h.hub.CutLink(player, entry)))
+	if p := readMedia(t, body(t, get(t, h.front.URL+uri))); len(p.names) < hlsFirst {
+		t.Fatalf("media playlist %+v", p)
+	}
+	tuner := h.tunerOf("clip")
+	h.hub.mu.Lock()
+	feeds := len(tuner.feeds)
+	_, asSent := tuner.feeds[""]
+	h.hub.mu.Unlock()
+	if feeds != 1 || !asSent {
+		t.Errorf("the tuner's feeds: %d, as sent %v", feeds, asSent)
+	}
+	if !strings.Contains(h.logs.String(), "transcoding is off; it plays as its source sends it") {
+		t.Errorf("the log:\n%s", h.logs.String())
+	}
+	if s := h.hub.Streams(); len(s) != 1 || s[0].Transcoded {
+		t.Errorf("streams %+v", s)
 	}
 }
