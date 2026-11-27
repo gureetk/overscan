@@ -66,6 +66,15 @@ Transcoding (D73, D110, D146) is written from public documentation only:
 
 Other sources, such as Mesa's documentation for AMD graphics, are added here before they are used. No other project's transcoding code is read: no media server's, stream proxy's or transcoding tool's. How Overscan chooses what to transcode, its profiles and their mapping to ffmpeg's options are its own.
 
+HLS output (D153) is written from public specifications and documentation only:
+- RFC 8216, *HTTP Live Streaming*, for playlists, segments, and what a server and a player do with a live playlist;
+- its revision in progress at the IETF, draft-pantos-hls-rfc8216bis, where it changes those rules;
+- Apple's public *HLS Authoring Specification for Apple Devices*, for the segments and playlists that players expect;
+- ffmpeg's manual of its `hls` and `segment` muxers and of its HLS demuxer, which tests use to play Overscan's HLS as a player would;
+- the standards for MPEG-TS, H.264 and HEVC (ITU-T H.222.0, H.264 and H.265), for the PAT and the PMT and for finding keyframes.
+
+No other project's HLS or segmenter code is read: no media server's, stream proxy's, tuner manager's or playlist manager's. How Overscan cuts a stream into segments and serves them is its own.
+
 The matrix in [compatibility.md](compatibility.md) says how to connect each app from its public documentation, and what each did from tests with the app, which are **Observed**. No app's code is read.
 
 ## Contributor rules

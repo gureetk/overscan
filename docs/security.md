@@ -183,7 +183,7 @@ What M9 added was checked against the model above before v1.2.0: guides of the h
 
 ## The review in M10
 
-What M10 added was checked against the model above before v1.3.0: profiles of the administrator's and what is transcoded of live TV, a group and a channel (D147), the graphics through VA-API (D148), the packaging that lets the service reach them (D149), and what is transcoded of films and series (D150). What changed:
+What M10 added was checked against the model above in its candidate, v1.3.0-rc.1: profiles of the administrator's and what is transcoded of live TV, a group and a channel (D147), the graphics through VA-API (D148), the packaging that lets the service reach them (D149), and what is transcoded of films and series (D150). What changed:
 
 - **Who may call each route.** Every new page and API path, the profiles, the graphics' card and its test, and the transcoding of shelves and titles, is in the route table by the rule for the admin's, and the tests that walk the routers refuse it without a session, and a change without the session's CSRF token or from another site.
 - **Profiles on ffmpeg's command line.** A profile is a codec, a largest size, a quality, a frame rate and a sound, each one of a fixed list, a highest bit rate between bounds, and two switches, checked before it is kept, in the admin, the API and lineup files alike. ffmpeg's arguments are built from those values and from fixed strings, as a list, never a shell; the profile's name, which the administrator chooses, reaches only the log and the pages. Its filters for the graphics are fixed strings with the profile's numbers.

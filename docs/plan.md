@@ -611,7 +611,7 @@ A household chooses what Overscan transcodes and how, for live TV and for films 
 
   **In place:** [`security.md`](security.md)'s *The review in M10*; `TestTranscodingDoneWhen`, which walks the *Done when* with ffmpeg's clips through every output, and names the tests that walk the rest; the upgrade test's household with every M10 setting; the soak's `-transcode`, with ffmpeg's own memory and processor measured, as a weekly job of the *Soak* workflow; the measures of each kind of transcode in software in [`testing.md`](testing.md), *Baseline*; and the image's size, as the image check prints it. The measures on the graphics come from the maintainer's server with Intel graphics.
 
-  Then v1.3.0-rc.N, and v1.3.0 on the maintainer's word.
+  Then v1.3.0-rc.N. v1.3.0 was not published: M10 goes into a full release with M11, as v1.4.0 (D152).
 
 *Done when*, with fictional sources and clips that ffmpeg makes:
 - a household that sets nothing new gets every stream as before;
@@ -626,11 +626,52 @@ A household chooses what Overscan transcodes and how, for live TV and for films 
 - memory stays within section 15's budgets, with each kind of transcode's ffmpeg measured and written down;
 - and an upgrade changes nothing.
 
-*Status:* planned in detail (D146). Its first phase, profiles and what is transcoded for live TV in software, is in place (v1.3.0-alpha.1), and so are its second, the graphics through VA-API (v1.3.0-alpha.2), its third, the packaging that lets the service reach them (v1.3.0-alpha.3), its fourth, films and series (v1.3.0-alpha.4), and its hardening, in the candidate v1.3.0-rc.1; rc.2 adds films set always for players and Stalker clients (D151).
+*Status:* planned in detail (D146). Its first phase, profiles and what is transcoded for live TV in software, is in place (v1.3.0-alpha.1), and so are its second, the graphics through VA-API (v1.3.0-alpha.2), its third, the packaging that lets the service reach them (v1.3.0-alpha.3), its fourth, films and series (v1.3.0-alpha.4), and its hardening, in the candidate v1.3.0-rc.1; rc.2 adds films set always for players and Stalker clients (D151). v1.3.0 was not published: M10 is released with M11 in v1.4.0, and every pre-release of 1.4 holds it (D152).
 
 ### M11: HLS output (M)
-Planned in detail once M10 ends. HLS from the hub for players that ask for it: films and episodes that ffmpeg makes, so that players that seek by byte ranges can seek in them, and live channels as HLS. It replaces D110's line that HLS output waits in the backlog.
-*Status:* planned (D132).
+Players that ask for HLS get it from the hub, for live channels as their sources send them and as transcodes, and the HLS players of a channel share one connection to its source (D153). It replaces D110's line that HLS output waits in the backlog. Films and episodes stay on D151's MPEG-TS at a constant rate, in which players already seek by bytes; HLS for them waits in the backlog until a player needs it. Boxes and Stalker clients stay on MPEG-TS. Each phase ends with a pre-release of v1.4.0 (`v1.4.0-alpha.N`, then `-rc.N`). v1.3.0 was not published, so every build of 1.4 holds all of M10, and v1.4.0 is the first full release with M10 and M11 (D152). What is new starts off: until an account's *HLS for players* is turned on, its players get what they got before, and the Xtream output's `ts`, its `.m3u8` for channels whose sources send HLS, and the playlist's links stay as they are (D115). In this order:
+- M11's order and *Done when* (D152, D153).
+- Live channels as HLS, as their sources send them.
+  - **Who gets it.** Each account has *HLS for players*, off at first. With it on:
+    - the Xtream login's `allowed_output_formats` offers `m3u8` after `ts`;
+    - `/live/<user>/<pass>/<id>.m3u8` plays every channel as HLS;
+    - `get.php` with `output=m3u8`, and the account's own playlist with `?output=m3u8`, give `.m3u8` links.
+
+    With it off, all of this is as before. Boxes, Stalker clients, past programmes and radio stations stay on MPEG-TS.
+  - **One connection a channel.** A channel's HLS is cut from its one stream as the shared tuner reads it (D93): after the repeat filter and repair, into the buffer on disk that every reader of the channel shares. Its HLS players share that one connection even while the shared tuner is off for screens, and the switch's text says so. While the shared tuner is on, the channel's MPEG-TS screens share it too. The connection ends when the last player stops asking, after a grace, as a box's does. A channel whose source sends HLS keeps today's relay of the source's playlist (D61, D104), one session for each player, as its MPEG-TS stream has, since the shared tuner does not carry such a source.
+  - **Segments.** Overscan cuts the stream itself, at keyframes, without ffmpeg and without re-encoding:
+    - a segment ends at the first keyframe at least 4 s after it starts, so a source's segments vary with where it puts its keyframes;
+    - the playlist's target duration comes from the first segments, between 4 and 10 s, and a segment that reaches it without a keyframe ends there;
+    - each segment starts with the stream's PAT and PMT;
+    - segments are stretches of the buffer on disk, so they cost the server no memory;
+    - the playlist lists the last six segments, about 24 s, and the buffer keeps each for as long again after it leaves the playlist (RFC 8216, section 6.2.2);
+    - a player's first playlist waits until the channel has its first two segments.
+  - **Addresses and sessions.** A player's `.m3u8` at an output's address is answered with a playlist of one rendition. It points to a session of the player's own, under `/live/<token>/`, which holds its playlist and its segments.
+    - The token is the hub's, signed and bound to the player's account (D103, D104), and names no source.
+    - The session lasts while the player asks for its playlist or its segments, and ends 30 s after it stops.
+    - It counts as one stream against the account's limit (D102), and a player that changes channel replaces its own session at a full source or account (D36).
+- HLS of live transcodes. A channel that its setting (D147), or the player's account's *Live streams* profile (D110), transcodes is HLS of one transcode for each channel and profile, shared by every player that gets that profile.
+  - It runs on the graphics or in software, within their numbers at a time (D148), and counts once against them however many players watch.
+  - Its segments are 4 s, since a transcode starts a picture every 2 s.
+  - A transcode that cannot start gives the channel's players its HLS as its source sends it, as MPEG-TS screens get the stream as sent.
+  - One rendition for each stream: an adaptive ladder of several transcodes of a channel stays in the backlog.
+- The milestone's hardening:
+  - the security checklist on what is new: the playlist's and the segments' addresses, tokens and sessions, and what a player can make the hub keep;
+  - docs, upgrade tests with M11's settings, and a test that walks the *Done when*;
+  - a soak that serves HLS, with the server's memory, the disk that segments take and the processor measured and written in [`testing.md`](testing.md).
+
+  Then v1.4.0-rc.N, whose steps test M10's essentials too, and v1.4.0 on the maintainer's word.
+
+*Done when*, with fictional sources and clips that ffmpeg makes:
+- an account whose *HLS for players* is off gets every stream as before, through every output;
+- with it on, a channel whose source sends MPEG-TS plays as HLS in a player that reads the playlist (ffmpeg stands in for one), from segments that start at keyframes with the PAT and the PMT, in a playlist that keeps to RFC 8216's rules for live playlists;
+- several players of one channel's HLS take one connection to its source, and so do its MPEG-TS screens while the shared tuner is on; it ends once the last of them stops; and no channel takes more connections than its source allows;
+- a channel transcoded always reaches HLS players in its profile, through one transcode for all of them;
+- no playlist or segment address shows a source's address or login; a session's token works only for its own account and ends with its session; and a player that stops asking leaves no connection or segments behind;
+- memory stays within section 15's budgets, with the disk that segments take measured and written down;
+- and an upgrade changes nothing.
+
+*Status:* planned in detail (D153). Nothing of it is built yet.
 
 ---
 
@@ -655,6 +696,7 @@ Planned in detail once M10 ends. HLS from the hub for players that ask for it: f
 - Proxying a few streams: a few percent of one core.
 - Setting `GOMEMLIMIT` as a guard.
 - Transcoding: each transcode is an ffmpeg process beside the server, outside its own budget but on the household's machine. M10 measures the memory, processor and speed of each kind, in software and on a GPU, and writes them in [`testing.md`](testing.md) (D146).
+- HLS output: segments are stretches of a channel's buffer on disk, not copies in memory, so the server's own memory grows only by a short list of segments for each channel. M11 measures that memory and the disk that segments take, and writes them in [`testing.md`](testing.md) (D153).
 - MAG UI: see section 9.
 
 ---
@@ -821,6 +863,8 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 - The service reaches the graphics only where the administrator chooses it, through a drop-in that opens the DRM devices and the `render` group alone; the package suggests the VA-API drivers, and the image holds the free ones (D149).
 - Films and series as a whole, a shelf and a title are transcoded for the boxes as needed, always with a profile, or never, the narrowest winning; *always* and D73's own transcodes go on the graphics where they make the codec, else in software; *never* keeps Overscan's own transcodes from the video (D150).
 - A title set always reaches players and Stalker clients transcoded at a constant rate, which they seek in by bytes (D151).
+- v1.3.0 was not published; M10 is released with M11 in v1.4.0, whose pre-releases hold both (D152).
+- M11 gives players that ask HLS of live channels, as sent and as transcodes, cut by Overscan at keyframes from a channel's one stream into its buffer on disk; a channel's HLS players share one connection; an account's *HLS for players* starts off; films stay on D151's MPEG-TS (D153).
 - The reference client reads Overscan through the Xtream output, without a source type of Overscan's own (open question 2).
 - HDHomeRun emulation waits in the backlog (open question 6).
 
@@ -893,7 +937,7 @@ Dispatcharr and m3u-editor already import M3U and Xtream and publish M3U, XMLTV,
 
 **First: M8 to M11** (section 14, D132): playlists, then guides and pictures, then finer control over transcoding with hardware encoders and decoders, then HLS output.
 
-Then, in no set order: radio and audio clubs · weather and widgets · app launcher · DVB tuner sources · HDHomeRun emulation · pseudo-channels from libraries (or via ErsatzTV or Tunarr) · multi-room resume · recordings sharing · `/metrics` and Prometheus dashboards · a script for the Proxmox host that makes the container · plugin system · translations · a native integration with the reference client · Ministra-style management REST (moved from M5) · a web player in the admin for previewing streams · Schedules Direct as a guide source, with the user's own subscription · NVIDIA graphics for transcoding · moving a stream that plays to a backup without the player asking again.
+Then, in no set order: radio and audio clubs · weather and widgets · app launcher · DVB tuner sources · HDHomeRun emulation · pseudo-channels from libraries (or via ErsatzTV or Tunarr) · multi-room resume · recordings sharing · `/metrics` and Prometheus dashboards · a script for the Proxmox host that makes the container · plugin system · translations · a native integration with the reference client · Ministra-style management REST (moved from M5) · a web player in the admin for previewing streams · Schedules Direct as a guide source, with the user's own subscription · NVIDIA graphics for transcoding · moving a stream that plays to a backup without the player asking again · HLS for films and episodes, which players seek in by time at a variable rate, beside D151's MPEG-TS at a constant rate · pausing and going back in a live channel over HLS, with a playlist over the pause buffer (D92) · an adaptive ladder of HLS renditions of one channel · HLS of channels whose sources send HLS through the shared tuner, so that their players share one connection too (D153).
 
 ---
 
