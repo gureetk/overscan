@@ -559,8 +559,14 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	vod, err := a.store.VODTranscode(ctx)
+	if err != nil {
+		return "", err
+	}
 	fmt.Fprintf(&b, "Transcoding (D147): profiles made: %d; live TV: %s; groups always: %d, never: %d; channels always: %d, never: %d\n",
 		tc.Profiles, live.Mode(), tc.GroupsAlways, tc.GroupsNever, tc.ChannelsAlways, tc.ChannelsNever)
+	fmt.Fprintf(&b, "Transcoding of films and series (D150): all: %s; shelves always: %d, never: %d; titles always: %d, never: %d\n",
+		vod.Mode(), tc.ShelvesAlways, tc.ShelvesNever, tc.TitlesAlways, tc.TitlesNever)
 	fmt.Fprintf(&b, "Outputs for players: on: %v; anywhere: %v; playlists on: %d; Xtream logins on: %d\n",
 		outputsOn, anywhere, playlists, xtreams)
 	fmt.Fprintf(&b, "Profiles: %d, %d with a PIN to switch to them\n", len(profiles), withPIN)

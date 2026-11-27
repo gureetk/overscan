@@ -44,8 +44,9 @@ type features struct {
 	// transcoding is v1.3.0's, from its first pre-release on: profiles of
 	// the administrator's, and what is transcoded of live TV, a group and
 	// a channel; graphics, from its second, how many streams the graphics
-	// transcode at a time.
-	transcoding, graphics bool
+	// transcode at a time; films, from its fourth, what is transcoded of
+	// films and series, a shelf and a title.
+	transcoding, graphics, films bool
 }
 
 func featuresOf(version string) features {
@@ -73,7 +74,7 @@ func featuresOf(version string) features {
 	}
 	return features{households: at(4), hub: at(5), playlists: from(1, 1), guides: from(1, 2), handGuides: since(2), logos: since(3),
 		placeholders: since(4), pictures: since(5), moves: since(6), transcoding: since13(1),
-		graphics: since13(2)}
+		graphics: since13(2), films: since13(4)}
 }
 
 // household holds what the setup made, by name, so that the probes can
@@ -295,6 +296,38 @@ func (h *household) setUpTranscoding(a *admin) error {
 		// One stream at a time on the graphics, rather than the default.
 		if err := a.call("PATCH", "settings", map[string]any{"gpu_transcodes": 1}, nil); err != nil {
 			return fmt.Errorf("PATCH settings: %w", err)
+		}
+	}
+	if h.f.films {
+		return h.setUpFilmsTranscoding(a)
+	}
+	return nil
+}
+
+// setUpFilmsTranscoding says what is transcoded of films and series
+// (D150): all of them always with the profile, the first shelf of films
+// never, Quiet Harbour always with a fixed profile, and Coastline never.
+func (h *household) setUpFilmsTranscoding(a *admin) error {
+	var shelves struct {
+		Shelves []idName `json:"shelves"`
+	}
+	if err := a.call("GET", "library/movies/shelves", nil, &shelves); err != nil {
+		return err
+	}
+	if len(shelves.Shelves) == 0 {
+		return errors.New("the admin lists no shelf of films")
+	}
+	for _, c := range []struct {
+		path string
+		body any
+	}{
+		{"settings", map[string]any{"vod_transcode": map[string]any{"mode": "always", "profile": "kitchen"}}},
+		{fmt.Sprintf("library/movies/shelves/%d", shelves.Shelves[0].ID), map[string]any{"transcode": map[string]any{"mode": "never"}}},
+		{fmt.Sprintf("library/titles/%d", h.films["Quiet Harbour"]), map[string]any{"transcode": map[string]any{"mode": "always", "profile": "h264-720p"}}},
+		{fmt.Sprintf("library/titles/%d", h.films["Coastline"]), map[string]any{"transcode": map[string]any{"mode": "never"}}},
+	} {
+		if err := a.call("PATCH", c.path, c.body, nil); err != nil {
+			return fmt.Errorf("PATCH %s: %w", c.path, err)
 		}
 	}
 	return nil

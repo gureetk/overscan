@@ -73,6 +73,8 @@ What to check when something goes wrong, by what you see. [guide.md](guide.md) s
 
 **A film does not play, or plays without sound or picture.** The box's *Settings* → *Playback Check* learns what the box plays, and the admin's *Settings* → *Converting and transcoding* says what may go through ffmpeg. The log says whether ffmpeg and ffprobe were found as the server started. *The server is transcoding as many films as it may at once.* means that the number set there is reached.
 
+**A film is transcoded, or is not, against what its setting says.** The log says why as it starts, with `set_by`: the title, its shelf, or films and series. `which is set never to be transcoded, so it plays as it is` means that one of them says never, though the box may not play the video. `cannot transcode with its profile now; it is transcoded as needed` means that transcoding in software is off and the graphics cannot make the profile's codec. `ffmpeg could not transcode a title on the graphics` gives ffmpeg's last words, and what takes over. Players and Stalker clients get films as their sources send them, whatever the settings (D150).
+
 ## Players
 
 **A player gets *404 page not found* for its playlist or login.** The outputs are off: *Accounts* → *Outputs for players*, and the account's own *Playlist and guide* or its login. New addresses from *Make new addresses* replace the old ones, which then answer 404.

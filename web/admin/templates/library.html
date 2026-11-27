@@ -83,7 +83,10 @@
       {{- range .Data.Titles}}
       <tr id="title-{{.ID}}"{{if .Hidden}} class="is-hidden"{{end}}>
         <td class="tick"><input type="checkbox" name="ids" value="{{.ID}}" form="bulk" aria-label="Tick {{.Name}}"></td>
-        <td class="name">{{.Name}}{{if and (not $.Data.Selected) .Shelf}}<div class="note">{{.Shelf}}</div>{{end}}</td>
+        {{- $shelf := and (not $.Data.Selected) .Shelf}}
+        <td class="name">{{.Name}}
+          {{- if $shelf}}<div class="note">{{.Shelf}}{{if .Year}}<span class="year-note"> · {{.Year}}</span>{{end}}</div>
+          {{- else if .Year}}<div class="note year-note">{{.Year}}</div>{{end}}</td>
         <td class="year">{{if .Year}}{{.Year}}{{else}}<span class="muted">–</span>{{end}}</td>
         <td class="group">{{.Source}}</td>
         <td class="state"><div class="chips">
@@ -92,6 +95,7 @@
           {{- if .Own}}<span class="badge locked" title="It needs the parental PIN to play">{{template "i-lock"}}Locked</span>
           {{- else if and .Locked (not $.Data.Selected) (not $adultLock)}}<span class="badge locked" title="Its shelf is locked: it needs the parental PIN to play">{{template "i-lock"}}Locked</span>{{end}}
           {{- if .Adult}}<span class="badge{{if $adultLock}} locked{{end}}" title="{{$.Data.AdultNote}}">{{if $adultLock}}{{template "i-lock"}}{{else if eq $.Data.Adult "hide"}}{{template "i-eye-off"}}{{end}}For adults</span>{{end}}
+          {{- with $.Data.TitleTranscodeBadge .}}<span class="badge{{if ne . "Not transcoded"}} accent{{end}}" title="Whether the boxes get it transcoded, whatever its shelf says">{{.}}</span>{{end}}
         </div></td>
       </tr>
       {{- end}}
@@ -102,7 +106,7 @@
       <span>{{.Data.First}}–{{.Data.Last}} of {{.Data.Total}}</span>
       {{- with .Data.Prev}}<a href="{{$.Data.View.URL .}}">Previous</a>{{end}}
       {{- with .Data.Next}}<a href="{{$.Data.View.URL .}}">Next</a>{{end}}
-      <span class="tick-hint">Tick titles to hide, show, lock or unlock several at once.</span>
+      <span class="tick-hint">Tick titles to hide, show, lock or unlock several at once, or to say whether they are transcoded.</span>
     </nav>
     <form id="bulk" method="post" action="{{.Data.View.Path}}/titles" hx-post="{{.Data.View.Path}}/titles" hx-target="#library-main" hx-select="#library-main" hx-swap="outerHTML" class="bulk" role="toolbar" aria-label="Ticked titles">
       <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
@@ -112,11 +116,22 @@
       <button type="submit" name="action" value="show" class="phone-hide">{{template "i-eye"}}Show</button>
       <button type="submit" name="action" value="lock" title="They need the parental PIN to play">Lock</button>
       <button type="submit" name="action" value="unlock" class="phone-hide" title="Unless their shelf is locked">Unlock</button>
-      <details class="popover up phone-only">
+      <details class="popover up">
         <summary class="button">More{{template "i-chevron-up"}}</summary>
-        <div class="menu">
+        <div class="menu form-menu wide">
           <button type="submit" name="action" value="show" class="phone-only">Show</button>
           <button type="submit" name="action" value="unlock" class="phone-only" title="Unless their shelf is locked">Unlock</button>
+          <hr class="phone-only">
+          <p class="menu-label">Transcoding</p>
+          <div class="row-form">
+            <select name="transcode" aria-label="Whether the ticked titles are transcoded">
+              {{- range .Data.TitleTranscodeOptions}}
+              <option value="{{.Value}}">{{.Label}}</option>
+              {{- end}}
+            </select>
+            <button type="submit" name="action" value="transcode" class="primary">Set</button>
+          </div>
+          <p class="hint">Never sends their video to the boxes as their sources send it, even where a box may not play it; always transcodes them with the profile, whether or not a box could play them as they are. A series' episodes follow it. <a href="/admin/transcoding">Transcoding</a> has the profiles.</p>
         </div>
       </details>
       <button type="reset" class="icon untick" aria-label="Untick all" title="Untick all">{{template "i-close"}}</button>
@@ -177,6 +192,24 @@
       <input type="hidden" name="back" value="{{.D.View.Back}}">
       <button type="submit" class="small"{{if not .S.Locked}} title="Its titles need the parental PIN to play"{{end}}>{{template "i-lock"}}{{if .S.Locked}}Unlock the shelf{{else}}Lock the shelf{{end}}</button>
     </form>
+    {{- $tt := .D.ShelfTranscodeText .S}}
+    <details class="popover">
+      <summary class="button small{{if $tt}} accent{{end}}" title="Whether the shelf's titles are transcoded">{{if $tt}}{{$tt}}{{else}}Transcoding…{{end}}</summary>
+      <div class="menu form-menu wide">
+        <form method="post" action="{{.D.View.Path}}/shelves/{{.S.ID}}/transcode" hx-post="{{.D.View.Path}}/shelves/{{.S.ID}}/transcode" hx-target="#library-main" hx-select="#library-main" hx-swap="outerHTML" class="row-form">
+          <input type="hidden" name="csrf" value="{{.CSRF}}">
+          <input type="hidden" name="back" value="{{.D.View.Back}}">
+          {{- $v := .D.ShelfTranscodeValue .S}}
+          <select name="transcode" aria-label="Whether the shelf's titles are transcoded">
+            {{- range .D.ShelfTranscodeOptions}}
+            <option value="{{.Value}}"{{if eq .Value $v}} selected{{end}}>{{.Label}}</option>
+            {{- end}}
+          </select>
+          <button type="submit" class="primary">Save</button>
+        </form>
+        <p class="hint">For the shelf's titles that say nothing of their own. Never sends their video to the boxes as their sources send it; always transcodes them with the profile, whether or not a box could play them as they are. <a href="/admin/transcoding">Transcoding</a> has the profiles.</p>
+      </div>
+    </details>
   </div>
 </div>
 {{end}}

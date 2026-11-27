@@ -46,6 +46,9 @@ type LibraryShelf struct {
 	Hidden       bool // the administrator hid it
 	Locked       bool // the administrator locked it, and every title on it (D85)
 	Placed       bool // the administrator put it in a place of its own
+	// Transcode is what the administrator set of its titles' transcoding
+	// (D150).
+	Transcode Transcode
 }
 
 // Renamed reports whether the administrator gave the shelf a name.
@@ -62,11 +65,11 @@ func (s *Store) LibraryShelves(ctx context.Context, kind string) ([]LibraryShelf
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, own, COALESCE(given, own), srcs, n, hid, total, portal, off, lock, place FROM (
+		SELECT id, own, COALESCE(given, own), srcs, n, hid, total, portal, off, lock, place, tc FROM (
 			SELECT min(c.id) AS id, c.name AS own, max(ss.name) AS given, group_concat(DISTINCT c.source_id) AS srcs,
 				count(t.id) AS n, count(CASE WHEN t.hidden = 1 THEN 1 END) AS hid, -1 AS total, 0 AS portal,
 				COALESCE(max(ss.hidden), 0) AS off, COALESCE(max(ss.locked), 0) AS lock, max(ss.position) AS place,
-				min(c.source_id) AS src, min(c.position) AS pos
+				max(ss.transcode) AS tc, min(c.source_id) AS src, min(c.position) AS pos
 			FROM library_categories c
 				JOIN titles t ON t.category_id = c.id
 				JOIN sources s ON s.id = t.source_id
@@ -77,7 +80,7 @@ func (s *Store) LibraryShelves(ctx context.Context, kind string) ([]LibraryShelf
 			SELECT c.id, c.name, ss.name, CAST(c.source_id AS TEXT),
 				(SELECT count(*) FROM titles t WHERE t.category_id = c.id AND t.missing_since IS NULL AND t.position > 0),
 				(SELECT count(*) FROM titles t WHERE t.category_id = c.id AND t.missing_since IS NULL AND t.position > 0 AND t.hidden = 1),
-				COALESCE(c.total, -1), 1, COALESCE(ss.hidden, 0), COALESCE(ss.locked, 0), ss.position, c.source_id, c.position
+				COALESCE(c.total, -1), 1, COALESCE(ss.hidden, 0), COALESCE(ss.locked, 0), ss.position, ss.transcode, c.source_id, c.position
 			FROM library_categories c JOIN sources s ON s.id = c.source_id
 				LEFT JOIN shelf_settings ss ON ss.kind = c.kind AND ss.shelf = 'category:' || c.id
 			WHERE c.kind = ? AND `+portalCategoryListed+` AND COALESCE(c.total, -1) <> 0)
@@ -91,11 +94,13 @@ func (s *Store) LibraryShelves(ctx context.Context, kind string) ([]LibraryShelf
 		var sh LibraryShelf
 		var srcs string
 		var place sql.NullInt64
+		var tc sql.NullString
 		if err := rows.Scan(&sh.ID, &sh.Own, &sh.Name, &srcs, &sh.Titles, &sh.HiddenTitles, &sh.Total, &sh.Portal,
-			&sh.Hidden, &sh.Locked, &place); err != nil {
+			&sh.Hidden, &sh.Locked, &place, &tc); err != nil {
 			return nil, fmt.Errorf("store: %s shelves for the admin: %w", kind, err)
 		}
 		sh.Placed = place.Valid
+		sh.Transcode = transcodeOf(tc)
 		sh.Key = shelfKey(sh.Portal, sh.ID, sh.Own)
 		for _, f := range strings.Split(srcs, ",") {
 			if id, err := strconv.ParseInt(f, 10, 64); err == nil {
@@ -169,7 +174,7 @@ func (s *Store) changeShelf(ctx context.Context, what, kind, key, set string, ar
 			return fmt.Errorf("store: %s: %w", what, err)
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM shelf_settings
-			WHERE kind = ? AND shelf = ? AND hidden = 0 AND locked = 0 AND name IS NULL AND position IS NULL`,
+			WHERE kind = ? AND shelf = ? AND hidden = 0 AND locked = 0 AND name IS NULL AND position IS NULL AND transcode IS NULL`,
 			kind, key); err != nil {
 			return fmt.Errorf("store: %s: %w", what, err)
 		}
@@ -226,7 +231,7 @@ func (s *Store) PlaceShelves(ctx context.Context, kind string, keys []string) er
 			}
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM shelf_settings
-			WHERE kind = ? AND hidden = 0 AND locked = 0 AND name IS NULL AND position IS NULL`, kind); err != nil {
+			WHERE kind = ? AND hidden = 0 AND locked = 0 AND name IS NULL AND position IS NULL AND transcode IS NULL`, kind); err != nil {
 			return fmt.Errorf("store: place shelves: %w", err)
 		}
 		return nil
@@ -243,15 +248,25 @@ type AdminTitle struct {
 	Hidden   bool   // the administrator hid it
 	Own      bool   // the administrator locked it, rather than its shelf (D85)
 	Adult    bool   // its source marks it for adults (D86)
+	// TranscodeOwn is what the administrator set of its transcoding, and
+	// Transcode what wins for it, which TranscodeBy says: its own, its
+	// shelf's, or films' and series' (D150).
+	TranscodeOwn Transcode
+	Transcode    Transcode
+	TranscodeBy  string
 }
 
 // adminTitleColumns are what the admin lists of a title beyond its row.
-const adminTitleColumns = `s.id, s.name, COALESCE(c.name, ''), t.hidden, t.locked, t.adult`
+const adminTitleColumns = `s.id, s.name, COALESCE(c.name, ''), t.hidden, t.locked, t.adult, t.transcode, ` +
+	shelfTranscodeSQL + `, ` + vodTranscodeSQL
 
 func scanAdminTitle(row rowScanner) (AdminTitle, error) {
 	var a AdminTitle
-	r, err := scanTitleRow(row, &a.SourceID, &a.Source, &a.Shelf, &a.Hidden, &a.Own, &a.Adult)
+	var own, shelf, all sql.NullString
+	r, err := scanTitleRow(row, &a.SourceID, &a.Source, &a.Shelf, &a.Hidden, &a.Own, &a.Adult, &own, &shelf, &all)
 	a.TitleRow = r
+	a.TranscodeOwn = transcodeOf(own)
+	a.Transcode, a.TranscodeBy = resolveTitleTranscode(own, shelf, all)
 	return a, err
 }
 

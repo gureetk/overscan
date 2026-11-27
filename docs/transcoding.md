@@ -1,6 +1,6 @@
 # Transcoding
 
-Overscan sends a channel as its source sends it, unless something says to make it anew: a device's or an account's output profile, or what the household sets on live TV, a group or a channel. This page says how to set that up, and how to let Overscan use the server's graphics. [guide.md](guide.md) says where each setting is; the decisions behind it are D73, D110, D146, D147 and D148 in [decisions.md](decisions.md).
+Overscan sends a channel as its source sends it, unless something says to make it anew: a device's or an account's output profile, or what the household sets on live TV, a group or a channel. It sends a film or an episode to a box as its source sends it, unless the box cannot play its video, or what the household sets on films and series, a shelf or a title says otherwise. This page says how to set that up, and how to let Overscan use the server's graphics. [guide.md](guide.md) says where each setting is; the decisions behind it are D73, D110, D146 to D150 in [decisions.md](decisions.md).
 
 ## Profiles
 
@@ -25,7 +25,21 @@ Live TV as a whole (*Settings* → *Transcoding*), a group (its *Transcoding…*
 
 The narrowest setting wins: a channel's over its group's, and a group's over live TV's. A channel's setting belongs to the channel at its source, so it holds in every lineup. Recordings and the debug playlist always get the source's stream.
 
-Every transcode takes one of a number at a time, and a stream that finds none free plays as its source sends it; the log says so. In software, that number is *Settings* → *Transcode video on this server*, which films that a box cannot play share. On graphics, it is the *Graphics* card's.
+Every transcode takes one of a number at a time, and a stream that finds none free plays as its source sends it; the log says so. In software, that number is *Settings* → *Transcode video on this server*, which films and series share. On graphics, it is the *Graphics* card's.
+
+## Films and series
+
+Films and series as a whole (*Settings* → *Transcoding* → *Films and series*), a shelf (its *Transcoding…* button on *Movies* or *Series*) and a title (tick it, then *Transcoding* in the bar) are each:
+
+- *as needed*: a film or an episode whose video the box cannot play, as its playback check says, is transcoded to H.264: by a Jellyfin source's own transcoder where *Let Jellyfin transcode* is on, and else by Overscan's ffmpeg where *Transcode video on this server* or the graphics allow; as before;
+- *always*, with a profile: the box gets it transcoded with the profile, whether or not it could play it as it is. Its sound goes as the profile says, as far as the box plays it: AAC where the box plays AAC, and else Dolby Digital;
+- *never*: the box gets its video as its source sends it, even where it may not play it; the log says so. Its sound is still converted where *Convert sound a box cannot play* is on.
+
+The narrowest setting wins: a title's over its shelf's, and a shelf's over that of every film and series. A series' episodes follow it. A title kept on a shelf that merges categories of several sources takes that shelf's setting.
+
+Only the boxes get films and series transcoded. Players through the outputs, and Stalker clients, get them as their sources send them, as before.
+
+A film transcoded on the graphics takes one of their number at a time; when they are full, it is transcoded in software where its number allows, and when it cannot start at all, the box says that the server is busy. Where the graphics fail to start a film, Overscan tries again decoding it in software, then transcodes it in software.
 
 ## Smoothness
 

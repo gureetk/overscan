@@ -353,17 +353,7 @@ func (p Profile) madeArgs() []string {
 	} else {
 		args = append(args, "-map", "0:a:0?")
 	}
-	args = append(args, "-vf", p.VideoFilter())
-	switch p.Codec {
-	case HEVC:
-		args = append(args, "-c:v", "libx265", "-preset", "veryfast", "-crf", strconv.Itoa(p.crf()),
-			"-profile:v", "main", "-x265-params", "log-level=error")
-	default:
-		args = append(args, "-c:v", "libx264", "-preset", "veryfast", "-crf", strconv.Itoa(p.crf()), "-profile:v", "high")
-	}
-	if p.MaxKbps > 0 {
-		args = append(args, "-maxrate", strconv.Itoa(p.MaxKbps)+"k", "-bufsize", strconv.Itoa(2*p.MaxKbps)+"k")
-	}
+	args = append(append(args, "-vf", p.VideoFilter()), p.SoftwareVideo()...)
 	args = append(args, "-force_key_frames", "expr:gte(t,n_forced*2)")
 	return append(args, p.soundArgs()...)
 }

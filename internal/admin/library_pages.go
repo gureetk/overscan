@@ -16,8 +16,10 @@ import (
 
 // The Movies and Series pages (D79): the shelves on one side, hidden ones
 // too, in the order devices see them in; the titles of the chosen shelf, or
-// of all, on the other. Every form carries the view it came from, so that
-// the page comes back to it after a change, as the Live TV page's do.
+// of all, on the other. A shelf's head and the bar of ticked titles also
+// say whether they are transcoded (D150). Every form carries the view it
+// came from, so that the page comes back to it after a change, as the Live
+// TV page's do.
 
 // libraryView is the part of the films or series that the page shows.
 type libraryView struct {
@@ -110,6 +112,49 @@ type libraryData struct {
 	Locks  int
 	// Adult is what sources' marks for adults do (D86).
 	Adult string
+	// VOD is what is transcoded of films and series as a whole, and
+	// TranscodeChoices what a shelf or a title can say beyond as needed:
+	// never, or always with each profile that transcodes (D150).
+	VOD              store.Transcode
+	TranscodeChoices []transcodeOption
+}
+
+// ShelfTranscodeOptions are what a shelf's select offers: as films and
+// series say, then never and always with each profile.
+func (d libraryData) ShelfTranscodeOptions() []transcodeOption {
+	return append([]transcodeOption{{store.ModeAsNeeded, "As films and series say: " + transcodeText(d.VOD)}}, d.TranscodeChoices...)
+}
+
+// TitleTranscodeOptions are what the bar of ticked titles offers: as their
+// shelf says, then never and always with each profile.
+func (d libraryData) TitleTranscodeOptions() []transcodeOption {
+	return append([]transcodeOption{{store.ModeAsNeeded, "As their shelf says"}}, d.TranscodeChoices...)
+}
+
+// ShelfTranscodeValue is a shelf's setting as its select names it.
+func (libraryData) ShelfTranscodeValue(sh store.LibraryShelf) string {
+	return transcodeValue(sh.Transcode)
+}
+
+// ShelfTranscodeText says what a shelf's own setting does, "" for as
+// needed.
+func (libraryData) ShelfTranscodeText(sh store.LibraryShelf) string {
+	if sh.Transcode.AsNeeded() {
+		return ""
+	}
+	return "Transcoded " + transcodeText(sh.Transcode)
+}
+
+// TitleTranscodeBadge says what a title's own setting does, "" for as
+// needed.
+func (libraryData) TitleTranscodeBadge(t store.AdminTitle) string {
+	switch o := t.TranscodeOwn; {
+	case o.Never:
+		return "Not transcoded"
+	case o.Profile != "":
+		return "Transcoded: " + o.Profile
+	}
+	return ""
 }
 
 // AdultNote says what a title's mark for adults does, for its badge.
@@ -187,6 +232,11 @@ func (a *Admin) showLibrary(w http.ResponseWriter, r *http.Request, s store.Admi
 		fail(err)
 		return
 	}
+	if d.VOD, err = a.store.VODTranscode(ctx); err != nil {
+		fail(err)
+		return
+	}
+	d.TranscodeChoices = a.transcodeOptions(ctx, "")[1:]
 	offset := (lv.Page - 1) * pageTitles
 	if d.Titles, d.Total, err = a.store.AdminTitles(ctx, lv.Kind, d.Selected, lv.Query, offset, pageTitles); err != nil {
 		fail(err)
@@ -224,7 +274,7 @@ func (a *Admin) libraryDone(w http.ResponseWriter, r *http.Request, s store.Admi
 }
 
 // shelfAction answers a shelf's forms on the Movies or Series page: hide,
-// show, lock, unlock, rename, up and down.
+// show, lock, unlock, rename, transcode, up and down.
 func (a *Admin) shelfAction(kind string) signedInFn {
 	return func(w http.ResponseWriter, r *http.Request, s store.AdminSession) {
 		ctx := r.Context()
@@ -257,6 +307,17 @@ func (a *Admin) shelfAction(kind string) signedInFn {
 					done = "The shelf has its sources' name again: " + sh.Own + "."
 				}
 			}
+		case "transcode":
+			var t store.Transcode
+			if t, err = parseTranscodeValue(r.PostFormValue("transcode")); err != nil {
+				break
+			}
+			if err = a.setShelfTranscode(ctx, kind, sh, t); err == nil {
+				done = "The shelf's titles are transcoded " + transcodeText(t) + ", unless a title says otherwise."
+				if t.AsNeeded() {
+					done = "The shelf's titles are transcoded as films and series say, unless a title says otherwise."
+				}
+			}
 		case "up":
 			err, done = a.moveShelf(ctx, kind, id, -1), "Moved "+sh.Name+" up."
 		case "down":
@@ -278,7 +339,7 @@ func (a *Admin) shelfOrderReset(kind string) signedInFn {
 }
 
 // titlesAction hides, shows, locks or unlocks the ticked titles on the
-// Movies or Series page.
+// Movies or Series page, or sets whether they are transcoded.
 func (a *Admin) titlesAction(kind string) signedInFn {
 	return func(w http.ResponseWriter, r *http.Request, s store.AdminSession) {
 		lv := parseLibraryView(kind, backValues(r))
@@ -294,13 +355,24 @@ func (a *Admin) titlesAction(kind string) signedInFn {
 		action := r.PostFormValue("action")
 		var n int
 		var err error
+		var t store.Transcode
 		switch action {
 		case "hide", "show":
 			n, err = a.hideTitles(r.Context(), ids, action == "hide")
 		case "lock", "unlock":
 			n, err = a.lockTitles(r.Context(), ids, action == "lock")
+		case "transcode":
+			if t, err = parseTranscodeValue(r.PostFormValue("transcode")); err == nil {
+				n, err = a.setTitlesTranscode(r.Context(), ids, t)
+			}
+			switch {
+			case t.Never:
+				action = "notranscode"
+			case t.AsNeeded():
+				action = "transcodeshelf"
+			}
 		default:
-			a.libraryDone(w, r, s, lv, badEdit(http.StatusBadRequest, "bad_form", "Choose Hide, Show, Lock or Unlock."), "")
+			a.libraryDone(w, r, s, lv, badEdit(http.StatusBadRequest, "bad_form", "Choose Hide, Show, Lock, Unlock or Transcoding."), "")
 			return
 		}
 		what := fmt.Sprintf("%d series", n)
@@ -308,10 +380,13 @@ func (a *Admin) titlesAction(kind string) signedInFn {
 			what = fmt.Sprintf("%d %s", n, plural(n, "film"))
 		}
 		done := map[string]string{
-			"hide":   "Hid " + what + " from devices.",
-			"show":   "Showed " + what + ".",
-			"lock":   "Locked " + what + ": devices need the parental PIN to play them.",
-			"unlock": "Unlocked " + what + ". Those on a locked shelf stay locked.",
+			"hide":           "Hid " + what + " from devices.",
+			"show":           "Showed " + what + ".",
+			"lock":           "Locked " + what + ": devices need the parental PIN to play them.",
+			"unlock":         "Unlocked " + what + ". Those on a locked shelf stay locked.",
+			"notranscode":    "Set " + what + " never to be transcoded: the boxes get their video as their sources send it.",
+			"transcodeshelf": "Set " + what + " to be transcoded as their shelf says.",
+			"transcode":      "Set " + what + " to be transcoded always, with " + t.Profile + ".",
 		}[action]
 		a.libraryDone(w, r, s, lv, err, done)
 	}

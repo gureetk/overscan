@@ -127,6 +127,7 @@ func (a *Admin) Handler() http.Handler {
 	mux.Handle("GET /admin/transcoding", a.page(a.transcodingPage))
 	mux.Handle("POST /admin/transcoding", a.page(a.addTranscodeProfileForm))
 	mux.Handle("POST /admin/transcoding/live", a.page(a.liveTranscodeForm))
+	mux.Handle("POST /admin/transcoding/films", a.page(a.vodTranscodeForm))
 	mux.Handle("POST /admin/transcoding/graphics", a.page(a.gpuTranscodesForm))
 	mux.Handle("POST /admin/transcoding/graphics/test", a.page(a.testGraphicsForm))
 	mux.Handle("GET /admin/transcoding/profiles/{name}", a.page(a.transcodeProfilePage))

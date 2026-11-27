@@ -16,7 +16,7 @@
 <div class="page-head">
   <div>
     <h1>Transcoding</h1>
-    <p class="lead">Which live channels this server makes anew, and how. Overscan sends a channel as its source sends it, unless a device's or account's profile says otherwise, or live TV, a channel's group or the channel itself says to transcode it always or never. The narrowest of them wins: a channel's over its group's, and a group's over live TV's. A channel set never to be transcoded goes as its source sends it to every device; one set always reaches devices that would get it as it is with the profile chosen, while a device whose own profile transcodes keeps its own.</p>
+    <p class="lead">Which live channels, films and series this server makes anew, and how. Overscan sends a channel as its source sends it, unless a device's or account's profile says otherwise, or live TV, a channel's group or the channel itself says to transcode it always or never. The narrowest of them wins: a channel's over its group's, and a group's over live TV's. A channel set never to be transcoded goes as its source sends it to every device; one set always reaches devices that would get it as it is with the profile chosen, while a device whose own profile transcodes keeps its own. Films and series on the boxes work the same way: a title's setting over its shelf's, and a shelf's over that of every film and series.</p>
   </div>
   {{- if not .Data.Full}}
   <a class="button primary" href="#add-profile">{{template "i-plus"}}Make a profile</a>
@@ -50,6 +50,24 @@
     </select>
   </form>
   <p class="hint">A group's own and a channel's own are set on <a href="/admin/lineup">Live TV</a>: a group's from its title, a channel's from its panel.</p>
+</section>
+<section class="card" aria-labelledby="films-title">
+  <h2 id="films-title">Films and series</h2>
+  <form method="post" action="/admin/transcoding/films" hx-post="/admin/transcoding/films" hx-trigger="change" hx-target="#transcoding-main" hx-select="#transcoding-main" hx-swap="outerHTML" class="switch-row with-select">
+    <input type="hidden" name="csrf" value="{{.Session.CSRFToken}}">
+    <div>
+      <label for="films-transcode">Every film and episode</label>
+      <p id="films-transcode-text">{{.Data.VODText}}</p>
+      <noscript><button class="small" type="submit">Save</button></noscript>
+    </div>
+    <select id="films-transcode" name="transcode" aria-describedby="films-transcode-text">
+      {{- $v := .Data.VODValue}}
+      {{- range .Data.LiveOptions}}
+      <option value="{{.Value}}"{{if eq .Value $v}} selected{{end}}>{{.Label}}</option>
+      {{- end}}
+    </select>
+  </form>
+  <p class="hint">A shelf's own and a title's own are set on <a href="/admin/movies">Movies</a> and <a href="/admin/series">Series</a>: a shelf's from its title, a title's by ticking it. A series' episodes follow it. Boxes get what these say; players and other Stalker clients get films and series as their sources send them.</p>
 </section>
 <section class="card" aria-labelledby="profiles-title">
   <h2 id="profiles-title">Profiles</h2>
