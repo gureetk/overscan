@@ -76,7 +76,7 @@ func (o *Output) account(w http.ResponseWriter, r *http.Request, acct store.Acco
 			"active_cons":            strconv.Itoa(o.hub.AccountStreams(acct.ID)),
 			"created_at":             strconv.FormatInt(acct.CreatedAt.Unix(), 10),
 			"max_connections":        strconv.Itoa(limit),
-			"allowed_output_formats": []string{"ts"},
+			"allowed_output_formats": outputFormats(acct),
 		},
 		"server_info": map[string]any{
 			"url":             host,
@@ -302,4 +302,14 @@ func (o *Output) dayTable(w http.ResponseWriter, r *http.Request, acct store.Acc
 		out = append(out, l)
 	}
 	writeJSON(w, map[string]any{"epg_listings": out})
+}
+
+// outputFormats are the stream formats that an account's players may ask
+// for: MPEG-TS, and HLS after it while the account's HLS for players is on
+// (notes, section 10; D153).
+func outputFormats(acct store.Account) []string {
+	if acct.Outputs.HLS {
+		return []string{"ts", "m3u8"}
+	}
+	return []string{"ts"}
 }

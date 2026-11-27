@@ -174,6 +174,10 @@ type Hub struct {
 	// playerLinks are the tokens of players' transcodes of titles, so
 	// that a player's next request goes on with its session (D151).
 	playerLinks map[playerTitle]string
+	// cutLinks are the tokens of players' HLS of channels, so that a
+	// player that asks for a channel's playlist again goes on with its
+	// session (D153).
+	cutLinks    map[playerEntry]string
 	unrelayable map[int64]time.Time // channels whose HLS the relay could not follow, by ID, until when (D61)
 	shared      map[int64]*session  // the shared tuners that run, by channel ID (D93)
 	failing     map[int64]time.Time // channels whose streams failed to start, by ID, until when (D109)
@@ -214,6 +218,7 @@ func New(st *store.Store, log *slog.Logger, version string, sources map[int64]So
 
 		unrelayable: map[int64]time.Time{},
 		playerLinks: map[playerTitle]string{},
+		cutLinks:    map[playerEntry]string{},
 		shared:      map[int64]*session{},
 		failing:     map[int64]time.Time{},
 		closing:     map[*session]struct{}{},
@@ -376,6 +381,9 @@ type Stream struct {
 	// connection to the source serves every screen that plays the channel
 	// (D93).
 	Shared bool
+	// Cut is a channel that a player gets as HLS that the hub cuts from
+	// its shared tuner's stream (D153).
+	Cut bool
 	// Programme is, for a past programme, its title, and Aired when it
 	// began.
 	Programme string
@@ -420,7 +428,7 @@ func (h *Hub) Streams() []Stream {
 			ID: streamID(s), Kind: PlaysChannel, DeviceID: s.deviceID, AccountID: s.account, EntryID: s.entryID, SourceID: s.sourceID, Source: h.source(s.sourceID).Name,
 			Channel: s.channel, Started: s.started, Bytes: from.bytes.Load(), HLS: from.hls, Repaired: from.repairing.Load() > 0,
 			Converted: s.converting.Load() > 0, Playing: s.active(now), Timeshift: s.shift != nil || s.canShift,
-			Shared: s.tuner != nil,
+			Shared: s.tuner != nil, Cut: s.cut,
 		}
 		if d := from.details.Load(); d != nil {
 			st.Details = d.Summary()
@@ -574,6 +582,13 @@ type session struct {
 	// shared marks a shared tuner's own session (D93): it plays its
 	// channel from the source into its buffer for the screens in screens.
 	shared bool
+	// cut marks a player's session of a channel as HLS that the hub cuts
+	// (D153): a screen on the channel's shared tuner, active while the
+	// player asks for its playlist or its segments. feed is, for a shared
+	// tuner, what cuts its buffer into segments, once a player asks for
+	// HLS; nil otherwise. Hub.mu guards feed.
+	cut  bool
+	feed *hlsFeed
 
 	// account is the account that the device's streams count against,
 	// and accountLimit that account's limit of streams at once, 0 for
@@ -700,7 +715,7 @@ func (s *session) active(now time.Time) bool {
 	// A box keeps its timeshift buffer while it is paused with its
 	// requests' holds (D92), and so does a box that can go back in a
 	// shared tuner's (D93).
-	return s.streams > 0 || (s.hls && now.Sub(s.lastActive) < idleTimeout) ||
+	return s.streams > 0 || ((s.hls || s.cut) && now.Sub(s.lastActive) < idleTimeout) ||
 		((s.shift != nil || s.canShift) && now.Sub(s.lastActive) < reconnectGrace)
 }
 
@@ -970,6 +985,10 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c, ok := h.verify(token)
 	if !ok || c.kind != kindEntry {
 		http.Error(w, "invalid link", http.StatusForbidden)
+		return
+	}
+	if c.cut {
+		h.serveCut(w, r, c, token, resource, isResource)
 		return
 	}
 

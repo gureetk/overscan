@@ -145,18 +145,26 @@ func (o *Output) playlist(w http.ResponseWriter, r *http.Request) {
 	}
 	base := output.Base(r) + "/playlist/" + token
 	o.log.Info("a player read its playlist", "account", acct.Name, "player", output.ClientAddress(r), "channels", len(list))
-	WritePlaylist(w, list, output.Base(r), output.Base(r)+"/epg/"+token+".xml.gz", Links{
+	links := Links{
 		Stream:  func(entryID int64) string { return base + "/" + strconv.FormatInt(entryID, 10) + ".ts" },
 		Archive: func(entryID int64) string { return base + "/archive/" + strconv.FormatInt(entryID, 10) + ".ts" },
-	})
+	}
+	if acct.Outputs.HLS && output.WantsHLS(r) {
+		// A player that asks for HLS gets its addresses (D153).
+		links.HLS = func(entryID int64) string { return base + "/" + strconv.FormatInt(entryID, 10) + ".m3u8" }
+	}
+	WritePlaylist(w, list, output.Base(r), output.Base(r)+"/epg/"+token+".xml.gz", links)
 }
 
 // Links makes a playlist's addresses: a channel's stream, and the address
 // of its past programmes, to which the playlist adds start={utc} and
-// end={utcend}.
+// end={utcend}. HLS, if set, makes the address of a channel's HLS, which
+// a channel other than a radio station gets in place of its stream's
+// (D153).
 type Links struct {
 	Stream  func(entryID int64) string
 	Archive func(entryID int64) string
+	HLS     func(entryID int64) string
 }
 
 // WritePlaylist answers with an M3U playlist of channels, in their order,
@@ -179,7 +187,11 @@ func WritePlaylist(w http.ResponseWriter, list []store.LineupChannel, base, guid
 			fmt.Fprintf(&b, ` catchup="default" catchup-source="%s?start={utc}&end={utcend}" catchup-days="%d"`,
 				attr(links.Archive(c.EntryID)), c.ArchiveDays)
 		}
-		fmt.Fprintf(&b, ",%s\n%s\n", title(c.Name), links.Stream(c.EntryID))
+		link := links.Stream(c.EntryID)
+		if links.HLS != nil && !c.Radio {
+			link = links.HLS(c.EntryID)
+		}
+		fmt.Fprintf(&b, ",%s\n%s\n", title(c.Name), link)
 	}
 	w.Header().Set("Content-Type", "audio/x-mpegurl; charset=utf-8")
 	w.Header().Set("Content-Disposition", `inline; filename="overscan.m3u"`)
@@ -333,6 +345,9 @@ func text(s string) string {
 // 123.ts, if its account's players may play it.
 func (o *Output) entryOf(w http.ResponseWriter, r *http.Request, acct store.Account) (store.PlayableEntry, bool) {
 	id, ok := entryFile(r.PathValue("file"))
+	if !ok && acct.Outputs.HLS {
+		id, ok = entryFile(strings.TrimSuffix(r.PathValue("file"), ".m3u8") + ".ts")
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return store.PlayableEntry{}, false
@@ -371,7 +386,10 @@ func entryFile(file string) (int64, bool) {
 }
 
 // live serves GET /playlist/<token>/<entry>.ts: the channel, through the
-// hub, as the account's player.
+// hub, as the account's player. While the account's HLS for players is on,
+// <entry>.m3u8 plays it as HLS that the hub cuts from the channel's one
+// stream (D153), or, for a channel that the hub cannot cut, as at its .ts
+// address.
 func (o *Output) live(w http.ResponseWriter, r *http.Request) {
 	acct, ok := o.account(w, r, r.PathValue("token"))
 	if !ok {
@@ -382,6 +400,12 @@ func (o *Output) live(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	player := output.Player(o.hub, acct.ID, output.M3U, r)
+	if strings.HasSuffix(r.PathValue("file"), ".m3u8") {
+		if link := o.hub.CutLink(player, entry); link != "" {
+			o.hub.ServeLink(w, r, link)
+			return
+		}
+	}
 	o.hub.ServeLink(w, r, output.Continuous(o.hub.Link(player, entry)))
 }
 

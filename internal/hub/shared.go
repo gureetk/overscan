@@ -79,7 +79,7 @@ func (h *Hub) AvailableChannel(ctx context.Context, entry store.PlayableEntry, d
 // with ErrLimit, ErrNoLink with the Resolver's reason, or errNotShared.
 func (h *Hub) openShared(ctx context.Context, c claims, token string, entry store.PlayableEntry) (*session, error) {
 	screen := &session{token: token, channelID: entry.ChannelID, sourceID: entry.SourceID, channel: entry.Name,
-		streamURL: entry.StreamURL, repair: entry.Repair, repairHLS: entry.RepairHLS, canShift: c.shift}
+		streamURL: entry.StreamURL, repair: entry.Repair, repairHLS: entry.RepairHLS, canShift: c.shift, cut: c.cut}
 	screen.account, screen.accountLimit = h.viewer(ctx, c.deviceID)
 	if s, ok, err := h.joinTuner(c, screen); ok || err != nil {
 		return s, err

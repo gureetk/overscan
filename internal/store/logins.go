@@ -370,7 +370,8 @@ func (s *Store) SetAccountStreams(ctx context.Context, id int64, n int) error {
 // SetAccountOutputs sets the outputs that an account may use. It fails with
 // ErrNotFound.
 func (s *Store) SetAccountOutputs(ctx context.Context, id int64, o Outputs) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE accounts SET output_m3u = ?, output_xtream = ? WHERE id = ?`, o.M3U, o.Xtream, id)
+	res, err := s.db.ExecContext(ctx, `UPDATE accounts SET output_m3u = ?, output_xtream = ?, output_hls = ? WHERE id = ?`,
+		o.M3U, o.Xtream, o.HLS, id)
 	if err == nil {
 		err = mustAffect(res)
 	}

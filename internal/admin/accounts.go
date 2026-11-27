@@ -435,6 +435,18 @@ func (a *Admin) setXtream(ctx context.Context, id int64, on bool) (store.Account
 	return a.setOutputs(ctx, id, o)
 }
 
+// setHLS lets an account's players ask for its live channels as HLS that
+// the hub cuts, or stops them (D153).
+func (a *Admin) setHLS(ctx context.Context, id int64, on bool) (store.Account, error) {
+	acct, err := a.account(ctx, id)
+	if err != nil {
+		return store.Account{}, err
+	}
+	o := acct.Outputs
+	o.HLS = on
+	return a.setOutputs(ctx, id, o)
+}
+
 // setOutputs sets the outputs that an account may use.
 func (a *Admin) setOutputs(ctx context.Context, id int64, o store.Outputs) (store.Account, error) {
 	acct, err := a.account(ctx, id)
@@ -445,13 +457,17 @@ func (a *Admin) setOutputs(ctx context.Context, id int64, o store.Outputs) (stor
 		return store.Account{}, accountStoreError(err)
 	}
 	if o != acct.Outputs {
-		a.log.Info("an account's outputs set in the admin", "account", acct.Name, "m3u", o.M3U, "xtream", o.Xtream)
+		a.log.Info("an account's outputs set in the admin", "account", acct.Name, "m3u", o.M3U, "xtream", o.Xtream,
+			"hls", o.HLS)
 	}
 	if acct.Outputs.M3U && !o.M3U {
 		a.stopPlayers(playersOf(id, output.M3U), "the account's playlist was turned off")
 	}
 	if acct.Outputs.Xtream && !o.Xtream {
 		a.stopPlayers(playersOf(id, output.Xtream), "the account's Xtream login was turned off")
+	}
+	if acct.Outputs.HLS && !o.HLS && a.streams != nil {
+		a.streams.StopCut(id, "the account's HLS for players was turned off")
 	}
 	acct.Outputs = o
 	return acct, nil
@@ -742,7 +758,7 @@ func (a *Admin) showAccount(w http.ResponseWriter, r *http.Request, s store.Admi
 // accountPanels name the part of an account's page that each of its forms
 // is in.
 var accountPanels = map[string]string{
-	"rename": "", "lineup": "watching", "sources": "watching", "streams": "watching", "live": "watching",
+	"rename": "", "lineup": "watching", "sources": "watching", "streams": "watching", "live": "watching", "hls": "watching",
 	"pin": "pin", "remove-pin": "pin", "theme": "theme", "expiry": "end", "playlist": "playlist", "token": "playlist",
 	"xtream": "login", "login": "login", "remove-login": "login", "remove": "remove",
 }
@@ -860,6 +876,14 @@ func (a *Admin) accountAction(w http.ResponseWriter, r *http.Request, s store.Ad
 			err = badDevice(http.StatusBadRequest, "bad_lineup", "Choose a lineup.")
 		} else if acct, err = a.setAccountLineup(ctx, id, lineupID); err == nil {
 			notice = acct.Name + " sees the lineup " + a.lineupName(ctx, lineupID) + " now. Its boxes show it within five minutes."
+		}
+	case "hls":
+		on := r.PostFormValue("on") != ""
+		if acct, err = a.setHLS(ctx, id, on); err == nil {
+			notice = acct.Name + "'s players get its channels as one stream each, as before."
+			if on {
+				notice = acct.Name + "'s players that ask for HLS get it, from the next channel they start."
+			}
 		}
 	case "xtream":
 		on := r.PostFormValue("on") != ""
@@ -993,16 +1017,19 @@ type accountJSON struct {
 	Sources []int64 `json:"sources"`
 }
 
-// apiOutputs are the outputs that an account may use.
+// apiOutputs are the outputs that an account may use, and whether its
+// players get HLS when they ask (D153). A body that leaves hls out keeps it
+// as it is.
 type apiOutputs struct {
-	M3U    bool `json:"m3u"`
-	Xtream bool `json:"xtream"`
+	M3U    bool  `json:"m3u"`
+	Xtream bool  `json:"xtream"`
+	HLS    *bool `json:"hls,omitempty"`
 }
 
 // accountBody returns an account as the API describes it.
 func (a *Admin) accountBody(ctx context.Context, acct store.Account) (accountJSON, error) {
 	out := accountJSON{ID: acct.ID, Name: acct.Name, LineupID: acct.LineupID, Token: acct.HasToken, MaxStreams: acct.MaxStreams,
-		Outputs: apiOutputs{M3U: acct.Outputs.M3U, Xtream: acct.Outputs.Xtream}, Ended: acct.Ended(a.now()),
+		Outputs: apiOutputs{M3U: acct.Outputs.M3U, Xtream: acct.Outputs.Xtream, HLS: &acct.Outputs.HLS}, Ended: acct.Ended(a.now()),
 		PIN: acct.PINHash != "", ThemeID: acct.ThemeID, OutputProfile: acct.OutputProfile}
 	if acct.Sources.Only {
 		out.Sources = append([]int64{}, acct.Sources.IDs...)
@@ -1172,7 +1199,13 @@ func (a *Admin) apiChangeAccount(w http.ResponseWriter, r *http.Request, _ store
 		}
 	}
 	if body.Outputs != nil {
-		if _, err = a.setOutputs(ctx, id, store.Outputs{M3U: body.Outputs.M3U, Xtream: body.Outputs.Xtream}); err != nil {
+		o := store.Outputs{M3U: body.Outputs.M3U, Xtream: body.Outputs.Xtream}
+		if body.Outputs.HLS != nil {
+			o.HLS = *body.Outputs.HLS
+		} else if acct, err := a.account(ctx, id); err == nil {
+			o.HLS = acct.Outputs.HLS
+		}
+		if _, err = a.setOutputs(ctx, id, o); err != nil {
 			a.accountAnswer(w, r, id, err)
 			return
 		}

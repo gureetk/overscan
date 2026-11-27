@@ -425,7 +425,7 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	logins, limited, someSources, playlists, xtreams, otherLineup := 0, 0, 0, 0, 0, 0
+	logins, limited, someSources, playlists, xtreams, hls, otherLineup := 0, 0, 0, 0, 0, 0, 0
 	for _, acct := range accounts {
 		if acct.Sources.Only {
 			someSources++
@@ -444,6 +444,9 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 		}
 		if acct.Outputs.Xtream {
 			xtreams++
+		}
+		if acct.Outputs.HLS {
+			hls++
 		}
 	}
 	outputsOn, err := a.store.Outputs(ctx)
@@ -567,8 +570,8 @@ func (a *Admin) bundleLineup(ctx context.Context, _ time.Time) (string, error) {
 		tc.Profiles, live.Mode(), tc.GroupsAlways, tc.GroupsNever, tc.ChannelsAlways, tc.ChannelsNever)
 	fmt.Fprintf(&b, "Transcoding of films and series (D150): all: %s; shelves always: %d, never: %d; titles always: %d, never: %d\n",
 		vod.Mode(), tc.ShelvesAlways, tc.ShelvesNever, tc.TitlesAlways, tc.TitlesNever)
-	fmt.Fprintf(&b, "Outputs for players: on: %v; anywhere: %v; playlists on: %d; Xtream logins on: %d\n",
-		outputsOn, anywhere, playlists, xtreams)
+	fmt.Fprintf(&b, "Outputs for players: on: %v; anywhere: %v; playlists on: %d; Xtream logins on: %d; HLS for players on (D153): %d\n",
+		outputsOn, anywhere, playlists, xtreams, hls)
 	fmt.Fprintf(&b, "Profiles: %d, %d with a PIN to switch to them\n", len(profiles), withPIN)
 	fmt.Fprintf(&b, "Themes: %d installed; the household's: %s; profiles with their own: %d\n", len(themes), householdTheme, ownTheme)
 	fmt.Fprintf(&b, "Messages: %d in the admin's list, waiting on %d boxes\n", len(messages), waiting)

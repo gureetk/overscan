@@ -24,6 +24,7 @@ func (f fakeStreams) CanConvert() bool                              { return tru
 func (f fakeStreams) Encoder() hub.Encoder                          { return hub.Encoder{H264: true, ToneMap: true} }
 func (f fakeStreams) StopPlayers(func(hub.Player) bool, string) int { return 0 }
 func (f fakeStreams) StopSources(int64, store.Sources, string) int  { return 0 }
+func (f fakeStreams) StopCut(int64, string) int                     { return 0 }
 func (f fakeStreams) StopStream(id, _ string) bool {
 	for _, s := range f {
 		if s.ID == id {

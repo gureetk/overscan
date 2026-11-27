@@ -71,6 +71,15 @@
       {{- range .Data.OutputProfiles}}<option value="{{.Name}}"{{if eq .Name $a.OutputProfile}} selected{{end}}>{{.Label}}</option>{{end}}
     </select>
   </form>
+  <form method="post" action="/admin/accounts/{{$a.ID}}/hls" hx-post="/admin/accounts/{{$a.ID}}/hls" hx-trigger="change" hx-target="#accounts-main" hx-select="#accounts-main" hx-swap="outerHTML" class="switch-row">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <input class="switch" type="checkbox" id="hls" name="on" value="1"{{if $a.Outputs.HLS}} checked{{end}} aria-describedby="hls-text">
+    <div>
+      <label for="hls">HLS for players</label>
+      <p id="hls-text">{{if $a.Outputs.HLS}}Players that ask for HLS get its live channels as HLS: at a channel's .m3u8 address, or from a playlist read with <span class="mono">output=m3u8</span>. A channel's HLS players share its one connection to its source, even while the shared tuner is off. Channels that this server transcodes for them, and radio stations, still play as one stream.{{else}}Off: its players get each channel as one stream, as before. Boxes and Stalker apps get one stream either way.{{end}}</p>
+      <noscript><button class="small" type="submit">Save</button></noscript>
+    </div>
+  </form>
   {{- if .Data.Sources}}
   <form method="post" action="/admin/accounts/{{$a.ID}}/sources" hx-post="/admin/accounts/{{$a.ID}}/sources" hx-target="#accounts-main" hx-select="#accounts-main" hx-swap="outerHTML" class="switch-row with-ticks sources-form">
     <input type="hidden" name="csrf" value="{{$csrf}}">

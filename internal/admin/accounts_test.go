@@ -254,7 +254,8 @@ func TestAccountsAPI(t *testing.T) {
 		Accounts []accountJSON `json:"accounts"`
 	}
 	if status := decode(ta.apiDo("GET", "accounts", "", c), &list); status != http.StatusOK || len(list.Accounts) != 1 ||
-		list.Accounts[0].Name != "Household" || list.Accounts[0].Username != nil || list.Accounts[0].Outputs != (apiOutputs{}) {
+		list.Accounts[0].Name != "Household" || list.Accounts[0].Username != nil || list.Accounts[0].Outputs.M3U ||
+		list.Accounts[0].Outputs.Xtream || list.Accounts[0].Outputs.HLS == nil || *list.Accounts[0].Outputs.HLS {
 		t.Fatalf("list: status %d, %+v", status, list)
 	}
 
@@ -270,6 +271,21 @@ func TestAccountsAPI(t *testing.T) {
 	if status := decode(ta.apiDo("PATCH", "accounts/"+id, `{"max_streams": 2, "outputs": {"m3u": true}}`, c, h...), &changed); status != http.StatusOK ||
 		changed.MaxStreams != 2 || !changed.Outputs.M3U || changed.Outputs.Xtream {
 		t.Errorf("change: status %d, %+v", status, changed)
+	}
+	// HLS for players (D153) is set with the outputs, and stays as it is
+	// when a change leaves it out.
+	for _, tc := range []struct {
+		body string
+		hls  bool
+	}{
+		{`{"outputs": {"m3u": true, "hls": true}}`, true},
+		{`{"outputs": {"m3u": true, "xtream": false}}`, true},
+		{`{"outputs": {"m3u": true, "hls": false}}`, false},
+	} {
+		if status := decode(ta.apiDo("PATCH", "accounts/"+id, tc.body, c, h...), &changed); status != http.StatusOK ||
+			!changed.Outputs.M3U || changed.Outputs.HLS == nil || *changed.Outputs.HLS != tc.hls {
+			t.Errorf("%s: status %d, %+v", tc.body, status, changed.Outputs)
+		}
 	}
 	apiErrorOf(t, ta.apiDo("PATCH", "accounts/"+id, `{"max_streams": -1}`, c, h...), http.StatusBadRequest, "bad_streams")
 	apiErrorOf(t, ta.apiDo("PATCH", "accounts/"+id, `{}`, c, h...), http.StatusBadRequest, "bad_json")
@@ -521,6 +537,54 @@ func (s *stopRecorder) StopPlayers(match func(hub.Player) bool, reason string) i
 	}
 	s.stopped = append(s.stopped, reason+": "+strings.Join(hit, ","))
 	return len(hit)
+}
+
+// StopCut records that the admin ends the HLS of an account's players.
+func (s *stopRecorder) StopCut(accountID int64, reason string) int {
+	s.stopped = append(s.stopped, fmt.Sprintf("%s: HLS of %d", reason, accountID))
+	return 0
+}
+
+// An account's page turns its HLS for players on and off (D153); turning
+// it off ends the HLS that its players play, and nothing else.
+func TestHLSOnAccountPage(t *testing.T) {
+	ta := newTestAdmin(t)
+	ta.setPassword("correct horse")
+	c, csrf := ta.signIn("correct horse")
+	ctx := context.Background()
+	hubs := &stopRecorder{}
+	ta.UseStreams(hubs)
+	post := func(form url.Values) string {
+		t.Helper()
+		form.Set("csrf", csrf)
+		rec := ta.do("POST", "/admin/accounts/1/hls", form, c, "HX-Request", "true")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status %d\n%s", rec.Code, rec.Body)
+		}
+		return rec.Body.String()
+	}
+	rec := ta.do("GET", "/admin/accounts/1", nil, c)
+	if page := rec.Body.String(); !strings.Contains(page, `<label for="hls">HLS for players</label>`) ||
+		!strings.Contains(page, "Off: its players get each channel as one stream, as before.") ||
+		strings.Contains(page, `id="hls" name="on" value="1" checked`) {
+		t.Errorf("the switch while off:\n%s", page)
+	}
+	page := post(url.Values{"on": {"1"}})
+	if a, _ := ta.st.Account(ctx, householdAccount); !a.Outputs.HLS || a.Outputs.M3U || a.Outputs.Xtream ||
+		!strings.Contains(page, "players that ask for HLS get it, from the next channel they start") ||
+		!strings.Contains(page, "share its one connection to its source, even while the shared tuner is off") {
+		t.Errorf("on: %+v\n%s", a.Outputs, page)
+	}
+	if len(hubs.stopped) != 0 {
+		t.Errorf("turning it on stopped: %v", hubs.stopped)
+	}
+	post(url.Values{})
+	if a, _ := ta.st.Account(ctx, householdAccount); a.Outputs.HLS {
+		t.Errorf("off: %+v", a.Outputs)
+	}
+	if want := "the account's HLS for players was turned off: HLS of 1"; strings.Join(hubs.stopped, "\n") != want {
+		t.Errorf("stopped: %v", hubs.stopped)
+	}
 }
 
 // The Accounts page lets an account's players sign in with its login
