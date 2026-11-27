@@ -37,10 +37,11 @@ const (
 
 // convertFlag, in a film's or an episode's kind byte, marks a link that
 // plays it through ffmpeg (D68); with transcodeFlag, through its source's
-// server, which transcodes it (D71).
+// server, which transcodes it (D71); seekFlag marks a player's (D151).
 const (
 	convertFlag   byte = 0x80
 	transcodeFlag byte = 0x40
+	seekFlag      byte = 0x20
 )
 
 // claims are what a link's token says: which device may play which lineup
@@ -62,6 +63,9 @@ type claims struct {
 	// shift says that a lineup entry's link plays through a timeshift
 	// buffer while timeshift is on (D92).
 	shift bool
+	// seek says that a film's or an episode's link is a player's (D151),
+	// which is prepared again when its session has ended.
+	seek bool
 }
 
 // sign returns c as a token: the claims and an HMAC-SHA256 of them, cut to
@@ -96,6 +100,9 @@ func (h *Hub) sign(c claims) string {
 		}
 		if c.transcode {
 			b[1] |= transcodeFlag
+		}
+		if c.seek {
+			b[1] |= seekFlag
 		}
 		binary.BigEndian.PutUint64(b[2:], uint64(c.entryID))
 		binary.BigEndian.PutUint64(b[10:], uint64(c.deviceID))
@@ -152,7 +159,7 @@ func (h *Hub) verify(token string) (claims, bool) {
 		}
 		return c, c.stop > c.start
 	}
-	kind := b[1] &^ (convertFlag | transcodeFlag)
+	kind := b[1] &^ (convertFlag | transcodeFlag | seekFlag)
 	if kind != kindMovie && kind != kindEpisode {
 		return claims{}, false
 	}
@@ -160,6 +167,7 @@ func (h *Hub) verify(token string) (claims, bool) {
 		kind:      kind,
 		convert:   b[1]&convertFlag != 0,
 		transcode: b[1]&transcodeFlag != 0,
+		seek:      b[1]&seekFlag != 0,
 		entryID:   int64(binary.BigEndian.Uint64(b[2:])),
 		deviceID:  int64(binary.BigEndian.Uint64(b[10:])),
 		expires:   int64(binary.BigEndian.Uint64(b[18:])),

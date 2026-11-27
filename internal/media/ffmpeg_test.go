@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -268,5 +269,81 @@ func TestProfileWithFFmpeg(t *testing.T) {
 	}
 	if got.Duration < 2.9 || got.Duration > 3.1 {
 		t.Errorf("made %v s, want the 3 s from 1 s", got.Duration)
+	}
+}
+
+// A transcode that players seek in by bytes (D151): from the start, its
+// length is what SeekableLength says, padding aside, and the stream made
+// from a byte's time has the pictures that the stream from the start has
+// at that byte, at the same times, if not the same bytes.
+func TestSeekableWithFFmpeg(t *testing.T) {
+	ffmpeg, ffprobe := tools(t)
+	dir := t.TempDir()
+	src := filepath.Join(dir, "film.mkv")
+	run(t, ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin",
+		"-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=25:duration=12",
+		"-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=12",
+		"-c:v", "libx264", "-preset", "ultrafast", "-c:a", "ac3", "-ac", "6", src)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, src)
+	}))
+	defer srv.Close()
+	input := srv.URL + "/in/film"
+	info, err := ParseProbe(run(t, ffprobe, ProbeArgs(input)...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	small, err := streamprofile.Check(streamprofile.Profile{Name: "small", MaxLines: 576, Quality: streamprofile.Low,
+		Sound: streamprofile.SoundCopy})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := ProfilePlan(info, Player, small, false)
+	if !plan.MakeSeekable(info) {
+		t.Fatalf("not seekable: %+v", plan)
+	}
+	// 2000 kbit/s for 576 lines, and 448 for the Dolby Digital that the
+	// copied 5.1 sound becomes.
+	if plan.Profile.MaxKbps != 2000 || !plan.Tracks[0].Convert || plan.Muxrate != ((2000+448)*115/100+64)*1000 {
+		t.Fatalf("MakeSeekable = %+v", plan)
+	}
+	whole := run(t, ffmpeg, plan.Args(input, 0)...)
+	length := plan.SeekableLength(info.Duration)
+	if n := int64(len(whole)); n > length+int64(plan.Muxrate/8/10) || n < length-int64(plan.Muxrate/8/10) {
+		t.Errorf("made %d bytes, want within a tenth of a second of the %d that it says", n, length)
+	}
+	if tail := plan.SeekableTail(info.Duration); tail%188 != 0 || length-tail < int64(2*plan.Muxrate/8) || length-tail > int64(2*plan.Muxrate/8)+188 {
+		t.Errorf("SeekableTail = %d of %d", tail, length)
+	}
+	firstPTS := func(b []byte) float64 {
+		t.Helper()
+		path := filepath.Join(dir, "piece.ts")
+		if err := os.WriteFile(path, b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		out := run(t, ffprobe, "-v", "quiet", "-select_streams", "v:0", "-show_entries", "packet=pts_time", "-of", "csv=p=0", path)
+		for line := range strings.Lines(string(out)) {
+			if v, err := strconv.ParseFloat(strings.Trim(strings.TrimSpace(line), ","), 64); err == nil {
+				return v
+			}
+		}
+		t.Fatalf("no picture in %d bytes", len(b))
+		return 0
+	}
+	start := firstPTS(whole[:256<<10])
+	for _, at := range []float64{4, 8} {
+		offset := int64(at*float64(plan.Muxrate)/8) / 188 * 188
+		if got := plan.SeekableTime(offset); math.Abs(got-at) > 0.01 {
+			t.Errorf("SeekableTime(%d) = %v, want %v", offset, got, at)
+		}
+		inWhole := firstPTS(whole[offset : offset+256<<10])
+		made := run(t, ffmpeg, plan.Args(input, plan.SeekableTime(offset))...)
+		fromThere := firstPTS(made[:256<<10])
+		if math.Abs(inWhole-(start+at)) > 0.5 || math.Abs(fromThere-(start+at)) > 0.5 {
+			t.Errorf("at %v s: the whole stream has %v, the stream from there %v, want about %v", at, inWhole, fromThere, start+at)
+		}
+		if n := int64(len(made)); n > length-offset+int64(plan.Muxrate/8/10) {
+			t.Errorf("from %v s: %d bytes, more than the %d left", at, n, length-offset)
+		}
 	}
 }

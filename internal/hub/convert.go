@@ -121,7 +121,35 @@ type PlaybackSubtitle struct {
 // and ffprobe, plays as it is.
 func (h *Hub) Prepare(ctx context.Context, deviceID int64, item store.PlayableItem, profile media.Profile,
 	subs []subtitles.Track) (Playback, error) {
+	return h.prepare(ctx, deviceID, item, profile, subs, false)
+}
+
+// PreparePlayer returns the path of a new link that plays a film or an
+// episode for a player of an output or a Stalker client, which plays it as
+// it is (D75), unless its setting transcodes it always with a profile that
+// this server can make now: then ffmpeg transcodes it, at a constant rate
+// that lets the player seek in it by bytes (D151). It fails as Prepare
+// does.
+func (h *Hub) PreparePlayer(ctx context.Context, deviceID int64, item store.PlayableItem) (string, error) {
+	if tc, _ := h.titleTranscode(ctx, item); tc.Profile == "" || !h.CanConvert() {
+		return h.ItemLink(deviceID, item), nil
+	}
+	if link := h.playerLink(deviceID, item); link != "" {
+		return link, nil
+	}
+	pb, err := h.prepare(ctx, deviceID, item, media.Player, nil, true)
+	if err == nil && pb.Converted {
+		h.keepPlayerLink(deviceID, item, pb.Path)
+	}
+	return pb.Path, err
+}
+
+// prepare is Prepare, and with player PreparePlayer: for a player, only a
+// setting that transcodes the title always goes through ffmpeg.
+func (h *Hub) prepare(ctx context.Context, deviceID int64, item store.PlayableItem, profile media.Profile,
+	subs []subtitles.Track, player bool) (Playback, error) {
 	c := h.itemClaims(deviceID, item)
+	c.seek = player
 	token := h.sign(c)
 	direct := Playback{Path: "/vod/" + token + "." + item.Container}
 	// withSubtitles gives pb the subtitle tracks, in the session that
@@ -216,6 +244,12 @@ func (h *Hub) Prepare(ctx context.Context, deviceID int64, item store.PlayableIt
 		}
 		return Playback{}, ErrBusy
 	}
+	if player && !always.Made {
+		if s != nil {
+			s.info.Store(&info)
+		}
+		return direct, nil
+	}
 	switch {
 	case always.Made:
 		// Its setting transcodes it always with a profile, whether or not
@@ -224,12 +258,16 @@ func (h *Hub) Prepare(ctx context.Context, deviceID int64, item store.PlayableIt
 			return busy(h.encodeMost(ctx, always))
 		}
 		plan = media.ProfilePlan(info, profile, always, h.encoder.ToneMap)
+		if player {
+			h.seekable(ctx, &plan, info, item.Name, src)
+		}
+	case plan.VideoNote != "" && item.TranscodeURL != "" && h.serverTranscodes(ctx):
+		// The source's server transcodes it (D71), whatever the title's
+		// setting: never is of Overscan's own transcodes.
+		plan = media.TranscodePlan(info, profile)
 	case tc.Never && plan.VideoNote != "":
 		h.log.Warn("the box may not play a title's video, which is set never to be transcoded, so it plays as it is",
 			"title", item.Name, "source", src, "video", plan.VideoNote, "profile", profile.Name, "set_by", tcBy)
-	case plan.VideoNote != "" && item.TranscodeURL != "" && h.serverTranscodes(ctx):
-		// The source's server transcodes it (D71).
-		plan = media.TranscodePlan(info, profile)
 	case limit > 0:
 		// This server's ffmpeg transcodes it (D73), if it may now: on the
 		// graphics, or in software.
@@ -279,6 +317,10 @@ func (h *Hub) Prepare(ctx context.Context, deviceID int64, item store.PlayableIt
 	case plan.Transcode:
 		h.log.Info("a title plays through its source's server, which transcodes what the box cannot play", "title", item.Name,
 			"source", src, "device", deviceID, "why", plan.Why, "sound", trackSummary(plan), "profile", profile.Name)
+	case plan.Encode && plan.Profile.Made && plan.Muxrate > 0:
+		h.log.Info("a title plays through ffmpeg, which transcodes it as its setting says, at a constant rate for a player to seek in",
+			"title", item.Name, "source", src, "player", deviceID, "with", plan.Profile.Name, "set_by", tcBy,
+			"video", encodeSummary(plan), "sound", trackSummary(plan), "rate", strconv.Itoa(plan.Muxrate/1000)+"k")
 	case plan.Encode && plan.Profile.Made:
 		h.log.Info("a title plays through ffmpeg, which transcodes it as its setting says", "title", item.Name,
 			"source", src, "device", deviceID, "with", plan.Profile.Name, "set_by", tcBy, "video", encodeSummary(plan),
@@ -502,10 +544,22 @@ func (h *Hub) serveConverted(w http.ResponseWriter, r *http.Request, s *session)
 		http.Error(w, "t must be a time in seconds", http.StatusBadRequest)
 		return
 	}
-	w.Header().Set("Content-Type", "video/mp2t")
-	w.Header().Set("Accept-Ranges", "none")
-	if r.Method == http.MethodHead {
-		return
+	// A transcode that a player seeks in by bytes sends the range that it
+	// asks for (D151).
+	out := w
+	var rw *rangeWriter
+	if plan.Muxrate > 0 {
+		var at float64
+		if rw, at, ok = seekRange(w, r, plan, info); !ok {
+			return
+		}
+		out, from = rw, at
+	} else {
+		w.Header().Set("Content-Type", "video/mp2t")
+		w.Header().Set("Accept-Ranges", "none")
+		if r.Method == http.MethodHead {
+			return
+		}
 	}
 	ctx, release, ok := h.takeTurn(r.Context(), s, w)
 	if !ok {
@@ -523,8 +577,34 @@ func (h *Hub) serveConverted(w http.ResponseWriter, r *http.Request, s *session)
 		return
 	}
 	defer h.convertsRunning.Add(-1)
-	// The ways to make the stream: for a transcode, on the graphics and
-	// then in software (D150); otherwise ffmpeg's conversion alone.
+	if tailFrom := plan.SeekableTail(info.Duration); rw != nil && rw.pos >= tailFrom {
+		// The stream's end, made once, which a player reads in small steps
+		// for its last timestamp before it seeks.
+		tail, ok := h.seekTail(ctx, s, plan, info, tailFrom, about)
+		if !ok {
+			if ctx.Err() == nil {
+				http.Error(w, "the title cannot be transcoded now", http.StatusServiceUnavailable)
+			}
+			return
+		}
+		rw.skip = 0
+		if at := rw.pos - tailFrom; at < int64(len(tail)) {
+			if _, err := rw.Write(tail[at:]); err != nil {
+				return
+			}
+		}
+		_ = rw.pad()
+		return
+	}
+	h.convert(ctx, out, s, plan, info, from, about)
+}
+
+// convert makes s's stream as plan says, from the time from, and sends it
+// to out: for a transcode, on the graphics and then in software, as each
+// may (D150); otherwise through ffmpeg's conversion alone. It answers an
+// error where none could.
+func (h *Hub) convert(ctx context.Context, out http.ResponseWriter, s *session, plan *media.Plan, info *media.Info,
+	from float64, about []any) {
 	attempts := []filmAttempt{{plan: *plan, take: func() bool { return true }, give: func() {}}}
 	if plan.Encode {
 		attempts = h.filmAttempts(ctx, s, plan, info)
@@ -535,7 +615,7 @@ func (h *Hub) serveConverted(w http.ResponseWriter, r *http.Request, s *session)
 	in, closeIn, err := h.openInput(ctx, s)
 	if err != nil {
 		h.log.Error("cannot give ffmpeg a title's file", append(about, "error", err)...)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		http.Error(out, "internal error", http.StatusInternalServerError)
 		return
 	}
 	defer closeIn()
@@ -547,7 +627,7 @@ func (h *Hub) serveConverted(w http.ResponseWriter, r *http.Request, s *session)
 		if i+1 < len(attempts) {
 			instead = attempts[i+1].instead()
 		}
-		failed := h.runConvert(ctx, w, s, &a, in, from, about, instead)
+		failed := h.runConvert(ctx, out, s, &a, in, from, about, instead)
 		a.give()
 		if !failed {
 			return
@@ -555,7 +635,7 @@ func (h *Hub) serveConverted(w http.ResponseWriter, r *http.Request, s *session)
 	}
 	h.log.Warn("Overscan transcodes as many titles as it may at once; this one cannot start",
 		append(about, "most", h.encodeMost(ctx, plan.EncodeProfile()))...)
-	http.Error(w, "the server transcodes as many titles as it may at once", http.StatusServiceUnavailable)
+	http.Error(out, "the server transcodes as many titles as it may at once", http.StatusServiceUnavailable)
 }
 
 // instead says, for the log, what a way to transcode a title does when it
@@ -641,7 +721,7 @@ func (h *Hub) runConvert(ctx context.Context, w http.ResponseWriter, s *session,
 
 	rc := http.NewResponseController(w)
 	buf := make([]byte, copyBufferBytes)
-	sent := false
+	sent, rangeSent := false, false
 	// A player left waiting for a stream that never comes can hang a box:
 	// ffmpeg that makes nothing in a while is stopped.
 	var tooSlow atomic.Bool
@@ -663,7 +743,11 @@ func (h *Hub) runConvert(ctx context.Context, w http.ResponseWriter, s *session,
 			}
 			sent = true
 			if _, werr := w.Write(buf[:n]); werr != nil {
-				stop() // the player went away
+				// The player went away, or has all of the range that it
+				// asked for.
+				rangeSent = errors.Is(werr, errRangeSent)
+				_ = rc.Flush()
+				stop()
 				break
 			}
 			_ = rc.Flush()
@@ -676,7 +760,13 @@ func (h *Hub) runConvert(ctx context.Context, w http.ResponseWriter, s *session,
 	if progress != nil && sent {
 		h.encodeEnded(progress, about)
 	}
+	if rw, ok := w.(*rangeWriter); ok && werr == nil && ctx.Err() == nil && fctx.Err() == nil {
+		_ = rw.pad() // what ffmpeg made is shorter than the stream says
+		sent = true
+	}
 	switch {
+	case rangeSent:
+		// The player has all that it asked for.
 	case tooSlow.Load() && !sent && ctx.Err() == nil:
 		h.log.Warn("ffmpeg made nothing of a title in a while, so the hub stopped it; the player can ask again",
 			append(about, "waited", convertFirstOutput, "ffmpeg", messages.String())...)

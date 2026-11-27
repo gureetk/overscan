@@ -57,6 +57,18 @@ var MAG322 = Profile{
 	Audio: []string{"aac", "ac3", "mp1", "mp2", "mp3", "vorbis", "opus", "pcm_s16le"},
 }
 
+// Player is what a player of an output or a Stalker client plays, as far
+// as a transcode with a profile asks (D151): every sound that MPEG-TS
+// carries. Such a player is never asked what it plays, so nothing else of
+// it is known.
+var Player = Profile{
+	Name:    "a player",
+	Formats: []string{"matroska", "mpegts", "mpeg", "avi", "mov", "asf"},
+	Video: []VideoCodec{{Codec: "h264"}, {Codec: "hevc"}, {Codec: "mpeg1video"}, {Codec: "mpeg2video"}, {Codec: "mpeg4"},
+		{Codec: "vc1"}, {Codec: "wmv3"}, {Codec: "av1"}, {Codec: "vp9"}},
+	Audio: tsAudio,
+}
+
 // ProfileFor returns the profile that a device's model starts from, by the
 // model as the box reports it: the MAG322's for every one, the only model
 // whose datasheet Overscan has. A box's playback check changes it (D70).
@@ -153,6 +165,11 @@ type Plan struct {
 	// the profile that ffmpeg makes it with; the zero Profile for D73's
 	// transcode of what a box cannot play.
 	Profile streamprofile.Profile
+	// Muxrate, when above 0, is the constant rate, in bits a second, of a
+	// transcode that a player seeks in by bytes (D151): each byte of the
+	// stream is then at a time that its place says, as MakeSeekable sets
+	// it.
+	Muxrate int
 	// Hardware, if not nil, has the server's graphics transcode it (D148,
 	// D150): the hub sets it as a transcode starts. Its ToneMap says that
 	// they map the video's HDR10 to SDR.
@@ -441,7 +458,16 @@ func (i Info) ParseKeyframe(out []byte) (float64, bool) {
 func (p Plan) Args(input string, from float64) []string {
 	args := append(common("warning"), "-nostdin", "-nostats", "-fflags", "+genpts")
 	if p.Encode {
-		return p.encodeArgs(args, input, from)
+		args = p.encodeArgs(args, input, from)
+		if p.Muxrate > 0 {
+			// At a constant rate, its timestamps from the time asked, so
+			// that the stream from there is the stream from the start from
+			// that byte on (D151). The output is the last three arguments.
+			out := slices.Clone(args[len(args)-3:])
+			args = append(args[:len(args)-3], "-muxrate", strconv.Itoa(p.Muxrate), "-output_ts_offset", Seconds(from))
+			args = append(args, out...)
+		}
+		return args
 	}
 	if from > 0 {
 		// To the millisecond after, so that rounding does not take ffmpeg
@@ -554,6 +580,90 @@ func (p Plan) hardwareArgs(args []string, input string, from float64) []string {
 	}
 	return p.soundArgs(args)
 }
+
+// MakeSeekable makes a transcode with a profile one that a player seeks in
+// by bytes (D151), and reports whether it could: a file whose length is
+// not known cannot be. Every sound track is converted, so that its bit rate
+// is known; the video is held to the profile's highest bit rate, or for a
+// profile without one to one that its size and codec make; and the stream
+// is muxed at a constant rate above both, so that each byte is at the time
+// that its place says.
+func (p *Plan) MakeSeekable(info Info) bool {
+	video := info.First(Video)
+	if !p.Encode || !p.Profile.Made || info.Duration <= 0 || video == nil {
+		return false
+	}
+	lines := video.Height
+	if p.Height > 0 {
+		lines = p.Height
+	}
+	if p.Profile.MaxKbps == 0 {
+		p.Profile.MaxKbps = seekableKbps(lines, p.Profile.Codec)
+	}
+	kbps := p.Profile.MaxKbps
+	aac := p.SoundCodec() == "aac"
+	for i := range p.Tracks {
+		t := &p.Tracks[i]
+		t.Convert = true
+		switch {
+		case aac:
+			kbps += 128
+		default:
+			r, _ := strconv.Atoi(strings.TrimSuffix(ac3Rate(min(max(t.Channels, 2), 6)), "k"))
+			kbps += r
+		}
+	}
+	// Room for MPEG-TS's own packets and for a rate control that keeps to
+	// its highest bit rate only over a second or two.
+	p.Muxrate = (kbps*115/100 + 64) * 1000
+	return true
+}
+
+// seekableKbps is the highest bit rate of a seekable transcode's video
+// whose profile has none, in kbit/s, by its lines: about what such a
+// picture needs at a good quality, and less for HEVC.
+func seekableKbps(lines int, codec string) int {
+	kbps := 16000
+	for _, c := range []struct{ lines, kbps int }{{360, 1000}, {480, 1500}, {576, 2000}, {720, 3500}, {1080, 6000}, {1440, 10000}} {
+		if lines <= c.lines {
+			kbps = c.kbps
+			break
+		}
+	}
+	if codec == streamprofile.HEVC {
+		kbps = kbps * 7 / 10
+	}
+	return kbps
+}
+
+// SeekableLength is how many bytes a seekable transcode of a file that
+// lasts duration says it holds: whole MPEG-TS packets, at its rate, for as
+// long as the file. ffmpeg makes about that many: what it makes beyond is
+// left out, and what it makes short of it is padding, so that the stream's
+// last timestamps are near its end, where players look for them.
+func (p Plan) SeekableLength(duration float64) int64 {
+	packets := math.Ceil(duration * float64(p.Muxrate) / 8 / tsPacket)
+	return int64(packets) * tsPacket
+}
+
+// SeekableTail is where the end of a seekable transcode starts, which a
+// player reads for the stream's length, and searches in small steps for
+// its last timestamp before it seeks: the last 2 seconds, or the last 512
+// KiB where those are fewer bytes, from a packet's start.
+func (p Plan) SeekableTail(duration float64) int64 {
+	length := p.SeekableLength(duration)
+	tail := max(int64(2*p.Muxrate/8), 512<<10)
+	return max(length-tail, 0) / tsPacket * tsPacket
+}
+
+// SeekableTime is the time of the packet that holds the byte at offset in
+// a seekable transcode, in seconds from the file's start.
+func (p Plan) SeekableTime(offset int64) float64 {
+	return float64(offset-offset%tsPacket) * 8 / float64(p.Muxrate)
+}
+
+// tsPacket is the size of an MPEG-TS packet.
+const tsPacket = 188
 
 // SoundCodec names, as ffmpeg does, what the plan converts sound tracks
 // to: AAC for a transcode with a profile of AAC in stereo (D150), and else

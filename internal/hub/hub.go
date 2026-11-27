@@ -169,8 +169,11 @@ type Hub struct {
 	playerByID map[int64]*Player
 	nextPlayer int64
 
-	mu          sync.Mutex
-	sessions    map[uint64]*session // by token nonce
+	mu       sync.Mutex
+	sessions map[uint64]*session // by token nonce
+	// playerLinks are the tokens of players' transcodes of titles, so
+	// that a player's next request goes on with its session (D151).
+	playerLinks map[playerTitle]string
 	unrelayable map[int64]time.Time // channels whose HLS the relay could not follow, by ID, until when (D61)
 	shared      map[int64]*session  // the shared tuners that run, by channel ID (D93)
 	failing     map[int64]time.Time // channels whose streams failed to start, by ID, until when (D109)
@@ -210,6 +213,7 @@ func New(st *store.Store, log *slog.Logger, version string, sources map[int64]So
 		gpuEncodes: map[int64]int{},
 
 		unrelayable: map[int64]time.Time{},
+		playerLinks: map[playerTitle]string{},
 		shared:      map[int64]*session{},
 		failing:     map[int64]time.Time{},
 		closing:     map[*session]struct{}{},
@@ -520,6 +524,10 @@ type session struct {
 	plan       atomic.Pointer[media.Plan]
 	converting atomic.Int32 // its requests going through ffmpeg now
 	changed    atomic.Bool  // its file turned out to have changed
+	// tail is, for a transcode that a player seeks in by bytes, the
+	// stream's end, once made (D151).
+	tailMu sync.Mutex
+	tail   []byte
 	// transcodeURL is, for a film or an episode whose source's server
 	// transcodes, where it does (D71); transcoding counts its requests
 	// for such streams now.

@@ -133,7 +133,9 @@ func (h *Hub) filmHardware(ctx context.Context, plan *media.Plan, info *media.In
 		return streamprofile.Hardware{}, false
 	}
 	e := f.Encodes[prof.VideoCodec()]
-	if !e.OK {
+	if !e.OK || plan.Muxrate > 0 && !e.VBR {
+		// A transcode that a player seeks in by bytes keeps to a bit rate
+		// (D151), which these graphics do not.
 		return streamprofile.Hardware{}, false
 	}
 	hw := streamprofile.Hardware{Device: f.Device, LowPower: e.LowPower, ICQ: e.ICQ, VBR: e.VBR, Filters: f.Filters(), Rate: f.Rate}

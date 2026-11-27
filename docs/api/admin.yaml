@@ -4565,11 +4565,12 @@ components:
         What is transcoded (D147): `as_needed`, as a device's or account's
         profile says, or as the level above says; `always`, with `profile`,
         for devices that would get the stream as its source sends it; or
-        `never`, whatever a device's profile. For films and series (D150),
-        which only the boxes get transcoded: `as_needed`, when the box
-        cannot play the video, as the settings allow; `always`, with
-        `profile`, whether or not the box could play it; or `never`, with
-        its video as its source sends it. `profile` names a profile that
+        `never`, whatever a device's profile. For films and series (D150):
+        `as_needed`, when the box cannot play the video, as the settings
+        allow; `always`, with `profile`, whether or not the box could play
+        it, for the boxes, the players and the Stalker clients (D151); or
+        `never`, which no transcode of Overscan's own makes, though a
+        Jellyfin server's still may. `profile` names a profile that
         transcodes, fixed or made by the administrator, and is null unless
         `mode` is `always`. A profile that does not exist, or that does not
         transcode, is refused (`bad_transcode`).

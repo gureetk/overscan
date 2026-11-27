@@ -59,6 +59,13 @@ func (h *Hub) serveItem(w http.ResponseWriter, r *http.Request, rest string) {
 		h.serveSubtitle(w, r, s, subtitle)
 		return
 	}
+	if c.convert && (s == nil || s.plan.Load() == nil) && c.seek && !hasSub && h.now().Unix() <= c.expires {
+		// A player's link whose session has ended, after a long pause, is
+		// prepared again (D151).
+		if s = h.prepareAgain(w, r, c); s == nil {
+			return
+		}
+	}
 	if c.convert {
 		if s == nil || s.plan.Load() == nil {
 			http.Error(w, "this link has expired; ask for a new one", http.StatusForbidden)
@@ -111,6 +118,70 @@ func (h *Hub) serveItem(w http.ResponseWriter, r *http.Request, rest string) {
 		}
 	}
 	h.serveFile(w, r, s)
+}
+
+// ServePlayerItem serves a film or an episode to a player of an output, as
+// PreparePlayer says: as it is, or transcoded for it to seek in (D151).
+func (h *Hub) ServePlayerItem(w http.ResponseWriter, r *http.Request, playerID int64, item store.PlayableItem) {
+	link, err := h.PreparePlayer(r.Context(), playerID, item)
+	if err != nil {
+		h.notPrepared(w, r, err, item, playerID)
+		return
+	}
+	h.ServeLink(w, r, link)
+}
+
+// notPrepared answers a request for a title whose link could not be
+// prepared, as err says; Prepare has logged why.
+func (h *Hub) notPrepared(w http.ResponseWriter, r *http.Request, err error, item store.PlayableItem, deviceID int64) {
+	switch {
+	case r.Context().Err() != nil:
+	case errors.Is(err, ErrBusy):
+		http.Error(w, "the server transcodes as many titles as it may at once", http.StatusServiceUnavailable)
+	case errors.Is(err, ErrNoLink):
+		h.resolveFailed(w, r, "title", item.Name, item.SourceID, deviceID, err)
+	default:
+		h.refused(w, err, "title", item.Name, item.SourceID, deviceID)
+	}
+}
+
+// prepareAgain prepares a player's link whose session has ended again, and
+// returns the new session, or nil once it has answered: a title that is no
+// longer there or that the player's account no longer reaches, one that its
+// setting no longer transcodes, which the player asks for again, or no room.
+func (h *Hub) prepareAgain(w http.ResponseWriter, r *http.Request, c claims) *session {
+	ctx := r.Context()
+	var item store.PlayableItem
+	var err error
+	if c.kind == kindMovie {
+		item, err = h.store.PlayableMovie(ctx, c.entryID)
+	} else {
+		item, err = h.store.PlayableEpisode(ctx, c.entryID)
+	}
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		http.Error(w, "this title is not available", http.StatusNotFound)
+		return nil
+	case err != nil:
+		h.log.Error("cannot look up a title to play", "kind", playsKind(c.kind), "id", c.entryID, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return nil
+	}
+	if !h.usesSource(w, r, c.deviceID, item.SourceID, "this title is not available") {
+		return nil
+	}
+	link, err := h.PreparePlayer(ctx, c.deviceID, item)
+	if err != nil {
+		h.notPrepared(w, r, err, item, c.deviceID)
+		return nil
+	}
+	token, _, _ := strings.Cut(strings.TrimPrefix(link, "/vod/"), ".")
+	nc, ok := h.verify(token)
+	if s := h.lookup(nc.nonce); ok && nc.convert && s != nil {
+		return s
+	}
+	http.Error(w, "this link has expired; ask for a new one", http.StatusForbidden)
+	return nil
 }
 
 // rangeHeader matches the byte ranges that a player may ask for.
