@@ -12,12 +12,14 @@ import (
 // The first byte of every token says its form, so the forms can change: 1
 // for a lineup entry's link, 2 for a film's or an episode's, which also
 // says which of the two it plays, 3 for a past programme's (D81), 4 for a
-// lineup entry's link that may play through a timeshift buffer (D92).
+// lineup entry's link that may play through a timeshift buffer (D92), 5
+// for a lineup entry's link that plays as HLS that the hub cuts (D153).
 const (
 	tokenVersion        = 1
 	itemTokenVersion    = 2
 	archiveTokenVersion = 3
 	shiftTokenVersion   = 4
+	hlsTokenVersion     = 5
 )
 
 const (
@@ -66,6 +68,9 @@ type claims struct {
 	// seek says that a film's or an episode's link is a player's (D151),
 	// which is prepared again when its session has ended.
 	seek bool
+	// cut says that a lineup entry's link plays as HLS that the hub cuts
+	// from the channel's one stream (D153).
+	cut bool
 }
 
 // sign returns c as a token: the claims and an HMAC-SHA256 of them, cut to
@@ -85,7 +90,10 @@ func (h *Hub) sign(c claims) string {
 	case kindEntry:
 		b = make([]byte, claimsLen, claimsLen+sha256.Size)
 		b[0] = tokenVersion
-		if c.shift {
+		switch {
+		case c.cut:
+			b[0] = hlsTokenVersion
+		case c.shift:
 			b[0] = shiftTokenVersion
 		}
 		binary.BigEndian.PutUint64(b[1:], uint64(c.entryID))
@@ -122,7 +130,7 @@ func (h *Hub) verify(token string) (claims, bool) {
 	}
 	n := 0
 	switch b[0] {
-	case tokenVersion, shiftTokenVersion:
+	case tokenVersion, shiftTokenVersion, hlsTokenVersion:
 		n = claimsLen
 	case itemTokenVersion:
 		n = itemClaimsLen
@@ -138,7 +146,7 @@ func (h *Hub) verify(token string) (claims, bool) {
 		return claims{}, false
 	}
 	switch b[0] {
-	case tokenVersion, shiftTokenVersion:
+	case tokenVersion, shiftTokenVersion, hlsTokenVersion:
 		return claims{
 			kind:     kindEntry,
 			entryID:  int64(binary.BigEndian.Uint64(b[1:])),
@@ -146,6 +154,7 @@ func (h *Hub) verify(token string) (claims, bool) {
 			expires:  int64(binary.BigEndian.Uint64(b[17:])),
 			nonce:    binary.BigEndian.Uint64(b[25:]),
 			shift:    b[0] == shiftTokenVersion,
+			cut:      b[0] == hlsTokenVersion,
 		}, true
 	case archiveTokenVersion:
 		c := claims{

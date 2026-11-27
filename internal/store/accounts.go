@@ -44,6 +44,9 @@ type Account struct {
 type Outputs struct {
 	M3U    bool // its playlist and guide
 	Xtream bool // the Xtream-compatible API
+	// HLS lets the players of either ask for live channels as HLS that the
+	// hub cuts from each channel's one stream (D153).
+	HLS bool
 }
 
 // Ended reports whether the account's end date has passed by now (D95):
@@ -77,7 +80,7 @@ func (s *Store) Account(ctx context.Context, id int64) (Account, error) {
 
 // accountColumns are what scanAccount reads.
 const accountColumns = "id, name, lineup_id, expires_at, created_at, COALESCE(pin_hash, ''), COALESCE(theme_id, 0), " +
-	"COALESCE(username, ''), password_hash, token_hash IS NOT NULL, max_streams, output_m3u, output_xtream, output_profile, " +
+	"COALESCE(username, ''), password_hash, token_hash IS NOT NULL, max_streams, output_m3u, output_xtream, output_profile, output_hls, " +
 	"sources_limited, (SELECT COALESCE(group_concat(source_id), '') FROM account_sources WHERE account_id = accounts.id)"
 
 // scanAccount reads a row of accountColumns.
@@ -87,7 +90,7 @@ func scanAccount(row rowScanner) (Account, error) {
 	var created, sources string
 	err := row.Scan(&a.ID, &a.Name, &a.LineupID, &expires, &created, &a.PINHash, &a.ThemeID,
 		&a.Username, &a.PasswordHash, &a.HasToken, &a.MaxStreams, &a.Outputs.M3U, &a.Outputs.Xtream, &a.OutputProfile,
-		&a.Sources.Only, &sources)
+		&a.Outputs.HLS, &a.Sources.Only, &sources)
 	if err != nil {
 		return Account{}, err
 	}

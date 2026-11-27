@@ -432,6 +432,21 @@ func (b *shift) wake() {
 // shiftStall. A request that falls behind what the buffer keeps goes on
 // from the oldest place to start from.
 func (b *shift) copyTo(ctx context.Context, w io.Writer, flush func(), off int64) {
+	b.follow(ctx, off, func(_ int64, p []byte) error {
+		if _, err := w.Write(p); err != nil {
+			return err
+		}
+		flush()
+		return nil
+	})
+}
+
+// follow gives fn the stream from off, piece by piece with each piece's
+// offset, as copyTo sends it, until fn fails, ctx ends, the buffer closes,
+// or nothing more comes in shiftStall. A reader that falls behind what the
+// buffer keeps goes on from the oldest place to start from, which the
+// offsets show.
+func (b *shift) follow(ctx context.Context, off int64, fn func(at int64, p []byte) error) {
 	stop := context.AfterFunc(ctx, b.wake)
 	defer stop()
 	buf := make([]byte, copyBufferBytes)
@@ -473,16 +488,83 @@ func (b *shift) copyTo(ctx context.Context, w io.Writer, flush func(), off int64
 		n, err := c.f.ReadAt(buf[:min(int64(len(buf)), c.start+c.n-off)], off-c.start)
 		b.mu.Unlock()
 		if n > 0 {
-			if _, werr := w.Write(buf[:n]); werr != nil {
+			if ferr := fn(off, buf[:n]); ferr != nil {
 				return
 			}
-			flush()
 			off += int64(n)
 			waited = b.now()
 		}
 		if err != nil && !errors.Is(err, io.EOF) {
 			return
 		}
+	}
+}
+
+// errShiftGone is why the buffer cannot send a stretch of the stream: it no
+// longer keeps all of it, or does not have it yet.
+var errShiftGone = errors.New("the buffer does not keep that part of the stream")
+
+// readRange sends n bytes of the stream from off to w, all of which the
+// buffer must keep (D153). It fails with errShiftGone, before sending
+// anything, if it does not, and with w's error.
+func (b *shift) readRange(w io.Writer, off, n int64) error {
+	buf := make([]byte, min(n, copyBufferBytes))
+	for first := true; n > 0; first = false {
+		b.mu.Lock()
+		if b.closed || len(b.chunks) == 0 || off < b.chunks[0].start || off+n > b.end {
+			b.mu.Unlock()
+			if first {
+				return errShiftGone
+			}
+			return errShiftClosed
+		}
+		c := b.chunks[len(b.chunks)-1]
+		for _, k := range b.chunks {
+			if off < k.start+k.n {
+				c = k
+				break
+			}
+		}
+		k, err := c.f.ReadAt(buf[:min(int64(len(buf)), c.start+c.n-off, n)], off-c.start)
+		b.mu.Unlock()
+		if k > 0 {
+			if _, werr := w.Write(buf[:k]); werr != nil {
+				return werr
+			}
+			off += int64(k)
+			n -= int64(k)
+		}
+		if err != nil && !errors.Is(err, io.EOF) {
+			return err
+		}
+	}
+	return nil
+}
+
+// keeps reports whether the buffer keeps all of n bytes of the stream from
+// off.
+func (b *shift) keeps(off, n int64) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return !b.closed && len(b.chunks) > 0 && off >= b.chunks[0].start && off+n <= b.end
+}
+
+// keeping returns how far back the buffer keeps the stream: keep, which
+// keepAtLeast can raise while the buffer is in use.
+func (b *shift) keeping() time.Duration {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.keep
+}
+
+// keepAtLeast makes the buffer keep at least d of the stream from now on,
+// and room for it.
+func (b *shift) keepAtLeast(d time.Duration) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if d > b.keep {
+		b.keep = d
+		b.most = max(int64(d.Seconds()*shiftRate), 2*shiftChunkBytes)
 	}
 }
 
@@ -539,10 +621,10 @@ func (h *Hub) tune(s *session) {
 	src := h.source(s.sourceID).Name
 	if s.shared {
 		h.log.Info("a channel plays from a shared tuner, whose one connection to the source serves every screen on it",
-			"channel", s.channel, "source", src, "keeps", s.shift.keep)
+			"channel", s.channel, "source", src, "keeps", s.shift.keeping())
 	} else {
 		h.log.Info("a box's channel goes through a timeshift buffer", "channel", s.channel, "source", src,
-			"device", s.deviceID, "keeps", s.shift.keep)
+			"device", s.deviceID, "keeps", s.shift.keeping())
 	}
 	wait := s.shift.retry
 	for first := true; s.ctx.Err() == nil; first = false {
@@ -593,7 +675,7 @@ func (h *Hub) serveShift(w http.ResponseWriter, r *http.Request, s *session) {
 			http.Error(w, "behind is a number of seconds", http.StatusBadRequest)
 			return
 		}
-		behind = time.Duration(min(n, b.keep.Seconds()) * float64(time.Second))
+		behind = time.Duration(min(n, b.keeping().Seconds()) * float64(time.Second))
 	}
 
 	h.begin(s)

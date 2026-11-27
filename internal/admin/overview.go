@@ -33,6 +33,9 @@ type Streams interface {
 	// StopStream ends the stream that Stream.ID names, and reports
 	// whether there was one (D138).
 	StopStream(id, reason string) bool
+	// StopCut ends the HLS that the hub cuts for an account's players
+	// (D153).
+	StopCut(accountID int64, reason string) int
 }
 
 // UseStreams gives the admin what lists the streams playing. Without it, the
@@ -510,6 +513,9 @@ type apiStream struct {
 	// Shared is a channel that plays from a shared tuner, whose one
 	// connection to the source serves every screen on it (D93).
 	Shared bool `json:"shared,omitempty"`
+	// HLSOut is a channel that a player gets as HLS that the hub cuts
+	// (D153).
+	HLSOut bool `json:"hls_out,omitempty"`
 	// Programme and AiredAt are, for a past programme of the channel that
 	// plays from its source's archive (D81), its title and when it began.
 	Programme string     `json:"programme,omitempty"`
@@ -538,7 +544,7 @@ func (a *Admin) apiStreams(w http.ResponseWriter, r *http.Request, _ store.Admin
 		out[i] = apiStream{ID: s.ID, Details: s.Details, Kind: s.Kind, DeviceID: s.DeviceID, Device: s.Device, AccountID: s.AccountID, EntryID: s.EntryID, ItemID: s.ItemID,
 			Channel: s.Channel, SourceID: s.SourceID, Source: s.Source, StartedAt: s.Started.UTC().Truncate(time.Second),
 			Bytes: s.Bytes, HLS: s.HLS, Repaired: s.Repaired, Converted: s.Converted, Transcoded: s.Transcoded,
-			TranscodedBy: s.TranscodedBy, Playing: s.Playing, Timeshift: s.Timeshift, Shared: s.Shared, Programme: s.Programme,
+			TranscodedBy: s.TranscodedBy, Playing: s.Playing, Timeshift: s.Timeshift, Shared: s.Shared, HLSOut: s.Cut, Programme: s.Programme,
 			Profile: s.Profile, Speed: s.Speed, Behind: s.Behind, Graphics: s.Graphics}
 		if !s.Aired.IsZero() {
 			aired := s.Aired.UTC()

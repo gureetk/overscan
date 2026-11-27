@@ -47,6 +47,9 @@ type features struct {
 	// transcode at a time; films, from its fourth, what is transcoded of
 	// films and series, a shelf and a title.
 	transcoding, graphics, films bool
+	// hls is v1.4.0's, from its first pre-release on: an account's HLS
+	// for players (D153). Every build of 1.4 holds all of 1.3's.
+	hls bool
 }
 
 func featuresOf(version string) features {
@@ -72,9 +75,14 @@ func featuresOf(version string) features {
 	since13 := func(n int) bool {
 		return from(1, 3) && !(major == 1 && minor == 3 && strings.HasPrefix(pre, "alpha.") && alpha < n)
 	}
+	// An alpha of 1.4.0 has what the alphas before it brought, and all of
+	// 1.3.0's.
+	since14 := func(n int) bool {
+		return from(1, 4) && !(major == 1 && minor == 4 && strings.HasPrefix(pre, "alpha.") && alpha < n)
+	}
 	return features{households: at(4), hub: at(5), playlists: from(1, 1), guides: from(1, 2), handGuides: since(2), logos: since(3),
 		placeholders: since(4), pictures: since(5), moves: since(6), transcoding: since13(1),
-		graphics: since13(2), films: since13(4)}
+		graphics: since13(2), films: since13(4), hls: since14(1)}
 }
 
 // household holds what the setup made, by name, so that the probes can
@@ -261,6 +269,15 @@ func (h *household) setUp(a *admin, base string, since time.Time) error {
 			name string
 			run  func() error
 		}{"transcoding profiles and settings", func() error { return h.setUpTranscoding(a) }})
+	}
+	if h.f.hls {
+		steps = append(steps, struct {
+			name string
+			run  func() error
+		}{"HLS for the guests' players", func() error {
+			return a.call("PATCH", fmt.Sprintf("accounts/%d", h.guests),
+				map[string]any{"outputs": map[string]bool{"m3u": true, "xtream": true, "hls": true}}, nil)
+		}})
 	}
 	for _, s := range steps {
 		if err := s.run(); err != nil {
@@ -1096,6 +1113,22 @@ func (h *household) probes(a *admin, base string) []probe {
 			}
 			return strings.Split(strings.TrimSpace(string(text)), "\n"), nil
 		}})
+		if h.f.hls {
+			// The playlists that a player gets when it asks for HLS
+			// (D153).
+			for name, path := range map[string]string{
+				"the account's playlist with output=m3u8": "/playlist/" + h.token + ".m3u?output=m3u8",
+				"get.php with output=m3u8":                "/get.php" + login + "&type=m3u_plus&output=m3u8",
+			} {
+				out = append(out, probe{"player GET " + name, func() (any, error) {
+					var text []byte
+					if err := get(base, path, &text); err != nil {
+						return nil, err
+					}
+					return strings.Split(strings.TrimSpace(string(text)), "\n"), nil
+				}})
+			}
+		}
 	}
 	return out
 }

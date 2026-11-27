@@ -4915,6 +4915,15 @@ components:
             The Xtream-compatible API, `get.php` and `xmltv.php`, for players
             that sign in with its login (D104), once it has one. Turning it
             off stops what players play through it (D105).
+        hls:
+          type: boolean
+          description: >-
+            HLS for players (D153), off at first: players of either output
+            that ask for a live channel's `.m3u8`, or read a playlist with
+            `output=m3u8`, get HLS that the hub cuts from the channel's one
+            stream, shared by every HLS player of the channel. Left out of a
+            change, it stays as it is. Turning it off ends the HLS that its
+            players play.
     Profile:
       type: object
       required: [id, account_id, name, first, pin, devices, theme_id]
@@ -6077,6 +6086,11 @@ components:
             to the source serves every screen that plays it (D93); `bytes`
             is then what the tuner has taken from the source. Left out
             otherwise.
+        hls_out:
+          type: boolean
+          description: >-
+            A channel that a player gets as HLS that the hub cuts from its
+            shared tuner's stream (D153). Left out otherwise.
         programme:
           type: string
           description: For a past programme, its title, where the guide still has it.

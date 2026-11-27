@@ -67,10 +67,15 @@ func (o *Output) playlist(w http.ResponseWriter, r *http.Request) {
 	guide := output.Base(r) + "/xmltv.php?" + url.Values{"username": {username}, "password": {password}}.Encode()
 	o.log.Info("a player read its playlist", "account", acct.Name, "player", output.ClientAddress(r), "channels", len(list),
 		"output", output.Xtream)
-	m3u.WritePlaylist(w, list, output.Base(r), guide, m3u.Links{
+	links := m3u.Links{
 		Stream:  func(entryID int64) string { return live + strconv.FormatInt(entryID, 10) + ".ts" },
 		Archive: func(entryID int64) string { return shift + strconv.FormatInt(entryID, 10) + ".ts" },
-	})
+	}
+	if acct.Outputs.HLS && output.WantsHLS(r) {
+		// A player that asks for HLS gets its addresses (D153).
+		links.HLS = func(entryID int64) string { return live + strconv.FormatInt(entryID, 10) + ".m3u8" }
+	}
+	m3u.WritePlaylist(w, list, output.Base(r), guide, links)
 }
 
 // guide serves GET /xmltv.php: the account's guide, as /epg/<token>.xml
@@ -145,9 +150,14 @@ func (o *Output) entry(w http.ResponseWriter, r *http.Request, acct store.Accoun
 // live serves GET /live/<username>/<password>/<stream_id>.ts, or .m3u8,
 // or with no extension: the channel, through the hub, as the account's
 // player. A .ts address plays one continuous MPEG-TS stream, as the
-// playlist's do (D103); an .m3u8 address plays HLS for a channel whose
-// source sends it, and nothing for one whose source sends MPEG-TS, which
-// allowed_output_formats does not offer (notes, section 10).
+// playlist's do (D103). While the account's HLS for players is on, an
+// .m3u8 address plays HLS that the hub cuts from the channel's one stream
+// (D153); a channel that the hub cannot cut, a radio station or one that it
+// transcodes for the player, plays as at its .ts address, but one whose
+// source sends HLS, which plays that HLS. While it is off, an .m3u8 address
+// plays HLS for a channel whose source sends it, and nothing for one whose
+// source sends MPEG-TS, which allowed_output_formats does not offer then
+// (notes, section 10).
 //
 // The hub's own resources of an HLS session are at
 // /live/<token>/r/<n>.<ext>, which this pattern matches too: they go to
@@ -172,8 +182,14 @@ func (o *Output) live(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	player := output.Player(o.hub, acct.ID, output.Xtream, r)
+	if ext == "m3u8" && acct.Outputs.HLS {
+		if link := o.hub.CutLink(player, entry); link != "" {
+			o.hub.ServeLink(w, r, link)
+			return
+		}
+	}
 	link := o.hub.Link(player, entry)
-	if ext != "m3u8" {
+	if ext != "m3u8" || (acct.Outputs.HLS && !strings.HasSuffix(link, ".m3u8")) {
 		link = output.Continuous(link)
 	} else if !strings.HasSuffix(link, ".m3u8") {
 		(&output.Refusal{Status: http.StatusNotFound, Text: "This channel plays as .ts."}).Refuse(w)

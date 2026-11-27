@@ -650,6 +650,7 @@ Players that ask for HLS get it from the hub, for live channels as their sources
     - The token is the hub's, signed and bound to the player's account (D103, D104), and names no source.
     - The session lasts while the player asks for its playlist or its segments, and ends 30 s after it stops.
     - It counts as one stream against the account's limit (D102), and a player that changes channel replaces its own session at a full source or account (D36).
+  - **In place:** each account's *HLS for players* on its page, `hls` in the admin API's `outputs` (schema 55); the Xtream login's `m3u8`, its `.m3u8` addresses and `get.php`'s `output=m3u8`, and the playlist's `?output=m3u8` with `<entry>.m3u8` addresses; the hub's playlist of renditions, its sessions' media playlists and segments under `/live/<token>/`, cut by `internal/hlscut` from the shared tuner's buffer; a radio station, a channel whose source sends HLS and one transcoded for the player playing as before at `.m3u8`; *As HLS* on the *Overview*; and the support bundle's count (D154).
 - HLS of live transcodes. A channel that its setting (D147), or the player's account's *Live streams* profile (D110), transcodes is HLS of one transcode for each channel and profile, shared by every player that gets that profile.
   - It runs on the graphics or in software, within their numbers at a time (D148), and counts once against them however many players watch.
   - Its segments are 4 s, since a transcode starts a picture every 2 s.
@@ -671,7 +672,7 @@ Players that ask for HLS get it from the hub, for live channels as their sources
 - memory stays within section 15's budgets, with the disk that segments take measured and written down;
 - and an upgrade changes nothing.
 
-*Status:* planned in detail (D153). Nothing of it is built yet.
+*Status:* planned in detail (D153). Its first phase, live channels as HLS as their sources send them, is in place (v1.4.0-alpha.1).
 
 ---
 
@@ -865,6 +866,7 @@ The reasons behind each decision are in [`decisions.md`](decisions.md).
 - A title set always reaches players and Stalker clients transcoded at a constant rate, which they seek in by bytes (D151).
 - v1.3.0 was not published; M10 is released with M11 in v1.4.0, whose pre-releases hold both (D152).
 - M11 gives players that ask HLS of live channels, as sent and as transcodes, cut by Overscan at keyframes from a channel's one stream into its buffer on disk; a channel's HLS players share one connection; an account's *HLS for players* starts off; films stay on D151's MPEG-TS (D153).
+- An account's *HLS for players* gives its players a playlist of one rendition for a channel's `.m3u8`, and `.m3u8` addresses in playlists asked for with `output=m3u8`; a player's HLS is a screen on the channel's shared tuner, active while it asks (D154).
 - The reference client reads Overscan through the Xtream output, without a source type of Overscan's own (open question 2).
 - HDHomeRun emulation waits in the backlog (open question 6).
 

@@ -17,6 +17,7 @@ All of them are Overscan's own choice.
 - `/playlist/<token>.m3u`, or `.m3u8`: the playlist.
 - `/epg/<token>.xml.gz`: the guide, compressed with gzip and sent as `application/gzip`; `/epg/<token>.xml` sends it as it is.
 - `/playlist/<token>/<entry>.ts`: a channel, as one continuous MPEG-TS stream. A source that sends HLS is relayed as one (D42), so every channel has the same kind of address.
+- `/playlist/<token>.m3u?output=m3u8` (or `output=hls`), while the account's *HLS for players* is on (D153): the same playlist, whose channels but radio stations have `/playlist/<token>/<entry>.m3u8`, HLS that the hub cuts from the channel's one stream, as the Xtream output's `.m3u8` is ([xtream-api-notes.md](xtream-api-notes.md), section 10). **Overscan's choice:** the query names the format as `get.php`'s `output` does for players of the Xtream form; while the switch is off, it changes nothing, and `<entry>.m3u8` is not there.
 - `/playlist/<token>/archive/<entry>.ts?start=S&end=E`: a past programme of a channel, from S to E in Unix seconds.
 - `<token>` is the account's playlist token, 43 characters of URL-safe Base64. Making a new one stops every address made with the old one.
 - `<entry>` is the channel's ID in the account's lineup, which stays the same across refreshes of its source.

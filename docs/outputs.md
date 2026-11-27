@@ -38,6 +38,19 @@ An account that uses only some sources, as its page's *Sources* says, gets only 
 
 Each channel plays through Overscan as one continuous MPEG-TS stream, never from the source's own address, which keeps its login on the server. With an Xtream login, a player that asks for HLS gets it for channels whose source sends HLS. Films and episodes play as their files are, and the player can seek in them.
 
+## HLS for players
+
+Some players play live TV better as HLS, a playlist of short segments that the player fetches one after another, than as one long stream. Turn on *HLS for players* under *What it watches* on the account's page (off at first), and its players can ask for its live channels as HLS (D153):
+
+- with its Xtream login, at a channel's `.m3u8` address, `/live/<username>/<password>/<id>.m3u8`, which the login now offers beside `.ts`, or from `get.php` with `output=m3u8`;
+- with its playlist, from the playlist's address with `?output=m3u8` added, `/playlist/<token>.m3u?output=m3u8`, whose channels then have `.m3u8` addresses.
+
+The playlist without `output=m3u8`, and every `.ts` address, play as before. Boxes and Stalker apps always get one stream.
+
+Overscan cuts the HLS itself from the channel's one stream, at its keyframes, without transcoding it: segments of about 4 seconds, kept in a buffer on the server's disk, and a playlist of the newest six or so, so a player starts about 12 seconds behind live. The first player of a channel waits a few seconds for its first two segments. **All the HLS players of a channel share one connection to its source**, as the shared tuner's screens do, even while *Shared tuner* on *Settings* is off: turn the switch on only if your provider allows that. A player's HLS counts as one stream against the account's limit, and ends 30 seconds after the player stops asking for it.
+
+For now, radio stations, channels whose source sends HLS (which play that HLS, as before), and channels that Overscan transcodes for the player, play as one stream at their `.m3u8` addresses too. The *Overview* marks a player's HLS *As HLS*.
+
 A player that cannot play what a source sends, or a network too slow for it, can get live channels transcoded with a profile: Overscan's *h264-720p* or *h264-1080p*, or one of the household's own made on *Settings* → *Transcoding*. Choose it under *Live streams* on the account's page, and turn on *Transcode video on this server* in *Settings*, whose number at a time each such stream counts against, or give Overscan the server's graphics, which have a number of their own. Live TV, a group or a channel can also be set to be transcoded always, or never, for every player ([transcoding.md](transcoding.md)). Transcoding in software takes a strong processor; without it, or when the number at a time is reached, channels play as their sources send them. Players get films and series as their sources send them, but for those that *Settings* → *Transcoding* → *Films and series*, a shelf or a title sets to be transcoded always: those come transcoded with the profile, at a constant rate, and players can seek in them as in a file ([transcoding.md](transcoding.md)).
 
 ## Limits

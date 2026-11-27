@@ -126,7 +126,7 @@ func TestSupportBundle(t *testing.T) {
 			"Channels with backups in the household's lineup: 0",
 			"Output profiles that transcode live channels: accounts: 0; devices of their own: 0",
 			"Transcoding (D147): profiles made: 0; live TV: as_needed; groups always: 0, never: 0; channels always: 0, never: 0",
-			"Outputs for players: on: false; anywhere: false; playlists on: 0; Xtream logins on: 0"},
+			"Outputs for players: on: false; anywhere: false; playlists on: 0; Xtream logins on: 0; HLS for players on (D153): 0"},
 		"devices.txt": {"00:1A:79:xx:xx:xx", "Living room", "MAG322", "Playback checks, the latest first:",
 			"Living room (00:1A:79:xx:xx:xx), MAG322, firmware not said, checked 1 hour ago", "  Plays: MKV\n  Does not play: DTS\n",
 			"  base: yes; started in 640 ms, picture 640x360, 1 sound track, at 3.4 s",

@@ -108,3 +108,11 @@ func Continuous(link string) string {
 	}
 	return link
 }
+
+// WantsHLS reports whether a playlist's request asks for HLS addresses, with
+// output=m3u8 (or hls) in its query, as players of the Xtream form do
+// (D153).
+func WantsHLS(r *http.Request) bool {
+	v := strings.ToLower(r.URL.Query().Get("output"))
+	return v == "m3u8" || v == "hls"
+}
